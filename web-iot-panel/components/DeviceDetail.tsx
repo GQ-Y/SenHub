@@ -4,8 +4,6 @@ import {
   ArrowLeft, 
   Camera, 
   Settings, 
-  Volume2, 
-  VolumeX, 
   ZoomIn, 
   ZoomOut, 
   RotateCw,
@@ -25,13 +23,10 @@ export const DeviceDetail: React.FC = () => {
   const { t, language } = useAppContext();
   const [device, setDevice] = useState<Device | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
   const [snapshot, setSnapshot] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [videoUrl, setVideoUrl] = useState<string>('');
-  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
+  const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // 加载设备详情
   useEffect(() => {
@@ -67,67 +62,30 @@ export const DeviceDetail: React.FC = () => {
     loadDevice();
   }, [deviceId]);
 
-    // 定期获取最新录制视频URL（只获取已完成的文件，确保可以播放）
+  // 进入页面时自动抓图
   useEffect(() => {
-    if (!deviceId) return;
-
-    const fetchVideoUrl = async () => {
+    if (!deviceId || !device) return;
+    
+    const captureSnapshot = async () => {
+      setIsLoadingSnapshot(true);
       try {
-        const streamResponse = await deviceService.getStreamUrl(deviceId);
-        if (streamResponse.data) {
-          // 只使用videoUrl（必须是FLV格式）
-          const videoPath = streamResponse.data.videoUrl;
-          if (videoPath) {
-            // 只播放FLV格式的视频
-            if (!videoPath.includes('.flv')) {
-              console.warn('视频URL不是FLV格式，跳过播放:', videoPath);
-              setVideoUrl('');
-              setIsLoadingVideo(false);
-              return;
-            }
-            
-            // 构建完整的视频URL
-            const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
-            const fullVideoUrl = videoPath.startsWith('http') 
-              ? videoPath 
-              : `${baseUrl}${videoPath}`;
-            
-            // 如果URL发生变化，更新视频源
-            setVideoUrl(prevUrl => {
-              if (prevUrl !== fullVideoUrl) {
-                setIsLoadingVideo(true);
-                return fullVideoUrl;
-              }
-              return prevUrl;
-            });
-          } else {
-            // 没有videoUrl，清空视频源
-            setVideoUrl('');
-            setIsLoadingVideo(false);
-          }
-        } else {
-          // 没有数据，清空视频源
-          setVideoUrl('');
-          setIsLoadingVideo(false);
+        const response = await deviceService.captureSnapshot(deviceId, 1);
+        if (response.data?.url) {
+          const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+          const fullUrl = response.data.url.startsWith('http') 
+            ? response.data.url 
+            : `${baseUrl}${response.data.url}`;
+          setSnapshot(fullUrl);
         }
       } catch (err) {
-        console.error('获取录制视频失败:', err);
-        // 清空videoUrl，不播放
-        setVideoUrl('');
-        setIsLoadingVideo(false);
+        console.error('自动抓图失败:', err);
+      } finally {
+        setIsLoadingSnapshot(false);
       }
     };
 
-    // 初始加载
-    fetchVideoUrl();
-
-    // 定期刷新视频URL（每10秒），获取最新的已完成文件
-    const refreshInterval = setInterval(fetchVideoUrl, 10000);
-
-    return () => {
-      clearInterval(refreshInterval);
-    };
-  }, [deviceId]);
+    captureSnapshot();
+  }, [deviceId, device]);
 
   // 全屏事件监听 - 必须在所有条件返回之前调用
   useEffect(() => {
@@ -165,6 +123,7 @@ export const DeviceDetail: React.FC = () => {
   }
 
   const handleSnapshot = async () => {
+    setIsLoadingSnapshot(true);
     try {
       const response = await deviceService.captureSnapshot(deviceId, 1);
       if (response.data?.url) {
@@ -176,7 +135,10 @@ export const DeviceDetail: React.FC = () => {
         setSnapshot(fullUrl);
       }
     } catch (err: any) {
+      console.error('抓图失败:', err);
       alert(err.message || '获取快照失败');
+    } finally {
+      setIsLoadingSnapshot(false);
     }
   };
 
@@ -193,6 +155,25 @@ export const DeviceDetail: React.FC = () => {
   const handlePtzControl = async (command: string, action: 'start' | 'stop' = 'start') => {
     try {
       await deviceService.ptzControl(deviceId, command, action, 1);
+      
+      // PTZ控制结束时（stop），自动抓图并更新显示
+      if (action === 'stop') {
+        // 延迟500ms后抓图，确保PTZ操作完全停止
+        setTimeout(async () => {
+          try {
+            const response = await deviceService.captureSnapshot(deviceId, 1);
+            if (response.data?.url) {
+              const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+              const fullUrl = response.data.url.startsWith('http') 
+                ? response.data.url 
+                : `${baseUrl}${response.data.url}`;
+              setSnapshot(fullUrl);
+            }
+          } catch (err) {
+            console.error('PTZ控制后自动抓图失败:', err);
+          }
+        }, 500);
+      }
     } catch (err: any) {
       console.error('PTZ控制失败:', err);
     }
@@ -204,11 +185,11 @@ export const DeviceDetail: React.FC = () => {
   };
 
   const handleFullscreen = async () => {
-    if (!videoContainerRef.current) return;
+    if (!imageContainerRef.current) return;
 
     try {
       if (!isFullscreen) {
-        await videoContainerRef.current.requestFullscreen();
+        await imageContainerRef.current.requestFullscreen();
         setIsFullscreen(true);
       } else {
         await document.exitFullscreen();
@@ -270,90 +251,34 @@ export const DeviceDetail: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Video Area */}
+        {/* Main Image Area - 录像回放播放窗口 */}
         <div className="lg:col-span-2 space-y-6">
           <div 
-            ref={videoContainerRef}
+            ref={imageContainerRef}
             className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
           >
-            {videoUrl ? (
-              <video
-                ref={videoRef}
-                key={videoUrl} // 使用key强制重新加载视频源
-                src={videoUrl}
-                controls
-                autoPlay
-                muted // 默认静音，避免自动播放被阻止
-                preload="auto"
-                playsInline
-                crossOrigin="anonymous"
+            {snapshot ? (
+              <img
+                src={snapshot}
+                alt="设备快照"
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  const video = e.target as HTMLVideoElement;
-                  const error = video.error;
-                  console.error('视频播放错误:', {
-                    error,
-                    code: error?.code,
-                    message: error?.message,
-                    networkState: video.networkState,
-                    readyState: video.readyState,
-                    src: video.src,
-                  });
-                  
-                  // 错误代码说明：
-                  // 1 = MEDIA_ERR_ABORTED - 用户中止
-                  // 2 = MEDIA_ERR_NETWORK - 网络错误
-                  // 3 = MEDIA_ERR_DECODE - 解码错误
-                  // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED - 格式不支持或文件损坏
-                  
-                  if (error?.code === 4) {
-                    // 格式不支持或文件损坏，可能是文件正在录制中
-                    console.warn('视频文件可能正在录制中或格式不完整，等待后重试...');
-                    // 等待5秒后重新获取视频URL
-                    setTimeout(() => {
-                      if (deviceId) {
-                        deviceService.getStreamUrl(deviceId).then((response) => {
-                          if (response.data?.videoUrl) {
-                            const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
-                            const fullVideoUrl = response.data.videoUrl.startsWith('http') 
-                              ? response.data.videoUrl 
-                              : `${baseUrl}${response.data.videoUrl}`;
-                            setVideoUrl(fullVideoUrl);
-                          }
-                        }).catch((err) => {
-                          console.error('重新获取视频URL失败:', err);
-                        });
-                      }
-                    }, 5000);
-                  } else {
-                    // 其他错误，尝试重新加载
-                    if (videoRef.current) {
-                      setTimeout(() => {
-                        videoRef.current?.load();
-                      }, 2000);
-                    }
-                  }
-                }}
-                onLoadedData={() => {
-                  console.log('视频加载完成');
-                  setIsLoadingVideo(false);
-                }}
-                onCanPlay={() => {
-                  console.log('视频可以播放');
+                  console.error('图片加载失败:', snapshot);
+                  setSnapshot(null);
                 }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gray-900">
                 <div className="text-center text-gray-400">
-                  {isLoadingVideo ? (
+                  {isLoadingSnapshot ? (
                     <>
                       <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-sm">正在加载视频...</p>
+                      <p className="text-sm">正在抓图...</p>
                     </>
                   ) : (
                     <>
-                      <p className="mb-2">暂无录制视频</p>
-                      <p className="text-sm">设备可能尚未开始录制</p>
+                      <p className="mb-2">暂无图像</p>
+                      <p className="text-sm">点击抓图按钮获取设备快照</p>
                     </>
                   )}
                 </div>
@@ -367,18 +292,9 @@ export const DeviceDetail: React.FC = () => {
                 </span>
             </div>
 
-            {/* 控制按钮 - 仅在视频上方显示 */}
-            {videoUrl && (
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
-                  <div className="flex items-center space-x-4">
-                      <button 
-                          onClick={() => setIsMuted(!isMuted)}
-                          className="text-white hover:text-blue-400 transition-colors"
-                          title={isMuted ? '开启声音' : '关闭声音'}
-                      >
-                          {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                      </button>
-                  </div>
+            {/* 控制按钮 - 全屏 */}
+            {snapshot && (
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
                   <div className="flex items-center space-x-3">
                       <button 
                           onClick={handleFullscreen}

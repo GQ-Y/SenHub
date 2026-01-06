@@ -175,7 +175,7 @@ public class Recorder {
         File recordDir = new File(config.getRecordPath());
         File[] files = recordDir.listFiles((dir, name) -> {
             String prefix = "record_" + deviceId.replace(".", "_");
-            return name.startsWith(prefix) && (name.endsWith(".mp4") || name.endsWith(".flv"));
+                return name.startsWith(prefix) && name.endsWith(".mp4");
         });
 
         if (files == null || files.length == 0) {
@@ -216,7 +216,7 @@ public class Recorder {
             long retentionMillis = config.getRetentionMinutes() * 60 * 1000L;
             long cutoffTime = System.currentTimeMillis() - retentionMillis;
 
-                File[] files = recordDir.listFiles((dir, name) -> name.endsWith(".mp4") || name.endsWith(".flv"));
+                File[] files = recordDir.listFiles((dir, name) -> name.endsWith(".mp4"));
             if (files == null) {
                 return;
             }
@@ -312,19 +312,6 @@ public class Recorder {
                     hcNetSDK.NET_DVR_StopSaveRealData(realPlayHandle);
                     Thread.sleep(500);
                     hcNetSDK.NET_DVR_StopRealPlay(realPlayHandle);
-                    
-                    // 录制停止后，转换为FLV格式（如果FFmpeg可用）
-                    if (recordFilePath != null && VideoConverter.isFfmpegAvailable()) {
-                        String flvPath = recordFilePath.replace(".mp4", ".flv");
-                        logger.info("开始转换视频为FLV格式: {} -> {}", recordFilePath, flvPath);
-                        if (VideoConverter.convertToFlv(recordFilePath, flvPath)) {
-                            // 转换成功，更新文件路径为FLV文件
-                            recordFilePath = flvPath;
-                            logger.info("视频已转换为FLV格式: {}", flvPath);
-                        } else {
-                            logger.warn("视频转换为FLV失败，保留原始MP4文件: {}", recordFilePath);
-                        }
-                    }
                 } catch (Exception e) {
                     logger.error("停止录制会话失败: {}", deviceId, e);
                 }
