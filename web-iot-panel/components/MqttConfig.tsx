@@ -1,39 +1,113 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, Server, Wifi, CheckCircle2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
+import { mqttService } from '../src/api/services';
 
 export const MqttConfig: React.FC = () => {
   const { t } = useAppContext();
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   
   const [formData, setFormData] = useState({
-    host: 'broker.hivemq.com',
+    host: '',
     port: '1883',
-    clientId: 'harmony-guard-001',
+    clientId: '',
     username: '',
     password: '',
-    topicStatus: 'harmony/devices/+/status',
-    topicCommand: 'harmony/devices/+/command',
+    topicStatus: '',
+    topicCommand: '',
     qos: '1'
   });
+  const [connected, setConnected] = useState(false);
+
+  // 加载MQTT配置
+  useEffect(() => {
+    const loadConfig = async () => {
+      setIsLoading(true);
+      try {
+        const response = await mqttService.getConfig();
+        const config = response.data;
+        setFormData({
+          host: config.host || '',
+          port: config.port || '1883',
+          clientId: config.clientId || '',
+          username: config.username || '',
+          password: config.password ? '******' : '', // 密码已隐藏
+          topicStatus: config.topicStatus || '',
+          topicCommand: config.topicCommand || '',
+          qos: String(config.qos || 1),
+        });
+        setConnected(config.connected || false);
+      } catch (err) {
+        console.error('加载MQTT配置失败:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadConfig();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSave = () => {
-    // Simulate save
-    setToastMessage(t('config_saved'));
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      // 如果密码是******，说明没有修改，不发送密码字段
+      const updateData: any = {
+        host: formData.host,
+        port: formData.port,
+        clientId: formData.clientId,
+        username: formData.username,
+        topicStatus: formData.topicStatus,
+        topicCommand: formData.topicCommand,
+        qos: parseInt(formData.qos),
+      };
+      
+      // 只有当密码不是******时才更新密码
+      if (formData.password && formData.password !== '******') {
+        updateData.password = formData.password;
+      }
+
+      await mqttService.updateConfig(updateData);
+      setToastMessage(t('config_saved'));
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (err: any) {
+      setToastMessage(err.message || '保存失败');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleTest = () => {
-    // Simulate test
-    setToastMessage(t('connection_success'));
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+  const handleTest = async () => {
+    setIsTesting(true);
+    try {
+      const response = await mqttService.testConnection();
+      if (response.data.connected) {
+        setToastMessage(t('connection_success'));
+        setConnected(true);
+      } else {
+        setToastMessage(response.data.message || '连接失败');
+        setConnected(false);
+      }
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (err: any) {
+      setToastMessage(err.message || '连接测试失败');
+      setConnected(false);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } finally {
+      setIsTesting(false);
+    }
   }
 
   return (
@@ -50,22 +124,35 @@ export const MqttConfig: React.FC = () => {
       {/* Connection Status Banner */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-green-600">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${connected ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                 <Wifi size={24} />
             </div>
             <div>
-                <h3 className="font-bold text-gray-800">{t('connected')}</h3>
-                <p className="text-sm text-gray-500">{formData.host}:{formData.port}</p>
+                <h3 className="font-bold text-gray-800">{connected ? t('connected') : t('disconnected')}</h3>
+                <p className="text-sm text-gray-500">{formData.host || '未配置'}:{formData.port}</p>
             </div>
          </div>
          <button 
             onClick={handleTest}
-            className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 font-medium text-sm transition-colors border border-gray-200"
+            disabled={isTesting || isLoading}
+            className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 font-medium text-sm transition-colors border border-gray-200 disabled:opacity-50 flex items-center"
          >
-            {t('test_connection')}
+            {isTesting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin mr-2"></div>
+                <span>测试中...</span>
+              </>
+            ) : (
+              <span>{t('test_connection')}</span>
+            )}
          </button>
       </div>
 
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : (
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
             <Server size={22} className="mr-2 text-blue-600"/>
@@ -176,14 +263,25 @@ export const MqttConfig: React.FC = () => {
             </button>
             <button 
                 onClick={handleSave}
-                className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200"
+                disabled={isSaving}
+                className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 disabled:opacity-50"
             >
-                <Save size={18} />
-                <span>{t('save_config')}</span>
+                {isSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>保存中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={18} />
+                    <span>{t('save_config')}</span>
+                  </>
+                )}
             </button>
           </div>
         </form>
       </div>
+      )}
     </div>
   );
 };

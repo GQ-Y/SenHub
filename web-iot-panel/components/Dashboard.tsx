@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Shield, Wifi, AlertTriangle, HardDrive } from 'lucide-react';
 import { CHART_DATA } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
+import { dashboardService } from '../src/api/services';
 
 const StatCard = ({ icon: Icon, label, value, trend, colorClass, bgClass }: any) => (
   <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300">
@@ -21,6 +22,47 @@ const StatCard = ({ icon: Icon, label, value, trend, colorClass, bgClass }: any)
 
 export const Dashboard: React.FC = () => {
   const { t } = useAppContext();
+  const [stats, setStats] = useState({
+    activeDevices: 0,
+    onlineStatus: '0%',
+    alerts24h: 0,
+    storageUsed: '0 B',
+  });
+  const [chartData, setChartData] = useState(CHART_DATA);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [statsResponse, chartResponse] = await Promise.all([
+          dashboardService.getStats(),
+          dashboardService.getChartData(),
+        ]);
+        
+        setStats(statsResponse.data);
+        if (chartResponse.data && chartResponse.data.length > 0) {
+          setChartData(chartResponse.data);
+        }
+      } catch (err) {
+        console.error('加载仪表板数据失败:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+    // 每30秒刷新一次
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -28,7 +70,7 @@ export const Dashboard: React.FC = () => {
         <StatCard 
           icon={Shield} 
           label={t('active_devices')}
-          value="24" 
+          value={stats.activeDevices.toString()} 
           trend="up" 
           colorClass="text-blue-600" 
           bgClass="bg-blue-50"
@@ -36,7 +78,7 @@ export const Dashboard: React.FC = () => {
         <StatCard 
           icon={Wifi} 
           label={t('online_status')}
-          value="98.2%" 
+          value={stats.onlineStatus} 
           trend="up" 
           colorClass="text-green-600" 
           bgClass="bg-green-50"
@@ -44,7 +86,7 @@ export const Dashboard: React.FC = () => {
         <StatCard 
           icon={AlertTriangle} 
           label={t('alerts_24h')} 
-          value="3" 
+          value={stats.alerts24h.toString()} 
           trend="down" 
           colorClass="text-orange-600" 
           bgClass="bg-orange-50"
@@ -52,7 +94,7 @@ export const Dashboard: React.FC = () => {
         <StatCard 
           icon={HardDrive} 
           label={t('storage_used')} 
-          value="4.2 TB" 
+          value={stats.storageUsed} 
           trend="up" 
           colorClass="text-purple-600" 
           bgClass="bg-purple-50"
@@ -63,14 +105,11 @@ export const Dashboard: React.FC = () => {
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-gray-800">{t('device_connectivity')}</h3>
-            <select className="bg-gray-50 border border-gray-200 text-gray-600 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
-              <option>Last 24 Hours</option>
-              <option>Last 7 Days</option>
-            </select>
+            <span className="text-sm text-gray-500 font-medium">{t('last_24_hours')}</span>
           </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={CHART_DATA}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorOnline" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>

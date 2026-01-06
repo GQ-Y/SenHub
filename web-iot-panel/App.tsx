@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { DeviceList } from './components/DeviceList';
@@ -7,54 +8,96 @@ import { DriverConfig } from './components/DriverConfig';
 import { MqttConfig } from './components/MqttConfig';
 import { SystemSettings } from './components/SystemSettings';
 import { LoginPage } from './components/LoginPage';
-import { ViewState } from './types';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 
-const AppContent: React.FC = () => {
+// 路由守卫组件
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAppContext();
-  const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const location = useLocation();
 
-  // Route Guard
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  const handleNavigate = (view: ViewState) => {
-    setCurrentView(view);
-    if (view !== 'DEVICE_DETAIL') {
-      setSelectedDeviceId(null);
-    }
-  };
+  return <>{children}</>;
+};
 
-  const handleDeviceSelect = (id: string) => {
-    setSelectedDeviceId(id);
-    setCurrentView('DEVICE_DETAIL');
-  };
+// 根据路径获取当前视图
+const getViewFromPath = (pathname: string): string => {
+  if (pathname === '/') return 'DASHBOARD';
+  if (pathname.startsWith('/devices/')) return 'DEVICE_DETAIL';
+  if (pathname === '/devices') return 'DEVICE_LIST';
+  if (pathname === '/drivers') return 'DRIVER_CONFIG';
+  if (pathname === '/mqtt') return 'MQTT_CONFIG';
+  if (pathname === '/settings') return 'SYSTEM_CONFIG';
+  return 'DASHBOARD';
+};
 
-  const renderContent = () => {
-    switch (currentView) {
-      case 'DASHBOARD':
-        return <Dashboard />;
-      case 'DEVICE_LIST':
-        return <DeviceList onSelectDevice={handleDeviceSelect} />;
-      case 'DEVICE_DETAIL':
-        if (!selectedDeviceId) return <DeviceList onSelectDevice={handleDeviceSelect} />;
-        return <DeviceDetail deviceId={selectedDeviceId} onBack={() => handleNavigate('DEVICE_LIST')} />;
-      case 'DRIVER_CONFIG':
-        return <DriverConfig />;
-      case 'MQTT_CONFIG':
-        return <MqttConfig />;
-      case 'SYSTEM_CONFIG':
-        return <SystemSettings />;
-      default:
-        return <Dashboard />;
-    }
-  };
+const AppContent: React.FC = () => {
+  const location = useLocation();
+  const { isAuthenticated } = useAppContext();
+  const currentView = getViewFromPath(location.pathname);
+  const isLoginPage = location.pathname === '/login';
 
+  // 登录页面独立显示，不包含 Layout
+  if (isLoginPage) {
+    return isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />;
+  }
+
+  // 其他页面使用 Layout 包裹
   return (
-    <Layout currentView={currentView} onNavigate={handleNavigate}>
-      {renderContent()}
+    <Layout currentView={currentView as any}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/devices"
+          element={
+            <ProtectedRoute>
+              <DeviceList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/devices/:deviceId"
+          element={
+            <ProtectedRoute>
+              <DeviceDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/drivers"
+          element={
+            <ProtectedRoute>
+              <DriverConfig />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mqtt"
+          element={
+            <ProtectedRoute>
+              <MqttConfig />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SystemSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </Layout>
   );
 };
@@ -62,7 +105,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AppProvider>
-      <AppContent />
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
     </AppProvider>
   );
 };

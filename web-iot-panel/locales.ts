@@ -105,7 +105,15 @@ export const translations = {
     log_title: "System Logging",
     log_desc: "Manage system-wide logging policies.",
     retention: "Retention (Days)",
-    download_logs: "Download Logs"
+    download_logs: "Download Logs",
+    notifications: "Notifications",
+    no_notifications: "No new notifications",
+    mark_all_read: "Mark all as read",
+    last_24_hours: "Last 24 Hours",
+    zoom_out: "Zoom Out",
+    zoom_in: "Zoom In",
+    fullscreen: "Fullscreen",
+    exit_fullscreen: "Exit Fullscreen"
   },
   zh: {
     app_name: "鸿蒙安防",
@@ -213,6 +221,14 @@ export const translations = {
     log_title: "系统日志",
     log_desc: "管理系统全局日志策略。",
     retention: "保留天数",
-    download_logs: "下载日志"
+    download_logs: "下载日志",
+    notifications: "消息通知",
+    no_notifications: "暂无新消息",
+    mark_all_read: "全部标记为已读",
+    last_24_hours: "最近24小时",
+    zoom_out: "缩小",
+    zoom_in: "放大",
+    fullscreen: "全屏",
+    exit_fullscreen: "退出全屏"
   }
 };

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HardDrive, CheckCircle2, XCircle, Settings2, FileCode, X, Plus } from 'lucide-react';
-import { MOCK_DRIVERS } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
 import { Driver } from '../types';
+import { driverService } from '../src/api/services';
 
 // Simple reused modal (duplicated to avoid external dependency for this file update)
 const Modal = ({ isOpen, onClose, title, children, footer }: any) => {
@@ -29,14 +29,44 @@ export const DriverConfig: React.FC = () => {
   const [activeModal, setActiveModal] = useState<'NONE' | 'CONFIGURE' | 'LOGS' | 'NEW'>('NONE');
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [formData, setFormData] = useState<Partial<Driver>>({});
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   
-  // Mock Logs
+  // Mock Logs (如果后端不支持日志API，使用mock数据)
   const MOCK_LOGS = `[2023-10-27 10:00:01] [INFO] SDK Initialized successfully.
 [2023-10-27 10:00:02] [INFO] Loading library from /usr/lib/hikvision/libhcnetsdk.so...
 [2023-10-27 10:00:02] [DEBUG] Handle created: 0x7f8a1234
 [2023-10-27 10:05:12] [INFO] Device connected: 192.168.1.101
 [2023-10-27 10:05:15] [WARN] Keep-alive packet latency high: 120ms
 [2023-10-27 11:20:00] [INFO] Stream started for Channel 1`;
+
+  // 加载驱动列表
+  useEffect(() => {
+    const loadDrivers = async () => {
+      setIsLoading(true);
+      try {
+        const response = await driverService.getDrivers();
+        // 转换后端数据格式
+        const driverList = response.data.map((d: any) => ({
+          id: d.id || d.name?.toLowerCase().replace(/\s+/g, '-'),
+          name: d.name || '',
+          version: d.version || '1.0.0',
+          status: (d.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE') as 'ACTIVE' | 'INACTIVE',
+          libPath: d.libPath || '',
+          logPath: d.logPath || '',
+          logLevel: d.logLevel || 0,
+        }));
+        setDrivers(driverList);
+      } catch (err) {
+        console.error('加载驱动列表失败:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDrivers();
+  }, []);
 
   const handleConfigure = (driver: Driver) => {
     setSelectedDriver(driver);
@@ -54,10 +84,43 @@ export const DriverConfig: React.FC = () => {
     setActiveModal('NEW');
   };
 
-  const handleSave = () => {
-    // Simulate Save
-    setActiveModal('NONE');
-    setSelectedDriver(null);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      if (activeModal === 'NEW') {
+        await driverService.addDriver({
+          name: formData.name,
+          version: formData.version,
+          libPath: formData.libPath,
+          logPath: formData.logPath,
+          logLevel: formData.logLevel,
+        });
+      } else if (activeModal === 'CONFIGURE' && selectedDriver) {
+        await driverService.updateDriver(selectedDriver.id, {
+          libPath: formData.libPath,
+          logPath: formData.logPath,
+          logLevel: formData.logLevel,
+        });
+      }
+      setActiveModal('NONE');
+      setSelectedDriver(null);
+      // 重新加载列表
+      const response = await driverService.getDrivers();
+      const driverList = response.data.map((d: any) => ({
+        id: d.id || d.name?.toLowerCase().replace(/\s+/g, '-'),
+        name: d.name || '',
+        version: d.version || '1.0.0',
+        status: (d.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE') as 'ACTIVE' | 'INACTIVE',
+        libPath: d.libPath || '',
+        logPath: d.logPath || '',
+        logLevel: d.logLevel || 0,
+      }));
+      setDrivers(driverList);
+    } catch (err: any) {
+      alert(err.message || '保存失败');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -69,8 +132,13 @@ export const DriverConfig: React.FC = () => {
         </p>
       </div>
 
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {MOCK_DRIVERS.map((driver) => (
+        {drivers.map((driver) => (
           <div key={driver.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between h-full hover:shadow-lg transition-shadow duration-300">
             <div>
               <div className="flex items-start justify-between mb-4">
@@ -129,6 +197,7 @@ export const DriverConfig: React.FC = () => {
             <span className="font-semibold">{t('integrate_new')}</span>
          </div>
       </div>
+      )}
 
       {/* Configuration Modal */}
       <Modal
@@ -137,8 +206,11 @@ export const DriverConfig: React.FC = () => {
         title={t('driver_config')}
         footer={
           <>
-            <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium">{t('cancel')}</button>
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200">{t('save')}</button>
+            <button onClick={() => setActiveModal('NONE')} disabled={isSaving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium disabled:opacity-50">{t('cancel')}</button>
+            <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center">
+              {isSaving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>}
+              {t('save')}
+            </button>
           </>
         }
       >
@@ -198,8 +270,11 @@ export const DriverConfig: React.FC = () => {
         title={t('add_driver_title')}
         footer={
           <>
-            <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium">{t('cancel')}</button>
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200">{t('save')}</button>
+            <button onClick={() => setActiveModal('NONE')} disabled={isSaving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium disabled:opacity-50">{t('cancel')}</button>
+            <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center">
+              {isSaving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>}
+              {t('save')}
+            </button>
           </>
         }
       >

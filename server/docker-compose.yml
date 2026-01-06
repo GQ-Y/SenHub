@@ -8,7 +8,9 @@ services:
     image: hikvision-nvr-service:latest
     container_name: hikvision-nvr-service
     platform: linux/arm64
-    network_mode: host  # 使用host网络模式，方便访问局域网设备和MQTT服务器
+    ports:
+      - "8080:8080"  # HTTP API端口映射，允许外部访问
+    # 注意：使用端口映射后，容器内访问局域网设备需要使用宿主机IP或bridge网络
     volumes:
       # 挂载整个server目录（代码修改立即生效）
       - .:/app

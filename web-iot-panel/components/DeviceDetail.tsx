@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
   Camera, 
@@ -10,27 +11,121 @@ import {
   RotateCw,
   MoreHorizontal,
   Calendar,
-  Download
+  Download,
+  Maximize,
+  Minimize
 } from 'lucide-react';
-import { MOCK_DEVICES } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
+import { deviceService } from '../src/api/services';
+import { Device, DeviceStatus } from '../types';
 
-interface DeviceDetailProps {
-  deviceId: string;
-  onBack: () => void;
-}
-
-export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) => {
-  const { t } = useAppContext();
-  const device = MOCK_DEVICES.find(d => d.id === deviceId);
+export const DeviceDetail: React.FC = () => {
+  const { deviceId } = useParams<{ deviceId: string }>();
+  const navigate = useNavigate();
+  const { t, language } = useAppContext();
+  const [device, setDevice] = useState<Device | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [snapshot, setSnapshot] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
 
-  if (!device) return <div>Device not found</div>;
+  // 加载设备详情
+  useEffect(() => {
+    const loadDevice = async () => {
+      if (!deviceId) return;
+      
+      setIsLoading(true);
+      try {
+        const response = await deviceService.getDevice(deviceId);
+        const deviceData = response.data;
+        setDevice({
+          id: deviceData.id || deviceId,
+          name: deviceData.name || '',
+          ip: deviceData.ip || '',
+          port: deviceData.port || 8000,
+          brand: deviceData.brand || 'Hikvision',
+          model: deviceData.model || '',
+          status: (deviceData.status?.toUpperCase() as DeviceStatus) || DeviceStatus.OFFLINE,
+          lastSeen: deviceData.lastSeen || 'Never',
+          firmware: deviceData.firmware || '',
+          rtspUrl: deviceData.rtspUrl || '',
+        });
+      } catch (err) {
+        console.error('加载设备详情失败:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const handleSnapshot = () => {
-    // Simulate snapshot
-    setSnapshot(`https://picsum.photos/400/300?random=${Date.now()}`);
+    loadDevice();
+  }, [deviceId]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!deviceId || !device) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64">
+        <p className="text-gray-500 mb-4">{t('device_name')} {t('offline')}</p>
+        <button
+          onClick={() => navigate('/devices')}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          {language === 'zh' ? '返回设备列表' : 'Back to Devices'}
+        </button>
+      </div>
+    );
+  }
+
+  const handleSnapshot = async () => {
+    try {
+      const response = await deviceService.captureSnapshot(deviceId, 1);
+      if (response.data.url) {
+        setSnapshot(response.data.url);
+      }
+    } catch (err: any) {
+      alert(err.message || '获取快照失败');
+    }
+  };
+
+  const handleFullscreen = async () => {
+    if (!videoContainerRef.current) return;
+
+    try {
+      if (!isFullscreen) {
+        await videoContainerRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const getStatusText = (status: string) => {
+    if (status === 'ONLINE') return t('online');
+    if (status === 'OFFLINE') return t('offline');
+    if (status === 'WARNING') return t('warning');
+    return status;
   };
 
   return (
@@ -39,7 +134,7 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button 
-            onClick={onBack}
+            onClick={() => navigate('/devices')}
             className="p-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
           >
             <ArrowLeft size={20} className="text-gray-600" />
@@ -47,8 +142,12 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
           <div>
             <h2 className="text-2xl font-bold text-gray-800">{device.name}</h2>
             <div className="flex items-center space-x-3 text-sm text-gray-500 mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${device.status === 'ONLINE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                {device.status}
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                device.status === 'ONLINE' ? 'bg-green-100 text-green-700' : 
+                device.status === 'OFFLINE' ? 'bg-red-100 text-red-700' : 
+                'bg-yellow-100 text-yellow-700'
+              }`}>
+                {getStatusText(device.status)}
               </span>
               <span>•</span>
               <span className="font-mono">{device.ip}</span>
@@ -72,7 +171,10 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Video Area */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group">
+          <div 
+            ref={videoContainerRef}
+            className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
+          >
             <img 
               src={`https://picsum.photos/800/450?random=${device.id}`} 
               alt="Live Feed" 
@@ -80,7 +182,7 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
             />
             
             {/* Overlay UI */}
-            <div className="absolute top-4 left-4 flex items-center space-x-2">
+            <div className="absolute top-4 left-4 flex items-center space-x-2 z-10">
                 <span className="px-2 py-1 bg-red-600/90 text-white text-xs font-bold rounded flex items-center">
                     <span className="w-2 h-2 bg-white rounded-full mr-1.5 animate-pulse"></span>
                     LIVE
@@ -90,7 +192,7 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
                 </span>
             </div>
 
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
                 <div className="flex items-center space-x-4">
                     <button 
                         onClick={() => setIsMuted(!isMuted)}
@@ -101,7 +203,13 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
                     <input type="range" className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer" />
                 </div>
                 <div className="flex items-center space-x-3">
-                    <button className="text-white hover:text-blue-400" title="Full Screen"><Settings size={18} /></button>
+                    <button 
+                        onClick={handleFullscreen}
+                        className="text-white hover:text-blue-400 transition-colors" 
+                        title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
+                    >
+                        {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                    </button>
                 </div>
             </div>
           </div>
@@ -131,7 +239,7 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between">
                     {t('ptz_control')}
-                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">Active</span>
+                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">{t('online')}</span>
                 </h3>
                 
                 <div className="flex justify-center mb-6">
@@ -162,13 +270,13 @@ export const DeviceDetail: React.FC<DeviceDetailProps> = ({ deviceId, onBack }) 
                         <button className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
                             <ZoomOut size={18} />
                         </button>
-                        <span className="text-xs text-gray-500">Zoom Out</span>
+                        <span className="text-xs text-gray-500">{t('zoom_out')}</span>
                     </div>
                     <div className="flex flex-col items-center space-y-2">
                         <button className="w-10 h-10 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors">
                             <ZoomIn size={18} />
                         </button>
-                        <span className="text-xs text-gray-500">Zoom In</span>
+                        <span className="text-xs text-gray-500">{t('zoom_in')}</span>
                     </div>
                 </div>
             </div>

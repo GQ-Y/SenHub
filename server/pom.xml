@@ -24,6 +24,9 @@
         <logback.version>1.4.8</logback.version>
         <sqlite.version>3.42.0.0</sqlite.version>
         <yaml.version>2.14.2</yaml.version>
+        <spark.version>2.9.4</spark.version>
+        <jwt.version>4.4.0</jwt.version>
+        <bcrypt.version>0.4</bcrypt.version>
     </properties>
 
     <dependencies>
@@ -82,6 +85,27 @@
             <groupId>com.aliyun.oss</groupId>
             <artifactId>aliyun-sdk-oss</artifactId>
             <version>3.17.1</version>
+        </dependency>
+
+        <!-- Spark Java HTTP Framework -->
+        <dependency>
+            <groupId>com.sparkjava</groupId>
+            <artifactId>spark-core</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- JWT Authentication -->
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>${jwt.version}</version>
+        </dependency>
+
+        <!-- BCrypt Password Hashing -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>${bcrypt.version}</version>
         </dependency>
     </dependencies>
 

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Search, 
   Plus, 
@@ -12,13 +13,9 @@ import {
   AlertTriangle,
   Check
 } from 'lucide-react';
-import { MOCK_DEVICES } from '../constants';
 import { Device, DeviceStatus } from '../types';
 import { useAppContext } from '../contexts/AppContext';
-
-interface DeviceListProps {
-  onSelectDevice: (id: string) => void;
-}
+import { deviceService } from '../src/api/services';
 
 // Reusable Modal Component
 const Modal = ({ 
@@ -58,7 +55,8 @@ const Modal = ({
   );
 };
 
-export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
+export const DeviceList: React.FC = () => {
+  const navigate = useNavigate();
   const { t, language } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -67,11 +65,51 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
   const [activeModal, setActiveModal] = useState<'NONE' | 'ADD' | 'EDIT' | 'DELETE' | 'REBOOT'>('NONE');
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(true);
+  const [error, setError] = useState<string>('');
 
   // Form State
-  const [formData, setFormData] = useState<Partial<Device>>({
-    name: '', ip: '', port: 8000, brand: 'Hikvision', model: '', id: ''
+  const [formData, setFormData] = useState<Partial<Device> & { username?: string; password?: string }>({
+    name: '', ip: '', port: 8000, brand: 'Hikvision', model: '', username: 'admin', password: '123456'
   });
+
+  // 加载设备列表
+  const loadDevices = async () => {
+    setIsLoadingDevices(true);
+    setError('');
+    try {
+      const params: any = {};
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'ALL') params.status = statusFilter;
+      
+      const response = await deviceService.getDevices(params);
+      // 转换后端数据格式到前端格式
+      const deviceList = response.data.map((d: any) => ({
+        id: d.id || `${d.ip}:${d.port}`,
+        name: d.name || '',
+        ip: d.ip || '',
+        port: d.port || 8000,
+        brand: d.brand || 'Hikvision',
+        model: d.model || '',
+        status: (d.status?.toUpperCase() as DeviceStatus) || DeviceStatus.OFFLINE,
+        lastSeen: d.lastSeen || 'Never',
+        firmware: d.firmware || '',
+        rtspUrl: d.rtspUrl || '',
+      }));
+      setDevices(deviceList);
+    } catch (err: any) {
+      setError(err.message || '加载设备列表失败');
+      console.error('加载设备列表失败:', err);
+    } finally {
+      setIsLoadingDevices(false);
+    }
+  };
+
+  // 初始加载和搜索/过滤变化时重新加载
+  useEffect(() => {
+    loadDevices();
+  }, [searchTerm, statusFilter]);
 
   const openAddModal = () => {
     setFormData({ name: '', ip: '', port: 8000, brand: 'Hikvision', model: '' });
@@ -100,28 +138,62 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
     setIsLoading(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setIsLoading(true);
-    setTimeout(() => {
-      // Mock save logic
+    try {
+      if (activeModal === 'ADD') {
+        await deviceService.addDevice({
+          name: formData.name,
+          ip: formData.ip,
+          port: formData.port,
+          brand: formData.brand,
+          model: formData.model,
+          username: formData.username || 'admin',
+          password: formData.password || '123456',
+          channel: 1,
+        } as any);
+      } else if (activeModal === 'EDIT' && selectedDevice) {
+        await deviceService.updateDevice(selectedDevice.id, {
+          name: formData.name,
+          ip: formData.ip,
+          port: formData.port,
+          brand: formData.brand,
+          model: formData.model,
+        });
+      }
       handleCloseModal();
-    }, 1000);
+      await loadDevices(); // 重新加载列表
+    } catch (err: any) {
+      alert(err.message || '保存失败');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (!selectedDevice) return;
     setIsLoading(true);
-    setTimeout(() => {
-      // Mock delete logic
+    try {
+      await deviceService.deleteDevice(selectedDevice.id);
       handleCloseModal();
-    }, 1000);
+      await loadDevices(); // 重新加载列表
+    } catch (err: any) {
+      alert(err.message || '删除失败');
+      setIsLoading(false);
+    }
   };
 
-  const handleReboot = () => {
+  const handleReboot = async () => {
+    if (!selectedDevice) return;
     setIsLoading(true);
-    setTimeout(() => {
-      // Mock reboot logic
+    try {
+      await deviceService.rebootDevice(selectedDevice.id);
       handleCloseModal();
-    }, 1500);
+      await loadDevices(); // 重新加载列表
+    } catch (err: any) {
+      alert(err.message || '重启失败');
+      setIsLoading(false);
+    }
   };
 
   // Translation Helpers
@@ -142,11 +214,8 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
     return lastSeen;
   };
 
-  const filteredDevices = MOCK_DEVICES.filter(device => {
-    const matchesSearch = device.name.toLowerCase().includes(searchTerm.toLowerCase()) || device.ip.includes(searchTerm);
-    const matchesStatus = statusFilter === 'ALL' || device.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // 设备列表已经在API层面过滤，这里直接使用
+  const filteredDevices = devices;
 
   const getStatusColor = (status: DeviceStatus) => {
     switch(status) {
@@ -189,8 +258,12 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
         </div>
 
         <div className="flex items-center space-x-3 w-full md:w-auto">
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium text-sm shadow-sm">
-            <RefreshCw size={16} />
+          <button 
+            onClick={loadDevices}
+            disabled={isLoadingDevices}
+            className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium text-sm shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={isLoadingDevices ? 'animate-spin' : ''} />
             <span>{t('refresh')}</span>
           </button>
           <button 
@@ -203,8 +276,21 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
         </div>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
+          {error}
+        </div>
+      )}
+
       {/* Device Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {isLoadingDevices ? (
+          <div className="p-12 text-center">
+            <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-4 text-gray-500">加载中...</p>
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -222,7 +308,7 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
                 <tr 
                   key={device.id} 
                   className="hover:bg-blue-50/30 transition-colors cursor-pointer group"
-                  onClick={() => onSelectDevice(device.id)}
+                  onClick={() => navigate(`/devices/${device.id}`)}
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(device.status)}`}>
@@ -251,7 +337,7 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
                       <button 
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title={t('live_view')}
-                        onClick={(e) => { e.stopPropagation(); onSelectDevice(device.id); }}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/devices/${device.id}`); }}
                       >
                         <Video size={18} />
                       </button>
@@ -283,7 +369,8 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
             </tbody>
           </table>
         </div>
-        {filteredDevices.length === 0 && (
+        )}
+        {!isLoadingDevices && filteredDevices.length === 0 && (
           <div className="p-12 text-center text-gray-500">
             <Search className="mx-auto mb-4 text-gray-300" size={48} />
             <p>No devices found matching your criteria.</p>
@@ -363,7 +450,8 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
               <input 
                 type="text" 
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" 
-                value="admin"
+                value={formData.username || 'admin'}
+                onChange={e => setFormData({...formData, username: e.target.value})}
               />
            </div>
            <div>
@@ -371,7 +459,9 @@ export const DeviceList: React.FC<DeviceListProps> = ({ onSelectDevice }) => {
               <input 
                 type="password" 
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" 
-                value="******"
+                value={formData.password || ''}
+                onChange={e => setFormData({...formData, password: e.target.value})}
+                placeholder="输入设备密码"
               />
            </div>
         </div>

@@ -58,7 +58,7 @@ log:
 
 # SDK配置
 sdk:
-  lib_path: "../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll"  # SDK库文件路径
+  lib_path: "./MakeAll"  # SDK库文件路径（已复制到项目目录）
   log_path: "./sdkLog"  # SDK日志路径
   log_level: 3  # SDK日志级别
 

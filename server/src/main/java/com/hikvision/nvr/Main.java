@@ -1,6 +1,8 @@
 package com.hikvision.nvr;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hikvision.nvr.api.*;
+import com.hikvision.nvr.auth.AuthFilter;
 import com.hikvision.nvr.command.CommandHandler;
 import com.hikvision.nvr.command.CommandResponse;
 import com.hikvision.nvr.config.Config;
@@ -13,8 +15,10 @@ import com.hikvision.nvr.keeper.Keeper;
 import com.hikvision.nvr.mqtt.MqttClient;
 import com.hikvision.nvr.recorder.Recorder;
 import com.hikvision.nvr.scanner.DeviceScanner;
+import com.hikvision.nvr.service.ConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import spark.Spark;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -34,6 +38,7 @@ public class Main {
     private CommandHandler commandHandler;
     private Keeper keeper;
     private Recorder recorder;
+    private ConfigService configService;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -72,6 +77,26 @@ public class Main {
             }
             logger.info("数据库初始化成功");
 
+            // 3.5. 初始化配置服务（混合模式：数据库优先，YAML作为默认值）
+            configService = new ConfigService(database, config);
+            config = configService.getConfig(); // 使用从数据库加载的配置
+            logger.info("配置服务初始化成功");
+
+            // 3.6. 使用配置中的SDK信息初始化默认驱动
+            if (config.getSdk() != null) {
+                Config.SdkConfig sdkConfig = config.getSdk();
+                database.initDefaultDriverWithConfig(
+                    "hikvision_sdk",
+                    "Hikvision SDK",
+                    "6.1.9.45",
+                    sdkConfig.getLibPath() != null ? sdkConfig.getLibPath() : "./MakeAll",
+                    sdkConfig.getLogPath() != null ? sdkConfig.getLogPath() : "./sdkLog",
+                    sdkConfig.getLogLevel() > 0 ? sdkConfig.getLogLevel() : 3,
+                    "ACTIVE"
+                );
+                logger.info("默认SDK驱动配置已初始化");
+            }
+
             // 4. 初始化设备管理器
             deviceManager = new DeviceManager(sdk, database, config.getDevice());
             logger.info("设备管理器初始化成功");
@@ -106,7 +131,11 @@ public class Main {
             keeper.start();
             logger.info("保活系统启动成功");
 
-            // 10. 注册JVM关闭钩子
+            // 10. 启动HTTP服务器
+            startHttpServer();
+            logger.info("HTTP服务器启动成功");
+
+            // 11. 注册JVM关闭钩子
             Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
             logger.info("========================================");
@@ -193,6 +222,89 @@ public class Main {
     }
 
     /**
+     * 启动HTTP服务器
+     */
+    private void startHttpServer() {
+        int port = 8080; // 默认端口，可以从配置中读取
+        
+        Spark.port(port);
+        
+        // 设置CORS
+        Spark.before((request, response) -> {
+            response.header("Access-Control-Allow-Origin", "*");
+            response.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            response.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            response.type("application/json");
+        });
+        
+        // 处理OPTIONS请求
+        Spark.options("/*", (request, response) -> {
+            return "";
+        });
+        
+        // 注册认证过滤器
+        Spark.before(new AuthFilter());
+        
+        // 初始化控制器
+        AuthController authController = new AuthController(database);
+        DeviceController deviceController = new DeviceController(deviceManager, sdk, database);
+        DriverController driverController = new DriverController(database);
+        MqttController mqttController = new MqttController(configService, mqttClient);
+        SystemController systemController = new SystemController(configService);
+        DashboardController dashboardController = new DashboardController(deviceManager);
+        
+        // 注册路由
+        // 认证路由
+        Spark.post("/api/auth/login", authController::login);
+        
+        // 设备路由
+        Spark.get("/api/devices", deviceController::getDevices);
+        Spark.get("/api/devices/:id", deviceController::getDevice);
+        Spark.post("/api/devices", deviceController::addDevice);
+        Spark.put("/api/devices/:id", deviceController::updateDevice);
+        Spark.delete("/api/devices/:id", deviceController::deleteDevice);
+        Spark.post("/api/devices/:id/reboot", deviceController::rebootDevice);
+        
+        // 驱动路由
+        Spark.get("/api/drivers", driverController::getDrivers);
+        Spark.get("/api/drivers/:id", driverController::getDriver);
+        Spark.post("/api/drivers", driverController::addDriver);
+        Spark.put("/api/drivers/:id", driverController::updateDriver);
+        Spark.delete("/api/drivers/:id", driverController::deleteDriver);
+        
+        // MQTT路由
+        Spark.get("/api/mqtt/config", mqttController::getConfig);
+        Spark.put("/api/mqtt/config", mqttController::updateConfig);
+        Spark.post("/api/mqtt/test", mqttController::testConnection);
+        
+        // 系统配置路由
+        Spark.get("/api/system/config", systemController::getConfig);
+        Spark.put("/api/system/config", systemController::updateConfig);
+        
+        // 仪表板路由
+        Spark.get("/api/dashboard/stats", dashboardController::getStats);
+        Spark.get("/api/dashboard/chart", dashboardController::getChart);
+        
+        // 异常处理
+        Spark.exception(Exception.class, (exception, request, response) -> {
+            logger.error("处理请求时发生异常", exception);
+            response.status(500);
+            response.type("application/json");
+            try {
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("code", 500);
+                errorResponse.put("message", "Internal server error: " + exception.getMessage());
+                errorResponse.put("data", null);
+                response.body(objectMapper.writeValueAsString(errorResponse));
+            } catch (Exception e) {
+                response.body("{\"code\":500,\"message\":\"Internal error\",\"data\":null}");
+            }
+        });
+        
+        logger.info("HTTP服务器已启动，端口: {}", port);
+    }
+
+    /**
      * 关闭服务
      */
     private void shutdown() {
@@ -229,6 +341,9 @@ public class Main {
                 database.close();
             }
 
+            // 停止HTTP服务器
+            Spark.stop();
+            
             // 清理SDK
             if (sdk != null) {
                 sdk.cleanup();

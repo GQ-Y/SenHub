@@ -1,15 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Eye, Database, Cloud, Activity, FileText, Settings, CheckCircle2, Download } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
+import { systemService } from '../src/api/services';
+import { SystemConfig } from '../types';
 
 export const SystemSettings: React.FC = () => {
   const { t } = useAppContext();
   const [activeTab, setActiveTab] = useState('scanner');
   const [showToast, setShowToast] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [config, setConfig] = useState<SystemConfig>({
+    scanner: { enabled: true, interval: 300, ports: '80, 8000, 554, 37777' },
+    auth: { defaultUser: 'admin', timeout: 5000 },
+    keeper: { enabled: true, checkInterval: 60 },
+    oss: { enabled: false, endpoint: '', bucket: '' },
+    log: { level: 'info', retentionDays: 30 },
+  });
 
-  const handleSave = () => {
+  // 加载系统配置
+  useEffect(() => {
+    const loadConfig = async () => {
+      setIsLoading(true);
+      try {
+        const response = await systemService.getConfig();
+        setConfig(response.data);
+      } catch (err) {
+        console.error('加载系统配置失败:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadConfig();
+  }, []);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await systemService.updateConfig(config);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
+    } catch (err: any) {
+      alert(err.message || '保存失败');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const TABS = [
@@ -50,6 +86,11 @@ export const SystemSettings: React.FC = () => {
       </div>
 
       {/* Content */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : (
       <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 min-h-[400px]">
         {activeTab === 'scanner' && (
            <div className="space-y-6 animate-fade-in">
@@ -59,22 +100,43 @@ export const SystemSettings: React.FC = () => {
                     <p className="text-gray-500 text-sm">Automatically discover ONVIF devices on the local network.</p>
                 </div>
                 <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
-                    <input type="checkbox" name="toggle" id="toggle" className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 checked:border-blue-600"/>
-                    <label htmlFor="toggle" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer checked:bg-blue-600"></label>
+                    <input 
+                      type="checkbox" 
+                      checked={config.scanner.enabled}
+                      onChange={(e) => setConfig({...config, scanner: {...config.scanner, enabled: e.target.checked}})}
+                      className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 checked:border-blue-600"
+                    />
+                    <label className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer checked:bg-blue-600"></label>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
                   <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Scan Interval (seconds)</label>
-                      <input type="number" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue={300} />
+                      <input 
+                        type="number" 
+                        value={config.scanner.interval}
+                        onChange={(e) => setConfig({...config, scanner: {...config.scanner, interval: parseInt(e.target.value) || 300}})}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                      />
                   </div>
                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Target Subnet</label>
-                      <input type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="192.168.1.0/24" />
+                      <input 
+                        type="text" 
+                        value={config.scanner.ports}
+                        onChange={(e) => setConfig({...config, scanner: {...config.scanner, ports: e.target.value}})}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                        placeholder="80, 8000, 554, 37777"
+                      />
                   </div>
                   <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Target Ports (Comma separated)</label>
-                      <input type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="80, 8000, 554, 37777" />
+                      <input 
+                        type="text" 
+                        value={config.scanner.ports}
+                        onChange={(e) => setConfig({...config, scanner: {...config.scanner, ports: e.target.value}})}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                      />
                   </div>
               </div>
            </div>
@@ -111,19 +173,33 @@ export const SystemSettings: React.FC = () => {
 
         {activeTab === 'keeper' && (
             <div className="space-y-6 animate-fade-in">
-                <h3 className="text-lg font-bold text-gray-800">{t('keeper')}</h3>
-                <p className="text-gray-500 text-sm mb-4">Monitor device health and automatically attempt recovery.</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">{t('keeper')}</h3>
+                    <p className="text-gray-500 text-sm mb-4">Monitor device health and automatically attempt recovery.</p>
+                  </div>
+                  <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                    <input 
+                      type="checkbox" 
+                      checked={config.keeper.enabled}
+                      onChange={(e) => setConfig({...config, keeper: {...config.keeper, enabled: e.target.checked}})}
+                      className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 checked:border-blue-600"
+                    />
+                    <label className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer checked:bg-blue-600"></label>
+                  </div>
+                </div>
                 <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl text-yellow-800 text-sm">
                     ⚠️ Reducing the check interval below 30 seconds may increase network load significantly.
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                      <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Check Interval (seconds)</label>
-                      <input type="number" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue={60} />
-                  </div>
-                  <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Offline Threshold (Missed pings)</label>
-                      <input type="number" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue={3} />
+                      <input 
+                        type="number" 
+                        value={config.keeper.checkInterval}
+                        onChange={(e) => setConfig({...config, keeper: {...config.keeper, checkInterval: parseInt(e.target.value) || 60}})}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                      />
                   </div>
                 </div>
             </div>
@@ -140,15 +216,21 @@ export const SystemSettings: React.FC = () => {
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">{t('def_user')}</label>
-                        <input type="text" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="admin" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{t('def_pass')}</label>
-                        <input type="password" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="admin123" />
+                        <input 
+                          type="text" 
+                          value={config.auth.defaultUser}
+                          onChange={(e) => setConfig({...config, auth: {...config.auth, defaultUser: e.target.value}})}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                        />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">{t('timeout')}</label>
-                        <input type="number" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="5000" />
+                        <input 
+                          type="number" 
+                          value={config.auth.timeout}
+                          onChange={(e) => setConfig({...config, auth: {...config.auth, timeout: parseInt(e.target.value) || 5000}})}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                        />
                     </div>
                 </div>
             </div>
@@ -165,16 +247,25 @@ export const SystemSettings: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">{t('log_level')}</label>
-                         <select className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500">
-                            <option>INFO</option>
-                            <option>DEBUG</option>
-                            <option>WARN</option>
-                            <option>ERROR</option>
+                         <select 
+                           value={config.log.level}
+                           onChange={(e) => setConfig({...config, log: {...config.log, level: e.target.value}})}
+                           className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                         >
+                            <option value="info">INFO</option>
+                            <option value="debug">DEBUG</option>
+                            <option value="warn">WARN</option>
+                            <option value="error">ERROR</option>
                         </select>
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">{t('retention')}</label>
-                        <input type="number" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" defaultValue="30" />
+                        <input 
+                          type="number" 
+                          value={config.log.retentionDays}
+                          onChange={(e) => setConfig({...config, log: {...config.log, retentionDays: parseInt(e.target.value) || 30}})}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                        />
                     </div>
                 </div>
                 <div className="pt-4 border-t border-gray-100">
@@ -189,12 +280,21 @@ export const SystemSettings: React.FC = () => {
         <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
             <button 
                 onClick={handleSave}
-                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-medium shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors"
+                disabled={isSaving}
+                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-medium shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center"
             >
-                {t('save_settings')}
+                {isSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                    <span>保存中...</span>
+                  </>
+                ) : (
+                  <span>{t('save_settings')}</span>
+                )}
             </button>
         </div>
       </div>
+      )}
     </div>
   );
 };

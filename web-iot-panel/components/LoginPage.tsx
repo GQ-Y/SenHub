@@ -1,25 +1,34 @@
 import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Camera, Lock, User, ArrowRight } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
+import { authService } from '../src/api/services';
 
 export const LoginPage: React.FC = () => {
   const { login, t, setLanguage, language } = useAppContext();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const [password, setPassword] = useState('123456');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate network delay
-    setTimeout(() => {
-        setIsLoading(false);
-        if (username === 'admin' && password === 'admin') {
-            login();
-        } else {
-            alert('Invalid credentials (try admin/admin)');
-        }
-    }, 800);
+    setError('');
+
+    try {
+      await authService.login(username, password);
+      login();
+      // 重定向到之前尝试访问的页面，或默认到首页
+      const from = (location.state as any)?.from?.pathname || '/';
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      setError(err.message || '登录失败，请检查用户名和密码');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -68,10 +77,16 @@ export const LoginPage: React.FC = () => {
                 </div>
             </div>
 
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                    {error}
+                </div>
+            )}
+
             <button 
                 type="submit" 
                 disabled={isLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {isLoading ? (
                     <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
