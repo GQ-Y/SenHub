@@ -30,6 +30,9 @@ public class Config {
     @JsonProperty("sdk")
     private SdkConfig sdk;
 
+    @JsonProperty("recorder")
+    private RecorderConfig recorder;
+
     // Getters and Setters
     public MqttConfig getMqtt() {
         return mqtt;
@@ -93,6 +96,14 @@ public class Config {
 
     public void setSdk(SdkConfig sdk) {
         this.sdk = sdk;
+    }
+
+    public RecorderConfig getRecorder() {
+        return recorder;
+    }
+
+    public void setRecorder(RecorderConfig recorder) {
+        this.recorder = recorder;
     }
 
     public static class MqttConfig {
@@ -272,5 +283,21 @@ public class Config {
         public void setLogPath(String logPath) { this.logPath = logPath; }
         public int getLogLevel() { return logLevel; }
         public void setLogLevel(int logLevel) { this.logLevel = logLevel; }
+    }
+
+    public static class RecorderConfig {
+        private boolean enabled;
+        @JsonProperty("record_path")
+        private String recordPath;
+        @JsonProperty("retention_minutes")
+        private int retentionMinutes; // 保留时长（分钟）
+
+        // Getters and Setters
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getRecordPath() { return recordPath; }
+        public void setRecordPath(String recordPath) { this.recordPath = recordPath; }
+        public int getRetentionMinutes() { return retentionMinutes; }
+        public void setRetentionMinutes(int retentionMinutes) { this.retentionMinutes = retentionMinutes; }
     }
 }

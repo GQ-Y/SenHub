@@ -3,8 +3,10 @@ package com.hikvision.nvr.command;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.database.DeviceInfo;
+import com.hikvision.nvr.hikvision.DeviceStorageChecker;
 import com.hikvision.nvr.hikvision.HCNetSDK;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
+import com.hikvision.nvr.recorder.Recorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.Base64;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,11 +29,13 @@ public class CommandHandler {
     private static final Logger logger = LoggerFactory.getLogger(CommandHandler.class);
     private DeviceManager deviceManager;
     private HikvisionSDK sdk;
+    private Recorder recorder;
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    public CommandHandler(DeviceManager deviceManager, HikvisionSDK sdk) {
+    public CommandHandler(DeviceManager deviceManager, HikvisionSDK sdk, Recorder recorder) {
         this.deviceManager = deviceManager;
         this.sdk = sdk;
+        this.recorder = recorder;
     }
 
     /**
@@ -204,6 +209,8 @@ public class CommandHandler {
 
     /**
      * 处理回放命令（按时间下载录像）
+     * 优先使用本地录制文件，如果没有则从设备下载
+     * 时间限制：只能查询当前系统时间前后1分钟（共2分钟）的视频
      */
     private CommandResponse handlePlayback(int userId, String deviceId, String requestId, Map<String, Object> command) {
         try {
@@ -218,13 +225,77 @@ public class CommandHandler {
                 return createErrorResponse(requestId, deviceId, "playback", "设备不存在");
             }
 
-            // 获取参数
+            // 获取参数（如果未提供时间，则使用当前时间前1分钟作为目标时间）
             String startTimeStr = (String) command.get("start_time");
             String endTimeStr = (String) command.get("end_time");
-            int channel = command.get("channel") != null ? ((Number) command.get("channel")).intValue() : 1;
+            int channel = command.get("channel") != null ? ((Number) command.get("channel")).intValue() : device.getChannel();
 
+            // 如果没有提供时间，使用当前时间前1分钟（前后30秒，共1分钟）
+            Date targetTime;
             if (startTimeStr == null || endTimeStr == null) {
-                return createErrorResponse(requestId, deviceId, "playback", "开始时间和结束时间不能为空");
+                Calendar cal = Calendar.getInstance();
+                cal.add(Calendar.MINUTE, -1); // 当前时间前1分钟
+                targetTime = cal.getTime();
+                
+                // 计算前后30秒的时间范围
+                cal.add(Calendar.SECOND, -30);
+                Date startTime = cal.getTime();
+                cal.add(Calendar.SECOND, 60);
+                Date endTime = cal.getTime();
+                
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                startTimeStr = sdf.format(startTime);
+                endTimeStr = sdf.format(endTime);
+            } else {
+                // 解析提供的时间
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                targetTime = sdf.parse(startTimeStr);
+            }
+
+            // 验证时间范围：只能查询当前时间前后1分钟（共2分钟）
+            Date now = new Date();
+            long timeDiff = Math.abs(now.getTime() - targetTime.getTime());
+            long maxDiff = 60 * 1000; // 1分钟 = 60秒 = 60000毫秒
+            
+            if (timeDiff > maxDiff) {
+                return createErrorResponse(requestId, deviceId, "playback", 
+                    "时间超出范围，只能查询当前系统时间前后1分钟的视频");
+            }
+
+            // 优先尝试从本地录制文件获取
+            if (recorder != null) {
+                String localFile = recorder.getRecordFile(deviceId, targetTime);
+                if (localFile != null) {
+                    File file = new File(localFile);
+                    if (file.exists() && file.length() > 0) {
+                        try {
+                            // 读取本地文件并转换为base64
+                            byte[] videoBytes = Files.readAllBytes(Paths.get(localFile));
+                            String base64Video = Base64.getEncoder().encodeToString(videoBytes);
+
+                            Map<String, Object> playbackData = new HashMap<>();
+                            playbackData.put("source", "local");
+                            playbackData.put("file_path", localFile);
+                            playbackData.put("file_size", videoBytes.length);
+                            playbackData.put("video_base64", base64Video);
+                            playbackData.put("channel", channel);
+                            playbackData.put("start_time", startTimeStr);
+                            playbackData.put("end_time", endTimeStr);
+
+                            logger.info("从本地录制文件获取回放: 设备={}, 文件={}, 大小={}字节", 
+                                deviceId, localFile, videoBytes.length);
+                            return createSuccessResponse(requestId, deviceId, "playback", playbackData);
+                        } catch (Exception e) {
+                            logger.warn("读取本地录制文件失败，尝试从设备下载: {}", localFile, e);
+                        }
+                    }
+                }
+            }
+
+            // 本地文件不存在，尝试从设备下载
+            // 首先检查设备是否有存储
+            if (!DeviceStorageChecker.hasStorage(hcNetSDK, userId)) {
+                return createErrorResponse(requestId, deviceId, "playback", "未加载存储介质");
             }
 
             // 解析时间字符串 "2024-01-01 10:00:00"
@@ -277,6 +348,7 @@ public class CommandHandler {
 
             // 构建响应数据
             Map<String, Object> playbackData = new HashMap<>();
+            playbackData.put("source", "device");
             playbackData.put("download_handle", downloadHandle);
             playbackData.put("file_path", fileName);
             playbackData.put("channel", channel);
@@ -284,7 +356,7 @@ public class CommandHandler {
             playbackData.put("end_time", endTimeStr);
             playbackData.put("message", "录像下载已启动，请使用download_handle查询下载进度");
 
-            logger.info("录像下载已启动: 设备={}, 句柄={}, 文件={}", deviceId, downloadHandle, fileName);
+            logger.info("从设备下载录像已启动: 设备={}, 句柄={}, 文件={}", deviceId, downloadHandle, fileName);
 
             // 注意：实际下载是异步的，需要定期查询下载进度
             // 这里返回下载句柄，客户端可以通过其他接口查询下载状态

@@ -11,6 +11,7 @@ import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import com.hikvision.nvr.keeper.Keeper;
 import com.hikvision.nvr.mqtt.MqttClient;
+import com.hikvision.nvr.recorder.Recorder;
 import com.hikvision.nvr.scanner.DeviceScanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,7 @@ public class Main {
     private DeviceScanner scanner;
     private CommandHandler commandHandler;
     private Keeper keeper;
+    private Recorder recorder;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -74,7 +76,12 @@ public class Main {
             deviceManager = new DeviceManager(sdk, database, config.getDevice());
             logger.info("设备管理器初始化成功");
 
-            // 5. 初始化MQTT客户端
+            // 5. 初始化录制管理器
+            recorder = new Recorder(sdk, deviceManager, config.getRecorder());
+            recorder.start();
+            logger.info("录制管理器初始化成功");
+
+            // 6. 初始化MQTT客户端
             mqttClient = new MqttClient(config.getMqtt());
             setupMqttMessageHandler();
             if (!mqttClient.connect()) {
@@ -83,23 +90,23 @@ public class Main {
             }
             logger.info("MQTT客户端连接成功");
 
-            // 6. 初始化命令处理器
-            commandHandler = new CommandHandler(deviceManager, sdk);
+            // 7. 初始化命令处理器
+            commandHandler = new CommandHandler(deviceManager, sdk, recorder);
             logger.info("命令处理器初始化成功");
 
-            // 7. 启动设备扫描器
+            // 8. 启动设备扫描器
             scanner = new DeviceScanner(sdk, database, config.getScanner(), config.getDevice());
             scanner.setDeviceFoundCallback(this::onDeviceFound);
             if (scanner.start()) {
                 logger.info("设备扫描器启动成功");
             }
 
-            // 8. 启动保活系统
+            // 9. 启动保活系统
             keeper = new Keeper(deviceManager, config.getKeeper());
             keeper.start();
             logger.info("保活系统启动成功");
 
-            // 9. 注册JVM关闭钩子
+            // 10. 注册JVM关闭钩子
             Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
             logger.info("========================================");
@@ -146,6 +153,11 @@ public class Main {
             if (deviceManager.loginDevice(device)) {
                 // 发布设备上线状态
                 publishDeviceStatus(device, "online");
+                
+                // 如果录制功能启用，自动启动录制
+                if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
+                    recorder.startRecording(device.getDeviceId());
+                }
             } else {
                 // 发布设备离线状态
                 publishDeviceStatus(device, "offline");
@@ -195,6 +207,11 @@ public class Main {
             // 停止设备扫描器
             if (scanner != null) {
                 scanner.stop();
+            }
+
+            // 停止录制管理器
+            if (recorder != null) {
+                recorder.stop();
             }
 
             // 登出所有设备
