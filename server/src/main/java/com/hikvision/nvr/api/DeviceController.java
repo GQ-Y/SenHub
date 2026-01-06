@@ -338,6 +338,452 @@ public class DeviceController {
         return "rtsp://" + ip + ":" + rtspPort + "/Streaming/Channels/101";
     }
 
+    /**
+     * 设备快照/抓图
+     * POST /api/devices/:id/snapshot
+     */
+    public String captureSnapshot(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            // 确保设备已登录
+            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
+                if (!deviceManager.loginDevice(device)) {
+                    response.status(500);
+                    return createErrorResponse(500, "设备登录失败，无法抓图");
+                }
+            }
+            
+            int userId = deviceManager.getDeviceUserId(deviceId);
+            int channel = device.getChannel() > 0 ? device.getChannel() : 1;
+            HCNetSDK hcNetSDK = sdk.getSDK();
+            
+            if (hcNetSDK == null) {
+                response.status(500);
+                return createErrorResponse(500, "SDK未初始化");
+            }
+            
+            // 设置抓图参数
+            HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
+            jpegPara.wPicSize = 0; // 0=CIF, 使用当前分辨率
+            jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
+            jpegPara.write();
+            
+            // 创建临时文件保存图片
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            String timestamp = sdf.format(new Date());
+            String picDir = "./captures";
+            java.io.File dir = new java.io.File(picDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            String picFileName = picDir + "/capture_" + deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".jpg";
+            byte[] fileNameBytes = picFileName.getBytes("UTF-8");
+            byte[] fileNameArray = new byte[256];
+            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
+            
+            // 执行抓图
+            boolean captureResult = hcNetSDK.NET_DVR_CaptureJPEGPicture(userId, channel, jpegPara, fileNameArray);
+            
+            if (!captureResult) {
+                int errorCode = sdk.getLastError();
+                response.status(500);
+                return createErrorResponse(500, "抓图失败，错误码: " + errorCode);
+            }
+            
+            // 等待文件写入完成
+            Thread.sleep(1000);
+            
+            // 检查文件是否存在
+            java.io.File picFile = new java.io.File(picFileName);
+            if (!picFile.exists()) {
+                response.status(500);
+                return createErrorResponse(500, "抓图文件未生成");
+            }
+            
+            // 返回文件URL（相对路径，前端可以通过代理访问）
+            Map<String, Object> data = new HashMap<>();
+            data.put("url", "/api/devices/" + deviceId + "/snapshot/file?path=" + java.net.URLEncoder.encode(picFileName, "UTF-8"));
+            data.put("filePath", picFileName);
+            data.put("timestamp", timestamp);
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("抓图失败", e);
+            response.status(500);
+            return createErrorResponse(500, "抓图失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取快照文件
+     * GET /api/devices/:id/snapshot/file?path=...
+     */
+    public Object getSnapshotFile(Request request, Response response) {
+        try {
+            String path = request.queryParams("path");
+            if (path == null || path.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "路径参数不能为空");
+            }
+            
+            // 安全检查：确保路径在captures目录下
+            java.io.File file = new java.io.File(path);
+            if (!file.exists() || !file.getCanonicalPath().startsWith(new java.io.File("./captures").getCanonicalPath())) {
+                response.status(404);
+                return createErrorResponse(404, "文件不存在");
+            }
+            
+            response.status(200);
+            response.type("image/jpeg");
+            response.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
+            
+            // 读取文件并返回
+            java.nio.file.Files.copy(file.toPath(), response.raw().getOutputStream());
+            return "";
+        } catch (Exception e) {
+            logger.error("获取快照文件失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取快照文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * PTZ控制
+     * POST /api/devices/:id/ptz
+     */
+    public String ptzControl(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            // 确保设备已登录
+            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
+                if (!deviceManager.loginDevice(device)) {
+                    response.status(500);
+                    return createErrorResponse(500, "设备登录失败，无法控制PTZ");
+                }
+            }
+            
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String action = (String) body.get("action"); // start/stop
+            String command = (String) body.get("command"); // up/down/left/right/zoom_in/zoom_out
+            int speed = body.get("speed") != null ? ((Number) body.get("speed")).intValue() : 1;
+            
+            if (action == null || command == null) {
+                response.status(400);
+                return createErrorResponse(400, "action和command参数不能为空");
+            }
+            
+            int userId = deviceManager.getDeviceUserId(deviceId);
+            int channel = device.getChannel() > 0 ? device.getChannel() : 1;
+            HCNetSDK hcNetSDK = sdk.getSDK();
+            
+            if (hcNetSDK == null) {
+                response.status(500);
+                return createErrorResponse(500, "SDK未初始化");
+            }
+            
+            // 获取PTZ命令码
+            int commandCode = getPtzCommandCode(command);
+            if (commandCode == -1) {
+                response.status(400);
+                return createErrorResponse(400, "未知的PTZ命令: " + command);
+            }
+            
+            // 执行PTZ控制
+            // action: start=0, stop=1
+            int stopFlag = "stop".equalsIgnoreCase(action) ? 1 : 0;
+            boolean result = hcNetSDK.NET_DVR_PTZControl_Other(userId, channel, commandCode, stopFlag);
+            
+            if (!result) {
+                int errorCode = sdk.getLastError();
+                response.status(500);
+                return createErrorResponse(500, "PTZ控制失败，错误码: " + errorCode);
+            }
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("message", "PTZ控制命令已执行");
+            data.put("action", action);
+            data.put("command", command);
+            data.put("speed", speed);
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("PTZ控制失败", e);
+            response.status(500);
+            return createErrorResponse(500, "PTZ控制失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取PTZ命令码
+     */
+    private int getPtzCommandCode(String command) {
+        switch (command.toLowerCase()) {
+            case "up":
+                return HCNetSDK.TILT_UP;
+            case "down":
+                return HCNetSDK.TILT_DOWN;
+            case "left":
+                return HCNetSDK.PAN_LEFT;
+            case "right":
+                return HCNetSDK.PAN_RIGHT;
+            case "zoom_in":
+                return HCNetSDK.ZOOM_IN;
+            case "zoom_out":
+                return HCNetSDK.ZOOM_OUT;
+            default:
+                return -1;
+        }
+    }
+
+    /**
+     * 获取视频流地址
+     * GET /api/devices/:id/stream
+     */
+    public String getStreamUrl(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            // 返回RTSP URL
+            Map<String, Object> data = new HashMap<>();
+            data.put("rtspUrl", device.getRtspUrl());
+            data.put("streamType", "rtsp");
+            data.put("message", "使用RTSP URL进行视频播放，建议使用支持RTSP的播放器（如VLC）");
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("获取视频流地址失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取视频流地址失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 录像回放
+     * POST /api/devices/:id/playback
+     */
+    public String playback(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            // 确保设备已登录
+            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
+                if (!deviceManager.loginDevice(device)) {
+                    response.status(500);
+                    return createErrorResponse(500, "设备登录失败，无法回放");
+                }
+            }
+            
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String startTimeStr = (String) body.get("startTime");
+            String endTimeStr = (String) body.get("endTime");
+            int channel = body.get("channel") != null ? ((Number) body.get("channel")).intValue() : device.getChannel();
+            
+            if (startTimeStr == null || endTimeStr == null) {
+                response.status(400);
+                return createErrorResponse(400, "startTime和endTime参数不能为空");
+            }
+            
+            int userId = deviceManager.getDeviceUserId(deviceId);
+            HCNetSDK hcNetSDK = sdk.getSDK();
+            
+            if (hcNetSDK == null) {
+                response.status(500);
+                return createErrorResponse(500, "SDK未初始化");
+            }
+            
+            // 解析时间
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            Date startTime = sdf.parse(startTimeStr);
+            Date endTime = sdf.parse(endTimeStr);
+            
+            // 设置回放条件
+            HCNetSDK.NET_DVR_TIME startTimeStruct = convertToDvrTime(startTime);
+            HCNetSDK.NET_DVR_TIME endTimeStruct = convertToDvrTime(endTime);
+            
+            HCNetSDK.NET_DVR_PLAYCOND playCond = new HCNetSDK.NET_DVR_PLAYCOND();
+            playCond.dwChannel = channel;
+            playCond.struStartTime = startTimeStruct;
+            playCond.struStopTime = endTimeStruct;
+            playCond.write();
+            
+            // 生成下载文件名
+            SimpleDateFormat fileSdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            String timestamp = fileSdf.format(startTime);
+            String downloadDir = "./downloads";
+            java.io.File dir = new java.io.File(downloadDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            String fileName = downloadDir + "/playback_" + deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".mp4";
+            
+            // 开始下载
+            int downloadHandle = hcNetSDK.NET_DVR_GetFileByTime_V40(userId, fileName, playCond);
+            if (downloadHandle == -1) {
+                int errorCode = sdk.getLastError();
+                response.status(500);
+                return createErrorResponse(500, "开始下载录像失败，错误码: " + errorCode);
+            }
+            
+            // 启动下载
+            boolean playResult = hcNetSDK.NET_DVR_PlayBackControl(downloadHandle, HCNetSDK.NET_DVR_PLAYSTART, 0, null);
+            if (!playResult) {
+                int errorCode = sdk.getLastError();
+                response.status(500);
+                return createErrorResponse(500, "启动下载失败，错误码: " + errorCode);
+            }
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("downloadHandle", downloadHandle);
+            data.put("filePath", fileName);
+            data.put("channel", channel);
+            data.put("startTime", startTimeStr);
+            data.put("endTime", endTimeStr);
+            data.put("message", "录像下载已启动，请使用downloadHandle查询下载进度");
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("录像回放失败", e);
+            response.status(500);
+            return createErrorResponse(500, "录像回放失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 导出录像
+     * POST /api/devices/:id/export
+     */
+    public String exportVideo(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String filePath = (String) body.get("filePath");
+            
+            if (filePath == null || filePath.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "filePath参数不能为空");
+            }
+            
+            // 安全检查：确保文件在downloads目录下
+            java.io.File file = new java.io.File(filePath);
+            if (!file.exists()) {
+                response.status(404);
+                return createErrorResponse(404, "文件不存在");
+            }
+            
+            if (!file.getCanonicalPath().startsWith(new java.io.File("./downloads").getCanonicalPath())) {
+                response.status(403);
+                return createErrorResponse(403, "无权访问该文件");
+            }
+            
+            // 返回文件下载URL
+            Map<String, Object> data = new HashMap<>();
+            data.put("downloadUrl", "/api/devices/" + deviceId + "/export/file?path=" + java.net.URLEncoder.encode(filePath, "UTF-8"));
+            data.put("fileName", file.getName());
+            data.put("fileSize", file.length());
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("导出录像失败", e);
+            response.status(500);
+            return createErrorResponse(500, "导出录像失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取导出文件
+     * GET /api/devices/:id/export/file?path=...
+     */
+    public Object getExportFile(Request request, Response response) {
+        try {
+            String path = request.queryParams("path");
+            if (path == null || path.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "路径参数不能为空");
+            }
+            
+            // 安全检查：确保路径在downloads目录下
+            java.io.File file = new java.io.File(path);
+            if (!file.exists() || !file.getCanonicalPath().startsWith(new java.io.File("./downloads").getCanonicalPath())) {
+                response.status(404);
+                return createErrorResponse(404, "文件不存在");
+            }
+            
+            response.status(200);
+            response.type("video/mp4");
+            response.header("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
+            
+            // 读取文件并返回
+            java.nio.file.Files.copy(file.toPath(), response.raw().getOutputStream());
+            return "";
+        } catch (Exception e) {
+            logger.error("获取导出文件失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取导出文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 转换Date为NET_DVR_TIME
+     */
+    private HCNetSDK.NET_DVR_TIME convertToDvrTime(Date date) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(date);
+        
+        HCNetSDK.NET_DVR_TIME dvrTime = new HCNetSDK.NET_DVR_TIME();
+        dvrTime.dwYear = cal.get(Calendar.YEAR);
+        dvrTime.dwMonth = cal.get(Calendar.MONTH) + 1;
+        dvrTime.dwDay = cal.get(Calendar.DAY_OF_MONTH);
+        dvrTime.dwHour = cal.get(Calendar.HOUR_OF_DAY);
+        dvrTime.dwMinute = cal.get(Calendar.MINUTE);
+        dvrTime.dwSecond = cal.get(Calendar.SECOND);
+        dvrTime.write();
+        
+        return dvrTime;
+    }
+
 
     private String createSuccessResponse(Object data) {
         try {

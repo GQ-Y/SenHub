@@ -61,6 +61,19 @@ export const DeviceDetail: React.FC = () => {
     loadDevice();
   }, [deviceId]);
 
+  // 全屏事件监听 - 必须在所有条件返回之前调用
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  // 条件返回必须在所有 Hooks 调用之后
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -86,12 +99,40 @@ export const DeviceDetail: React.FC = () => {
   const handleSnapshot = async () => {
     try {
       const response = await deviceService.captureSnapshot(deviceId, 1);
-      if (response.data.url) {
-        setSnapshot(response.data.url);
+      if (response.data?.url) {
+        // 构建完整的URL
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+        const fullUrl = response.data.url.startsWith('http') 
+          ? response.data.url 
+          : `${baseUrl}${response.data.url}`;
+        setSnapshot(fullUrl);
       }
     } catch (err: any) {
       alert(err.message || '获取快照失败');
     }
+  };
+
+  const handleReboot = async () => {
+    if (!confirm('确定要重启设备吗？')) return;
+    try {
+      await deviceService.rebootDevice(deviceId);
+      alert('重启命令已发送');
+    } catch (err: any) {
+      alert(err.message || '重启设备失败');
+    }
+  };
+
+  const handlePtzControl = async (command: string, action: 'start' | 'stop' = 'start') => {
+    try {
+      await deviceService.ptzControl(deviceId, command, action, 1);
+    } catch (err: any) {
+      console.error('PTZ控制失败:', err);
+    }
+  };
+
+  const handleExport = async () => {
+    // 这里需要先有回放文件，暂时提示
+    alert('请先进行录像回放，然后才能导出');
   };
 
   const handleFullscreen = async () => {
@@ -109,17 +150,6 @@ export const DeviceDetail: React.FC = () => {
       console.error('Fullscreen error:', error);
     }
   };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, []);
 
   const getStatusText = (status: string) => {
     if (status === 'ONLINE') return t('online');
@@ -161,7 +191,10 @@ export const DeviceDetail: React.FC = () => {
                 <Settings size={18} />
                 <span>{t('settings')}</span>
             </button>
-            <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+            <button 
+              onClick={handleReboot}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+            >
                 <RotateCw size={18} />
                 <span>{t('reboot')}</span>
             </button>
@@ -245,16 +278,32 @@ export const DeviceDetail: React.FC = () => {
                 <div className="flex justify-center mb-6">
                     <div className="relative w-48 h-48 bg-gray-50 rounded-full border border-gray-200 flex items-center justify-center shadow-inner">
                          {/* D-Pad Buttons */}
-                         <button className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors">
+                         <button 
+                           onMouseDown={() => handlePtzControl('up', 'start')}
+                           onMouseUp={() => handlePtzControl('up', 'stop')}
+                           className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                         >
                             <span className="rotate-90">‹</span>
                          </button>
-                         <button className="absolute bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors">
+                         <button 
+                           onMouseDown={() => handlePtzControl('down', 'start')}
+                           onMouseUp={() => handlePtzControl('down', 'stop')}
+                           className="absolute bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                         >
                             <span className="-rotate-90">‹</span>
                          </button>
-                         <button className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors">
+                         <button 
+                           onMouseDown={() => handlePtzControl('left', 'start')}
+                           onMouseUp={() => handlePtzControl('left', 'stop')}
+                           className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                         >
                             <span>‹</span>
                          </button>
-                         <button className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors">
+                         <button 
+                           onMouseDown={() => handlePtzControl('right', 'start')}
+                           onMouseUp={() => handlePtzControl('right', 'stop')}
+                           className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                         >
                             <span className="rotate-180">‹</span>
                          </button>
                          
@@ -267,13 +316,21 @@ export const DeviceDetail: React.FC = () => {
 
                 <div className="flex justify-between items-center px-4">
                     <div className="flex flex-col items-center space-y-2">
-                        <button className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
+                        <button 
+                          onMouseDown={() => handlePtzControl('zoom_out', 'start')}
+                          onMouseUp={() => handlePtzControl('zoom_out', 'stop')}
+                          className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                        >
                             <ZoomOut size={18} />
                         </button>
                         <span className="text-xs text-gray-500">{t('zoom_out')}</span>
                     </div>
                     <div className="flex flex-col items-center space-y-2">
-                        <button className="w-10 h-10 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors">
+                        <button 
+                          onMouseDown={() => handlePtzControl('zoom_in', 'start')}
+                          onMouseUp={() => handlePtzControl('zoom_in', 'stop')}
+                          className="w-10 h-10 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors"
+                        >
                             <ZoomIn size={18} />
                         </button>
                         <span className="text-xs text-gray-500">{t('zoom_in')}</span>
@@ -292,7 +349,10 @@ export const DeviceDetail: React.FC = () => {
                         <Camera size={20} className="mb-1" />
                         <span className="text-xs font-medium">{t('snapshot')}</span>
                     </button>
-                     <button className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100">
+                     <button 
+                       onClick={handleExport}
+                       className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
+                     >
                         <Download size={20} className="mb-1" />
                         <span className="text-xs font-medium">{t('export')}</span>
                     </button>

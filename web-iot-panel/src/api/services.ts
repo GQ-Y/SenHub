@@ -76,7 +76,43 @@ export const deviceService = {
    * 获取设备快照
    */
   async captureSnapshot(deviceId: string, channel: number = 1) {
-    const response = await post<{ url: string }>(`/devices/${encodeURIComponent(deviceId)}/snapshot`, { channel });
+    const response = await post<{ url: string; filePath: string; timestamp: string }>(`/devices/${encodeURIComponent(deviceId)}/snapshot`, { channel });
+    return response;
+  },
+
+  /**
+   * PTZ控制
+   * @param deviceId 设备ID
+   * @param command PTZ命令 (up/down/left/right/zoom_in/zoom_out)
+   * @param action 动作 (start/stop)
+   * @param speed 速度 (1-7)
+   */
+  async ptzControl(deviceId: string, command: string, action: string, speed: number = 1) {
+    const response = await post<{ message: string }>(`/devices/${encodeURIComponent(deviceId)}/ptz`, { command, action, speed });
+    return response;
+  },
+
+  /**
+   * 获取视频流地址
+   */
+  async getStreamUrl(deviceId: string) {
+    const response = await get<{ rtspUrl: string; streamType: string }>(`/devices/${encodeURIComponent(deviceId)}/stream`);
+    return response;
+  },
+
+  /**
+   * 录像回放
+   */
+  async playback(deviceId: string, startTime: string, endTime: string, channel: number = 1) {
+    const response = await post<{ downloadHandle: number; filePath: string; channel: number; startTime: string; endTime: string }>(`/devices/${encodeURIComponent(deviceId)}/playback`, { startTime, endTime, channel });
+    return response;
+  },
+
+  /**
+   * 导出录像
+   */
+  async exportVideo(deviceId: string, filePath: string) {
+    const response = await post<{ downloadUrl: string; fileName: string; fileSize: number }>(`/devices/${encodeURIComponent(deviceId)}/export`, { filePath });
     return response;
   },
 };

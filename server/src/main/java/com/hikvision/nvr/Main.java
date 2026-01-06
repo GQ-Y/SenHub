@@ -264,6 +264,13 @@ public class Main {
         Spark.put("/api/devices/:id", deviceController::updateDevice);
         Spark.delete("/api/devices/:id", deviceController::deleteDevice);
         Spark.post("/api/devices/:id/reboot", deviceController::rebootDevice);
+        Spark.post("/api/devices/:id/snapshot", deviceController::captureSnapshot);
+        Spark.get("/api/devices/:id/snapshot/file", deviceController::getSnapshotFile);
+        Spark.post("/api/devices/:id/ptz", deviceController::ptzControl);
+        Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
+        Spark.post("/api/devices/:id/playback", deviceController::playback);
+        Spark.post("/api/devices/:id/export", deviceController::exportVideo);
+        Spark.get("/api/devices/:id/export/file", deviceController::getExportFile);
         
         // 驱动路由
         Spark.get("/api/drivers", driverController::getDrivers);
