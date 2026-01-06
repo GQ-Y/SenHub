@@ -75,9 +75,17 @@ export const DeviceDetail: React.FC = () => {
       try {
         const streamResponse = await deviceService.getStreamUrl(deviceId);
         if (streamResponse.data) {
-          // 优先使用videoUrl，如果没有则使用rtspUrl（向后兼容）
-          const videoPath = streamResponse.data.videoUrl || streamResponse.data.rtspUrl;
+          // 只使用videoUrl（必须是FLV格式）
+          const videoPath = streamResponse.data.videoUrl;
           if (videoPath) {
+            // 只播放FLV格式的视频
+            if (!videoPath.includes('.flv')) {
+              console.warn('视频URL不是FLV格式，跳过播放:', videoPath);
+              setVideoUrl('');
+              setIsLoadingVideo(false);
+              return;
+            }
+            
             // 构建完整的视频URL
             const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
             const fullVideoUrl = videoPath.startsWith('http') 
@@ -92,11 +100,21 @@ export const DeviceDetail: React.FC = () => {
               }
               return prevUrl;
             });
+          } else {
+            // 没有videoUrl，清空视频源
+            setVideoUrl('');
+            setIsLoadingVideo(false);
           }
+        } else {
+          // 没有数据，清空视频源
+          setVideoUrl('');
+          setIsLoadingVideo(false);
         }
       } catch (err) {
         console.error('获取录制视频失败:', err);
-        // 不重置videoUrl，保持当前播放
+        // 清空videoUrl，不播放
+        setVideoUrl('');
+        setIsLoadingVideo(false);
       }
     };
 

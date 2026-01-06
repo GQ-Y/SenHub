@@ -6,6 +6,7 @@ import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.hikvision.HCNetSDK;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import com.hikvision.nvr.recorder.Recorder;
+import com.hikvision.nvr.recorder.VideoConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -696,18 +697,34 @@ public class DeviceController {
                 }
                 
                 // 文件名可能包含冒号或下划线，所以需要匹配两种格式
+                // 支持MP4和FLV格式（优先FLV，因为浏览器可以直接播放）
                 String deviceIdForFile = deviceId.replace(".", "_");
                 String prefix1 = "record_" + deviceIdForFile;  // 保留冒号：record_192_168_1_100:8000
                 String prefix2 = "record_" + deviceIdForFile.replace(":", "_");  // 替换冒号：record_192_168_1_100_8000
-                File[] files = recordDir.listFiles((dir, name) -> 
-                    (name.startsWith(prefix1) || name.startsWith(prefix2)) && name.endsWith(".mp4"));
+                File[] files = recordDir.listFiles((dir, name) -> {
+                    boolean matchesPrefix = name.startsWith(prefix1) || name.startsWith(prefix2);
+                    return matchesPrefix && (name.endsWith(".flv") || name.endsWith(".mp4"));
+                });
+                
+                if (files == null || files.length == 0) {
+                    return null;
+                }
                 
                 if (files == null || files.length == 0) {
                     return null;
                 }
                 
                 // 按修改时间排序，获取最新的文件
-                Arrays.sort(files, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
+                // 优先选择FLV文件（浏览器可以直接播放）
+                Arrays.sort(files, (f1, f2) -> {
+                    // FLV文件优先
+                    boolean f1IsFlv = f1.getName().endsWith(".flv");
+                    boolean f2IsFlv = f2.getName().endsWith(".flv");
+                    if (f1IsFlv && !f2IsFlv) return -1;
+                    if (!f1IsFlv && f2IsFlv) return 1;
+                    // 都是同类型，按修改时间排序
+                    return Long.compare(f2.lastModified(), f1.lastModified());
+                });
                 
                 // 排除正在录制的文件
                 String currentRecordingFile = recorder.getCurrentRecordingFile(deviceId);
@@ -793,12 +810,17 @@ public class DeviceController {
             String deviceIdForFile = deviceId.replace(".", "_");
             String expectedPrefix1 = "record_" + deviceIdForFile + "_";  // 保留冒号
             String expectedPrefix2 = "record_" + deviceIdForFile.replace(":", "_") + "_";  // 替换冒号
-            if ((!fileName.startsWith(expectedPrefix1) && !fileName.startsWith(expectedPrefix2)) || !fileName.endsWith(".mp4")) {
+            String expectedPrefix3 = "extract_" + deviceIdForFile.replace(":", "_") + "_";  // 提取文件
+            boolean validPrefix = fileName.startsWith(expectedPrefix1) || fileName.startsWith(expectedPrefix2) || fileName.startsWith(expectedPrefix3);
+            boolean validExtension = fileName.endsWith(".mp4") || fileName.endsWith(".flv");
+            if (!validPrefix || !validExtension) {
                 response.status(400);
                 return createErrorResponse(400, "文件不属于该设备");
             }
             
-            File videoFile = new File("./records/" + fileName);
+            // 确定文件路径（提取文件在extracts子目录）
+            String filePath = fileName.startsWith("extract_") ? "./records/extracts/" + fileName : "./records/" + fileName;
+            File videoFile = new File(filePath);
             if (!videoFile.exists() || !videoFile.isFile()) {
                 response.status(404);
                 return createErrorResponse(404, "视频文件不存在");
@@ -809,8 +831,9 @@ public class DeviceController {
                                  recorder.getCurrentRecordingFile(deviceId).equals(videoFile.getAbsolutePath());
             
             // 设置响应头（必须在写入输出流之前设置）
-            // 使用response.raw()直接设置，避免被CORS过滤器覆盖
-            response.raw().setContentType("video/mp4");
+            // 根据文件扩展名设置Content-Type
+            String contentType = fileName.endsWith(".flv") ? "video/x-flv" : "video/mp4";
+            response.raw().setContentType(contentType);
             response.raw().setHeader("Accept-Ranges", "bytes");
             
             // 如果文件正在录制中，不设置Content-Length，允许流式传输
@@ -996,6 +1019,118 @@ public class DeviceController {
             logger.error("处理Range请求失败", e);
             response.status(500);
             return createErrorResponse(500, "处理Range请求失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 提取指定时间前后30秒的视频片段
+     * POST /api/devices/:id/extract?time=2026-01-06T08:30:00&duration=60
+     * @param time 目标时间（ISO 8601格式，如：2026-01-06T08:30:00）
+     * @param duration 提取时长（秒，默认60秒，即前后30秒）
+     */
+    public String extractVideoSegment(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            // 解析时间参数
+            String timeStr = request.queryParams("time");
+            String durationStr = request.queryParams("duration");
+            
+            if (timeStr == null || timeStr.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "time参数不能为空，格式：2026-01-06T08:30:00");
+            }
+            
+            // 解析时间
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+            Date targetTime;
+            try {
+                targetTime = sdf.parse(timeStr);
+            } catch (Exception e) {
+                response.status(400);
+                return createErrorResponse(400, "时间格式错误，应为：yyyy-MM-ddTHH:mm:ss");
+            }
+            
+            // 解析时长（默认60秒，即前后30秒）
+            double duration = 60.0;
+            if (durationStr != null && !durationStr.isEmpty()) {
+                try {
+                    duration = Double.parseDouble(durationStr);
+                } catch (Exception e) {
+                    // 使用默认值
+                }
+            }
+            
+            // 计算开始时间（目标时间前30秒，或duration/2）
+            double startOffset = duration / 2.0;
+            Date startTime = new Date((long)(targetTime.getTime() - startOffset * 1000));
+            
+            // 查找包含目标时间的录制文件
+            String sourceFile = recorder.getRecordFile(deviceId, targetTime);
+            if (sourceFile == null) {
+                response.status(404);
+                return createErrorResponse(404, "未找到包含指定时间的录制文件");
+            }
+            
+            // 检查FFmpeg是否可用
+            if (!VideoConverter.isFfmpegAvailable()) {
+                response.status(500);
+                return createErrorResponse(500, "FFmpeg不可用，无法提取视频片段");
+            }
+            
+            // 计算视频文件中的相对时间（从文件开始时间到目标时间的秒数）
+            File sourceFileObj = new File(sourceFile);
+            long fileStartTime = sourceFileObj.lastModified();
+            double relativeStartTime = (startTime.getTime() - fileStartTime) / 1000.0;
+            
+            // 确保开始时间不为负
+            if (relativeStartTime < 0) {
+                relativeStartTime = 0;
+                duration = (targetTime.getTime() - fileStartTime) / 1000.0 + duration / 2.0;
+            }
+            
+            // 生成输出文件名
+            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+            String outputFileName = "extract_" + deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".flv";
+            String outputDir = "./records/extracts";
+            File outputDirFile = new File(outputDir);
+            if (!outputDirFile.exists()) {
+                outputDirFile.mkdirs();
+            }
+            String outputPath = outputDir + "/" + outputFileName;
+            
+            // 提取视频片段
+            logger.info("提取视频片段: {} (从{}秒开始，持续{}秒) -> {}", sourceFile, relativeStartTime, duration, outputPath);
+            if (VideoConverter.extractSegment(sourceFile, outputPath, relativeStartTime, duration)) {
+                // 构建访问URL
+                String videoUrl = "/api/devices/" + java.net.URLEncoder.encode(deviceId, "UTF-8") + 
+                                 "/video?file=" + java.net.URLEncoder.encode(outputFileName, "UTF-8");
+                
+                Map<String, Object> data = new HashMap<>();
+                data.put("videoUrl", videoUrl);
+                data.put("fileName", outputFileName);
+                data.put("startTime", sdf.format(startTime));
+                data.put("duration", duration);
+                data.put("message", "视频片段提取成功");
+                
+                response.status(200);
+                response.type("application/json");
+                return createSuccessResponse(data);
+            } else {
+                response.status(500);
+                return createErrorResponse(500, "视频片段提取失败");
+            }
+            
+        } catch (Exception e) {
+            logger.error("提取视频片段失败", e);
+            response.status(500);
+            return createErrorResponse(500, "提取视频片段失败: " + e.getMessage());
         }
     }
 
