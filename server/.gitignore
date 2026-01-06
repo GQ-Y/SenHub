@@ -1,0 +1,14 @@
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+logs/
+data/
+sdkLog/
+lib/
+.idea/
+*.iml
+.DS_Store
+

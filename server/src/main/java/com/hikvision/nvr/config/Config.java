@@ -1,0 +1,268 @@
+package com.hikvision.nvr.config;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * 配置类
+ */
+public class Config {
+    @JsonProperty("mqtt")
+    private MqttConfig mqtt;
+
+    @JsonProperty("scanner")
+    private ScannerConfig scanner;
+
+    @JsonProperty("device")
+    private DeviceConfig device;
+
+    @JsonProperty("keeper")
+    private KeeperConfig keeper;
+
+    @JsonProperty("oss")
+    private OssConfig oss;
+
+    @JsonProperty("database")
+    private DatabaseConfig database;
+
+    @JsonProperty("log")
+    private LogConfig log;
+
+    @JsonProperty("sdk")
+    private SdkConfig sdk;
+
+    // Getters and Setters
+    public MqttConfig getMqtt() {
+        return mqtt;
+    }
+
+    public void setMqtt(MqttConfig mqtt) {
+        this.mqtt = mqtt;
+    }
+
+    public ScannerConfig getScanner() {
+        return scanner;
+    }
+
+    public void setScanner(ScannerConfig scanner) {
+        this.scanner = scanner;
+    }
+
+    public DeviceConfig getDevice() {
+        return device;
+    }
+
+    public void setDevice(DeviceConfig device) {
+        this.device = device;
+    }
+
+    public KeeperConfig getKeeper() {
+        return keeper;
+    }
+
+    public void setKeeper(KeeperConfig keeper) {
+        this.keeper = keeper;
+    }
+
+    public OssConfig getOss() {
+        return oss;
+    }
+
+    public void setOss(OssConfig oss) {
+        this.oss = oss;
+    }
+
+    public DatabaseConfig getDatabase() {
+        return database;
+    }
+
+    public void setDatabase(DatabaseConfig database) {
+        this.database = database;
+    }
+
+    public LogConfig getLog() {
+        return log;
+    }
+
+    public void setLog(LogConfig log) {
+        this.log = log;
+    }
+
+    public SdkConfig getSdk() {
+        return sdk;
+    }
+
+    public void setSdk(SdkConfig sdk) {
+        this.sdk = sdk;
+    }
+
+    public static class MqttConfig {
+        private String broker;
+        @JsonProperty("client_id")
+        private String clientId;
+        private String username;
+        private String password;
+        @JsonProperty("status_topic")
+        private String statusTopic;
+        @JsonProperty("command_topic")
+        private String commandTopic;
+        @JsonProperty("response_topic")
+        private String responseTopic;
+        private int qos;
+        @JsonProperty("keep_alive")
+        private int keepAlive;
+
+        // Getters and Setters
+        public String getBroker() { return broker; }
+        public void setBroker(String broker) { this.broker = broker; }
+        public String getClientId() { return clientId; }
+        public void setClientId(String clientId) { this.clientId = clientId; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+        public String getStatusTopic() { return statusTopic; }
+        public void setStatusTopic(String statusTopic) { this.statusTopic = statusTopic; }
+        public String getCommandTopic() { return commandTopic; }
+        public void setCommandTopic(String commandTopic) { this.commandTopic = commandTopic; }
+        public String getResponseTopic() { return responseTopic; }
+        public void setResponseTopic(String responseTopic) { this.responseTopic = responseTopic; }
+        public int getQos() { return qos; }
+        public void setQos(int qos) { this.qos = qos; }
+        public int getKeepAlive() { return keepAlive; }
+        public void setKeepAlive(int keepAlive) { this.keepAlive = keepAlive; }
+    }
+
+    public static class ScannerConfig {
+        private boolean enabled;
+        private int interval;
+        @JsonProperty("listen_port")
+        private int listenPort;
+        @JsonProperty("listen_ip")
+        private String listenIp;
+
+        // Getters and Setters
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getInterval() { return interval; }
+        public void setInterval(int interval) { this.interval = interval; }
+        public int getListenPort() { return listenPort; }
+        public void setListenPort(int listenPort) { this.listenPort = listenPort; }
+        public String getListenIp() { return listenIp; }
+        public void setListenIp(String listenIp) { this.listenIp = listenIp; }
+    }
+
+    public static class DeviceConfig {
+        @JsonProperty("default_username")
+        private String defaultUsername;
+        @JsonProperty("default_password")
+        private String defaultPassword;
+        @JsonProperty("default_port")
+        private int defaultPort;
+        @JsonProperty("login_timeout")
+        private int loginTimeout;
+        @JsonProperty("reconnect_interval")
+        private int reconnectInterval;
+
+        // Getters and Setters
+        public String getDefaultUsername() { return defaultUsername; }
+        public void setDefaultUsername(String defaultUsername) { this.defaultUsername = defaultUsername; }
+        public String getDefaultPassword() { return defaultPassword; }
+        public void setDefaultPassword(String defaultPassword) { this.defaultPassword = defaultPassword; }
+        public int getDefaultPort() { return defaultPort; }
+        public void setDefaultPort(int defaultPort) { this.defaultPort = defaultPort; }
+        public int getLoginTimeout() { return loginTimeout; }
+        public void setLoginTimeout(int loginTimeout) { this.loginTimeout = loginTimeout; }
+        public int getReconnectInterval() { return reconnectInterval; }
+        public void setReconnectInterval(int reconnectInterval) { this.reconnectInterval = reconnectInterval; }
+    }
+
+    public static class KeeperConfig {
+        private boolean enabled;
+        @JsonProperty("check_interval")
+        private int checkInterval;
+        @JsonProperty("offline_threshold")
+        private int offlineThreshold;
+
+        // Getters and Setters
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getCheckInterval() { return checkInterval; }
+        public void setCheckInterval(int checkInterval) { this.checkInterval = checkInterval; }
+        public int getOfflineThreshold() { return offlineThreshold; }
+        public void setOfflineThreshold(int offlineThreshold) { this.offlineThreshold = offlineThreshold; }
+    }
+
+    public static class OssConfig {
+        private boolean enabled;
+        private String endpoint;
+        @JsonProperty("access_key_id")
+        private String accessKeyId;
+        @JsonProperty("access_key_secret")
+        private String accessKeySecret;
+        @JsonProperty("bucket_name")
+        private String bucketName;
+        private String region;
+
+        // Getters and Setters
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getEndpoint() { return endpoint; }
+        public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
+        public String getAccessKeyId() { return accessKeyId; }
+        public void setAccessKeyId(String accessKeyId) { this.accessKeyId = accessKeyId; }
+        public String getAccessKeySecret() { return accessKeySecret; }
+        public void setAccessKeySecret(String accessKeySecret) { this.accessKeySecret = accessKeySecret; }
+        public String getBucketName() { return bucketName; }
+        public void setBucketName(String bucketName) { this.bucketName = bucketName; }
+        public String getRegion() { return region; }
+        public void setRegion(String region) { this.region = region; }
+    }
+
+    public static class DatabaseConfig {
+        private String path;
+
+        // Getters and Setters
+        public String getPath() { return path; }
+        public void setPath(String path) { this.path = path; }
+    }
+
+    public static class LogConfig {
+        private String level;
+        private String file;
+        @JsonProperty("max_size")
+        private int maxSize;
+        @JsonProperty("max_backups")
+        private int maxBackups;
+        @JsonProperty("max_age")
+        private int maxAge;
+
+        // Getters and Setters
+        public String getLevel() { return level; }
+        public void setLevel(String level) { this.level = level; }
+        public String getFile() { return file; }
+        public void setFile(String file) { this.file = file; }
+        public int getMaxSize() { return maxSize; }
+        public void setMaxSize(int maxSize) { this.maxSize = maxSize; }
+        public int getMaxBackups() { return maxBackups; }
+        public void setMaxBackups(int maxBackups) { this.maxBackups = maxBackups; }
+        public int getMaxAge() { return maxAge; }
+        public void setMaxAge(int maxAge) { this.maxAge = maxAge; }
+    }
+
+    public static class SdkConfig {
+        @JsonProperty("lib_path")
+        private String libPath;
+        @JsonProperty("log_path")
+        private String logPath;
+        @JsonProperty("log_level")
+        private int logLevel;
+
+        // Getters and Setters
+        public String getLibPath() { return libPath; }
+        public void setLibPath(String libPath) { this.libPath = libPath; }
+        public String getLogPath() { return logPath; }
+        public void setLogPath(String logPath) { this.logPath = logPath; }
+        public int getLogLevel() { return logLevel; }
+        public void setLogLevel(int logLevel) { this.logLevel = logLevel; }
+    }
+}
