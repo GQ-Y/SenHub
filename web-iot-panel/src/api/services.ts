@@ -101,10 +101,34 @@ export const deviceService = {
   },
 
   /**
-   * 录像回放
+   * 录像回放（启动下载）
    */
   async playback(deviceId: string, startTime: string, endTime: string, channel: number = 1) {
-    const response = await post<{ downloadHandle: number; filePath: string; channel: number; startTime: string; endTime: string }>(`/devices/${encodeURIComponent(deviceId)}/playback`, { startTime, endTime, channel });
+    const response = await post<{ downloadHandle: number; filePath: string; channel: number; startTime: string; endTime: string; message: string }>(`/devices/${encodeURIComponent(deviceId)}/playback`, { startTime, endTime, channel });
+    return response;
+  },
+
+  /**
+   * 查询录像下载进度
+   */
+  async getPlaybackProgress(deviceId: string, downloadHandle: number) {
+    const response = await get<{ downloadHandle: number; progress: number; isCompleted: boolean; isError: boolean }>(`/devices/${encodeURIComponent(deviceId)}/playback/progress`, { downloadHandle: downloadHandle.toString() });
+    return response;
+  },
+
+  /**
+   * 获取已下载的录像文件URL
+   */
+  getPlaybackFileUrl(deviceId: string, filePath: string): string {
+    const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+    return `${baseUrl}/api/devices/${encodeURIComponent(deviceId)}/playback/file?filePath=${encodeURIComponent(filePath)}`;
+  },
+
+  /**
+   * 停止录像下载
+   */
+  async stopPlayback(deviceId: string, downloadHandle: number) {
+    const response = await post<{ downloadHandle: number; stopped: boolean; message: string }>(`/devices/${encodeURIComponent(deviceId)}/playback/stop?downloadHandle=${downloadHandle}`);
     return response;
   },
 

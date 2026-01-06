@@ -3,6 +3,8 @@ import { HardDrive, CheckCircle2, XCircle, Settings2, FileCode, X, Plus } from '
 import { useAppContext } from '../contexts/AppContext';
 import { Driver } from '../types';
 import { driverService } from '../src/api/services';
+import { Modal as AlertModal } from './Modal';
+import { useModal } from '../hooks/useModal';
 
 // Simple reused modal (duplicated to avoid external dependency for this file update)
 const Modal = ({ isOpen, onClose, title, children, footer }: any) => {
@@ -26,6 +28,7 @@ const Modal = ({ isOpen, onClose, title, children, footer }: any) => {
 
 export const DriverConfig: React.FC = () => {
   const { t } = useAppContext();
+  const alertModal = useModal();
   const [activeModal, setActiveModal] = useState<'NONE' | 'CONFIGURE' | 'LOGS' | 'NEW'>('NONE');
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [formData, setFormData] = useState<Partial<Driver>>({});
@@ -124,7 +127,19 @@ export const DriverConfig: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <>
+      {/* 弹窗组件 */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={alertModal.closeModal}
+        title={alertModal.modalOptions?.title}
+        message={alertModal.modalOptions?.message || ''}
+        type={alertModal.modalOptions?.type || 'info'}
+        confirmText={alertModal.modalOptions?.confirmText}
+        onConfirm={alertModal.modalOptions?.onConfirm}
+      />
+      
+      <div className="space-y-6">
        <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white shadow-xl shadow-blue-900/20">
         <h2 className="text-2xl font-bold mb-2">{t('driver_mgmt')}</h2>
         <p className="text-blue-100 max-w-2xl">
@@ -313,5 +328,6 @@ export const DriverConfig: React.FC = () => {
       </Modal>
 
     </div>
+    </>
   );
 };

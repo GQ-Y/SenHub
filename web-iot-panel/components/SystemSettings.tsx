@@ -3,6 +3,8 @@ import { Shield, Eye, Database, Cloud, Activity, FileText, Settings, CheckCircle
 import { useAppContext } from '../contexts/AppContext';
 import { systemService } from '../src/api/services';
 import { SystemConfig } from '../types';
+import { Modal } from './Modal';
+import { useModal } from '../hooks/useModal';
 
 export const SystemSettings: React.FC = () => {
   const { t } = useAppContext();
@@ -10,6 +12,7 @@ export const SystemSettings: React.FC = () => {
   const [showToast, setShowToast] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const modal = useModal();
   const [config, setConfig] = useState<SystemConfig>({
     scanner: { enabled: true, interval: 300, ports: '80, 8000, 554, 37777' },
     auth: { defaultUser: 'admin', timeout: 5000 },
@@ -42,7 +45,10 @@ export const SystemSettings: React.FC = () => {
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     } catch (err: any) {
-      alert(err.message || '保存失败');
+      modal.showModal({
+        message: err.message || '保存失败',
+        type: 'error',
+      });
     } finally {
       setIsSaving(false);
     }

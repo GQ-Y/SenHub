@@ -16,9 +16,11 @@ import {
 import { Device, DeviceStatus } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
+import { Modal } from './Modal';
+import { useModal } from '../hooks/useModal';
 
 // Reusable Modal Component
-const Modal = ({ 
+const CustomModal = ({ 
   isOpen, 
   onClose, 
   title, 
@@ -68,6 +70,9 @@ export const DeviceList: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [error, setError] = useState<string>('');
+  
+  // 弹窗管理
+  const modal = useModal();
 
   // Form State
   const [formData, setFormData] = useState<Partial<Device> & { username?: string; password?: string }>({
@@ -163,8 +168,15 @@ export const DeviceList: React.FC = () => {
       }
       handleCloseModal();
       await loadDevices(); // 重新加载列表
+      modal.showModal({
+        message: '保存成功',
+        type: 'success',
+      });
     } catch (err: any) {
-      alert(err.message || '保存失败');
+      modal.showModal({
+        message: err.message || '保存失败',
+        type: 'error',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -177,8 +189,15 @@ export const DeviceList: React.FC = () => {
       await deviceService.deleteDevice(selectedDevice.id);
       handleCloseModal();
       await loadDevices(); // 重新加载列表
+      modal.showModal({
+        message: '删除成功',
+        type: 'success',
+      });
     } catch (err: any) {
-      alert(err.message || '删除失败');
+      modal.showModal({
+        message: err.message || '删除失败',
+        type: 'error',
+      });
       setIsLoading(false);
     }
   };
@@ -190,8 +209,15 @@ export const DeviceList: React.FC = () => {
       await deviceService.rebootDevice(selectedDevice.id);
       handleCloseModal();
       await loadDevices(); // 重新加载列表
+      modal.showModal({
+        message: '重启命令已发送',
+        type: 'success',
+      });
     } catch (err: any) {
-      alert(err.message || '重启失败');
+      modal.showModal({
+        message: err.message || '重启失败',
+        type: 'error',
+      });
       setIsLoading(false);
     }
   };
@@ -227,7 +253,19 @@ export const DeviceList: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <>
+      {/* 弹窗组件 */}
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={modal.closeModal}
+        title={modal.modalOptions?.title}
+        message={modal.modalOptions?.message || ''}
+        type={modal.modalOptions?.type || 'info'}
+        confirmText={modal.modalOptions?.confirmText}
+        onConfirm={modal.modalOptions?.onConfirm}
+      />
+      
+      <div className="space-y-6">
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex items-center space-x-3 w-full md:w-auto">
@@ -379,7 +417,7 @@ export const DeviceList: React.FC = () => {
       </div>
 
       {/* Add / Edit Modal */}
-      <Modal
+      <CustomModal
         isOpen={activeModal === 'ADD' || activeModal === 'EDIT'}
         onClose={handleCloseModal}
         title={activeModal === 'ADD' ? t('add_device') : t('edit_device')}
@@ -465,10 +503,10 @@ export const DeviceList: React.FC = () => {
               />
            </div>
         </div>
-      </Modal>
+      </CustomModal>
 
       {/* Delete Confirmation Modal */}
-      <Modal
+      <CustomModal
         isOpen={activeModal === 'DELETE'}
         onClose={handleCloseModal}
         title={t('confirm_delete_title')}
@@ -491,10 +529,10 @@ export const DeviceList: React.FC = () => {
             <p className="text-gray-600">{t('confirm_delete_msg')}</p>
             <p className="font-bold text-gray-800 mt-2">{selectedDevice?.name} ({selectedDevice?.ip})</p>
         </div>
-      </Modal>
+      </CustomModal>
 
       {/* Reboot Confirmation Modal */}
-       <Modal
+       <CustomModal
         isOpen={activeModal === 'REBOOT'}
         onClose={handleCloseModal}
         title={t('confirm_reboot_title')}
@@ -517,8 +555,9 @@ export const DeviceList: React.FC = () => {
             <p className="text-gray-600">{t('confirm_reboot_msg')}</p>
              <p className="font-bold text-gray-800 mt-2">{selectedDevice?.name}</p>
         </div>
-      </Modal>
+      </CustomModal>
 
     </div>
+    </>
   );
 };

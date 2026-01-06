@@ -16,6 +16,8 @@ import {
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
 import { Device, DeviceStatus } from '../types';
+import { Modal, ConfirmModal } from './Modal';
+import { useModal } from '../hooks/useModal';
 
 export const DeviceDetail: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -27,6 +29,20 @@ export const DeviceDetail: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
   const imageContainerRef = useRef<HTMLDivElement>(null);
+  
+  // 录像回放相关状态
+  const [playbackVideoUrl, setPlaybackVideoUrl] = useState<string | null>(null);
+  const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [downloadHandle, setDownloadHandle] = useState<number | null>(null);
+  const [playbackStartTime, setPlaybackStartTime] = useState<string>('');
+  const [playbackEndTime, setPlaybackEndTime] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 弹窗管理
+  const modal = useModal();
 
   // 加载设备详情
   useEffect(() => {
@@ -99,6 +115,27 @@ export const DeviceDetail: React.FC = () => {
     };
   }, []);
 
+  // 清理定时器 - 必须在所有条件返回之前调用
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // 初始化时间范围 - 必须在所有条件返回之前调用
+  useEffect(() => {
+    const selected = new Date(selectedDate);
+    const start = new Date(selected);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(selected);
+    end.setHours(23, 59, 59, 999);
+    
+    setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
+    setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
+  }, []); // 只在组件挂载时执行一次
+
   // 条件返回必须在所有 Hooks 调用之后
   if (isLoading) {
     return (
@@ -134,22 +171,36 @@ export const DeviceDetail: React.FC = () => {
           : `${baseUrl}${response.data.url}`;
         setSnapshot(fullUrl);
       }
-    } catch (err: any) {
-      console.error('抓图失败:', err);
-      alert(err.message || '获取快照失败');
-    } finally {
+      } catch (err: any) {
+        console.error('抓图失败:', err);
+        modal.showModal({
+          message: err.message || '获取快照失败',
+          type: 'error',
+        });
+      } finally {
       setIsLoadingSnapshot(false);
     }
   };
 
   const handleReboot = async () => {
-    if (!confirm('确定要重启设备吗？')) return;
-    try {
-      await deviceService.rebootDevice(deviceId);
-      alert('重启命令已发送');
-    } catch (err: any) {
-      alert(err.message || '重启设备失败');
-    }
+    modal.showConfirm({
+      title: '确认重启',
+      message: '确定要重启设备吗？',
+      onConfirm: async () => {
+        try {
+          await deviceService.rebootDevice(deviceId);
+          modal.showModal({
+            message: '重启命令已发送',
+            type: 'success',
+          });
+        } catch (err: any) {
+          modal.showModal({
+            message: err.message || '重启设备失败',
+            type: 'error',
+          });
+        }
+      },
+    });
   };
 
   const handlePtzControl = async (command: string, action: 'start' | 'stop' = 'start') => {
@@ -181,7 +232,129 @@ export const DeviceDetail: React.FC = () => {
 
   const handleExport = async () => {
     // 这里需要先有回放文件，暂时提示
-    alert('请先进行录像回放，然后才能导出');
+    modal.showModal({
+      message: '请先进行录像回放，然后才能导出',
+      type: 'info',
+    });
+  };
+
+  // 启动录像回放下载
+  const handleStartPlayback = async () => {
+    if (!playbackStartTime || !playbackEndTime) {
+      modal.showModal({
+        message: '请选择开始时间和结束时间',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (!deviceId) return;
+
+    setIsLoadingPlayback(true);
+    setDownloadProgress(0);
+    setPlaybackVideoUrl(null);
+
+    try {
+      // 启动下载
+      const response = await deviceService.playback(deviceId, playbackStartTime, playbackEndTime, 1);
+      
+      // 检查响应数据
+      if (!response || !response.data) {
+        throw new Error('启动下载失败：服务器未返回数据');
+      }
+      
+      // 检查响应数据结构
+      console.log('Playback API响应:', JSON.stringify(response, null, 2));
+      
+      const handle = response.data?.downloadHandle;
+      const filePath = response.data?.filePath;
+
+      if (handle === undefined || handle === null || !filePath) {
+        console.error('API响应数据:', response);
+        throw new Error(`启动下载失败：未返回下载句柄或文件路径。响应: ${JSON.stringify(response.data)}`);
+      }
+
+      setDownloadHandle(handle);
+
+      // 开始轮询下载进度
+      const checkProgress = async () => {
+        try {
+          const progressResponse = await deviceService.getPlaybackProgress(deviceId, handle);
+          const progress = progressResponse.data?.progress || 0;
+          const isCompleted = progressResponse.data?.isCompleted || false;
+
+          setDownloadProgress(progress);
+
+          if (isCompleted || progress >= 100) {
+            // 下载完成，获取视频URL
+            const videoUrl = deviceService.getPlaybackFileUrl(deviceId, filePath);
+            setPlaybackVideoUrl(videoUrl);
+            setIsLoadingPlayback(false);
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+          } else if (progressResponse.data?.isError) {
+            // 下载出错
+            setIsLoadingPlayback(false);
+            modal.showModal({
+              message: '下载失败，请重试',
+              type: 'error',
+            });
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+          }
+        } catch (err) {
+          console.error('查询下载进度失败:', err);
+        }
+      };
+
+      // 每1秒查询一次进度
+      progressIntervalRef.current = setInterval(checkProgress, 1000);
+      // 立即查询一次
+      checkProgress();
+
+    } catch (err: any) {
+      console.error('启动录像回放失败:', err);
+      modal.showModal({
+        message: err.message || '启动录像回放失败',
+        type: 'error',
+      });
+      setIsLoadingPlayback(false);
+    }
+  };
+
+  // 停止录像下载
+  const handleStopPlayback = async () => {
+    if (downloadHandle !== null && deviceId) {
+      try {
+        await deviceService.stopPlayback(deviceId, downloadHandle);
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        setDownloadHandle(null);
+        setIsLoadingPlayback(false);
+        setDownloadProgress(0);
+      } catch (err) {
+        console.error('停止下载失败:', err);
+      }
+    }
+  };
+
+  // 根据选择的日期设置默认时间范围（当天）
+  const handleDateChange = (date: string) => {
+    setSelectedDate(date);
+    const selected = new Date(date);
+    const start = new Date(selected);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(selected);
+    end.setHours(23, 59, 59, 999);
+    
+    setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
+    setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
   };
 
   const handleFullscreen = async () => {
@@ -208,7 +381,42 @@ export const DeviceDetail: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <>
+      {/* 弹窗组件 */}
+      {modal.isConfirm ? (
+        <ConfirmModal
+          isOpen={modal.isOpen}
+          onClose={modal.closeModal}
+          title={modal.modalOptions?.title}
+          message={modal.modalOptions?.message || ''}
+          onConfirm={() => {
+            if (modal.modalOptions?.onConfirm) {
+              modal.modalOptions.onConfirm();
+            }
+            modal.closeModal();
+          }}
+          onCancel={() => {
+            if (modal.modalOptions?.onCancel) {
+              modal.modalOptions.onCancel();
+            }
+            modal.closeModal();
+          }}
+          confirmText={modal.modalOptions?.confirmText}
+          cancelText={modal.modalOptions?.cancelText}
+        />
+      ) : (
+        <Modal
+          isOpen={modal.isOpen}
+          onClose={modal.closeModal}
+          title={modal.modalOptions?.title}
+          message={modal.modalOptions?.message || ''}
+          type={modal.modalOptions?.type || 'info'}
+          confirmText={modal.modalOptions?.confirmText}
+          onConfirm={modal.modalOptions?.onConfirm}
+        />
+      )}
+      
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -257,7 +465,18 @@ export const DeviceDetail: React.FC = () => {
             ref={imageContainerRef}
             className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
           >
-            {snapshot ? (
+            {playbackVideoUrl ? (
+              <video
+                ref={videoRef}
+                src={playbackVideoUrl}
+                controls
+                className="w-full h-full"
+                onError={(e) => {
+                  console.error('视频加载失败:', playbackVideoUrl);
+                  setPlaybackVideoUrl(null);
+                }}
+              />
+            ) : snapshot ? (
               <img
                 src={snapshot}
                 alt="设备快照"
@@ -275,10 +494,23 @@ export const DeviceDetail: React.FC = () => {
                       <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
                       <p className="text-sm">正在抓图...</p>
                     </>
+                  ) : isLoadingPlayback ? (
+                    <>
+                      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                      <p className="text-sm">正在下载录像: {downloadProgress}%</p>
+                      {downloadHandle !== null && (
+                        <button
+                          onClick={handleStopPlayback}
+                          className="mt-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                        >
+                          取消下载
+                        </button>
+                      )}
+                    </>
                   ) : (
                     <>
                       <p className="mb-2">暂无图像</p>
-                      <p className="text-sm">点击抓图按钮获取设备快照</p>
+                      <p className="text-sm">点击抓图按钮获取设备快照，或选择时间进行录像回放</p>
                     </>
                   )}
                 </div>
@@ -315,14 +547,66 @@ export const DeviceDetail: React.FC = () => {
                     <Calendar size={18} className="mr-2 text-blue-500" />
                     {t('playback')}
                 </h3>
-                <input type="date" className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"/>
+                <input 
+                  type="date" 
+                  value={selectedDate}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                />
              </div>
-             <div className="h-12 bg-gray-50 rounded-lg border border-gray-100 relative overflow-hidden flex items-center px-2 cursor-pointer">
-                 {/* Mock Timeline */}
-                 <div className="w-1/4 h-2 bg-blue-200 rounded-full mr-1"></div>
-                 <div className="w-1/6 h-2 bg-gray-200 rounded-full mr-1"></div>
-                 <div className="w-1/3 h-2 bg-blue-500 rounded-full mr-1"></div>
-                 <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-red-500 z-10"></div>
+             
+             <div className="space-y-3">
+               <div className="grid grid-cols-2 gap-3">
+                 <div>
+                   <label className="block text-xs text-gray-600 mb-1">开始时间</label>
+                   <input
+                     type="datetime-local"
+                     value={playbackStartTime ? playbackStartTime.replace(' ', 'T') : ''}
+                     onChange={(e) => setPlaybackStartTime(e.target.value.replace('T', ' '))}
+                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                   />
+                 </div>
+                 <div>
+                   <label className="block text-xs text-gray-600 mb-1">结束时间</label>
+                   <input
+                     type="datetime-local"
+                     value={playbackEndTime ? playbackEndTime.replace(' ', 'T') : ''}
+                     onChange={(e) => setPlaybackEndTime(e.target.value.replace('T', ' '))}
+                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                   />
+                 </div>
+               </div>
+               
+               <div className="flex items-center space-x-2">
+                 <button
+                   onClick={handleStartPlayback}
+                   disabled={isLoadingPlayback || !playbackStartTime || !playbackEndTime}
+                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                 >
+                   {isLoadingPlayback ? `下载中 ${downloadProgress}%` : '开始回放'}
+                 </button>
+                 {playbackVideoUrl && (
+                   <button
+                     onClick={() => {
+                       setPlaybackVideoUrl(null);
+                       setSnapshot(null);
+                       handleSnapshot();
+                     }}
+                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                   >
+                     查看快照
+                   </button>
+                 )}
+               </div>
+               
+               {isLoadingPlayback && downloadProgress > 0 && (
+                 <div className="w-full bg-gray-200 rounded-full h-2">
+                   <div
+                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                     style={{ width: `${downloadProgress}%` }}
+                   ></div>
+                 </div>
+               )}
              </div>
           </div>
         </div>
@@ -422,5 +706,6 @@ export const DeviceDetail: React.FC = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };

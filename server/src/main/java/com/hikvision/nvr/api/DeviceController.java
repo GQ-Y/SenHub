@@ -1171,6 +1171,154 @@ public class DeviceController {
     }
 
     /**
+     * 查询录像下载进度
+     * GET /api/devices/:id/playback/progress?downloadHandle=xxx
+     */
+    public String getPlaybackProgress(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            String downloadHandleStr = request.queryParams("downloadHandle");
+            
+            if (downloadHandleStr == null || downloadHandleStr.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "downloadHandle参数不能为空");
+            }
+            
+            int downloadHandle;
+            try {
+                downloadHandle = Integer.parseInt(downloadHandleStr);
+            } catch (NumberFormatException e) {
+                response.status(400);
+                return createErrorResponse(400, "downloadHandle参数格式错误");
+            }
+            
+            HCNetSDK hcNetSDK = sdk.getSDK();
+            if (hcNetSDK == null) {
+                response.status(500);
+                return createErrorResponse(500, "SDK未初始化");
+            }
+            
+            // 查询下载进度（0-100）
+            int progress = hcNetSDK.NET_DVR_GetDownloadPos(downloadHandle);
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("downloadHandle", downloadHandle);
+            data.put("progress", progress >= 0 ? progress : 0);
+            data.put("isCompleted", progress >= 100);
+            data.put("isError", progress < 0);
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("查询下载进度失败", e);
+            response.status(500);
+            return createErrorResponse(500, "查询下载进度失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取已下载的录像文件
+     * GET /api/devices/:id/playback/file?filePath=xxx
+     */
+    public Object getPlaybackFile(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            String filePath = request.queryParams("filePath");
+            
+            if (filePath == null || filePath.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "filePath参数不能为空");
+            }
+            
+            // URL解码
+            try {
+                filePath = java.net.URLDecoder.decode(filePath, "UTF-8");
+            } catch (Exception e) {
+                logger.debug("文件路径解码失败，使用原始值: {}", filePath);
+            }
+            
+            java.io.File file = new java.io.File(filePath);
+            
+            // 安全检查：确保文件在downloads目录下
+            if (!file.getCanonicalPath().startsWith(new java.io.File("./downloads").getCanonicalPath())) {
+                response.status(403);
+                return createErrorResponse(403, "访问被拒绝：文件不在允许的目录中");
+            }
+            
+            if (!file.exists()) {
+                response.status(404);
+                return createErrorResponse(404, "录像文件不存在");
+            }
+            
+            // 设置响应头
+            response.type("video/mp4");
+            response.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
+            response.raw().setContentLengthLong(file.length());
+            
+            // 支持Range请求（视频拖拽）
+            String rangeHeader = request.headers("Range");
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                return handleRangeRequest(file, rangeHeader, response);
+            }
+            
+            // 流式传输文件
+            return streamCompletedVideoFile(file, response);
+            
+        } catch (Exception e) {
+            logger.error("获取录像文件失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取录像文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 停止录像下载
+     * POST /api/devices/:id/playback/stop?downloadHandle=xxx
+     */
+    public String stopPlayback(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            String downloadHandleStr = request.queryParams("downloadHandle");
+            
+            if (downloadHandleStr == null || downloadHandleStr.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "downloadHandle参数不能为空");
+            }
+            
+            int downloadHandle;
+            try {
+                downloadHandle = Integer.parseInt(downloadHandleStr);
+            } catch (NumberFormatException e) {
+                response.status(400);
+                return createErrorResponse(400, "downloadHandle参数格式错误");
+            }
+            
+            HCNetSDK hcNetSDK = sdk.getSDK();
+            if (hcNetSDK == null) {
+                response.status(500);
+                return createErrorResponse(500, "SDK未初始化");
+            }
+            
+            // 停止下载
+            boolean result = hcNetSDK.NET_DVR_StopGetFile(downloadHandle);
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("downloadHandle", downloadHandle);
+            data.put("stopped", result);
+            data.put("message", result ? "下载已停止" : "停止下载失败");
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("停止下载失败", e);
+            response.status(500);
+            return createErrorResponse(500, "停止下载失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 导出录像
      * POST /api/devices/:id/export
      */

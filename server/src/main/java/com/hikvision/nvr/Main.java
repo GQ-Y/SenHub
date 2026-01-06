@@ -323,6 +323,9 @@ public class Main {
             Spark.get("/api/devices/:id/record-video", deviceController::getRecordVideo);
             Spark.get("/api/devices/:id/video", deviceController::getVideoFile);
             Spark.post("/api/devices/:id/playback", deviceController::playback);
+            Spark.get("/api/devices/:id/playback/progress", deviceController::getPlaybackProgress);
+            Spark.get("/api/devices/:id/playback/file", deviceController::getPlaybackFile);
+            Spark.post("/api/devices/:id/playback/stop", deviceController::stopPlayback);
             Spark.post("/api/devices/:id/export", deviceController::exportVideo);
         Spark.get("/api/devices/:id/export/file", deviceController::getExportFile);
         
