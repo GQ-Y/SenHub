@@ -93,10 +93,10 @@ export const deviceService = {
   },
 
   /**
-   * 获取视频流地址
+   * 获取视频流地址（返回最新录制的视频）
    */
   async getStreamUrl(deviceId: string) {
-    const response = await get<{ rtspUrl: string; streamType: string }>(`/devices/${encodeURIComponent(deviceId)}/stream`);
+    const response = await get<{ videoUrl: string; streamType: string; rtspUrl?: string }>(`/devices/${encodeURIComponent(deviceId)}/stream`);
     return response;
   },
 

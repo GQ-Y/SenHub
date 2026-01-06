@@ -247,7 +247,7 @@ public class Main {
         
         // 初始化控制器
         AuthController authController = new AuthController(database);
-        DeviceController deviceController = new DeviceController(deviceManager, sdk, database);
+        DeviceController deviceController = new DeviceController(deviceManager, sdk, database, recorder);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService);
@@ -265,10 +265,12 @@ public class Main {
         Spark.delete("/api/devices/:id", deviceController::deleteDevice);
         Spark.post("/api/devices/:id/reboot", deviceController::rebootDevice);
         Spark.post("/api/devices/:id/snapshot", deviceController::captureSnapshot);
-        Spark.get("/api/devices/:id/snapshot/file", deviceController::getSnapshotFile);
-        Spark.post("/api/devices/:id/ptz", deviceController::ptzControl);
-        Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
-        Spark.post("/api/devices/:id/playback", deviceController::playback);
+            Spark.get("/api/devices/:id/snapshot/file", deviceController::getSnapshotFile);
+            Spark.post("/api/devices/:id/ptz", deviceController::ptzControl);
+            Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
+            Spark.get("/api/devices/:id/record-video", deviceController::getRecordVideo);
+            Spark.get("/api/devices/:id/video", deviceController::getVideoFile);
+            Spark.post("/api/devices/:id/playback", deviceController::playback);
         Spark.post("/api/devices/:id/export", deviceController::exportVideo);
         Spark.get("/api/devices/:id/export/file", deviceController::getExportFile);
         

@@ -5,11 +5,15 @@ import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.hikvision.HCNetSDK;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
+import com.hikvision.nvr.recorder.Recorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
 import spark.Response;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -21,12 +25,14 @@ public class DeviceController {
     private final DeviceManager deviceManager;
     private final HikvisionSDK sdk;
     private final com.hikvision.nvr.database.Database database;
+    private final Recorder recorder;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public DeviceController(DeviceManager deviceManager, HikvisionSDK sdk, com.hikvision.nvr.database.Database database) {
+    public DeviceController(DeviceManager deviceManager, HikvisionSDK sdk, com.hikvision.nvr.database.Database database, Recorder recorder) {
         this.deviceManager = deviceManager;
         this.sdk = sdk;
         this.database = database;
+        this.recorder = recorder;
     }
 
     /**
@@ -114,8 +120,8 @@ public class DeviceController {
             device.setStatus("offline");
             device.setChannel(((Number) body.getOrDefault("channel", 1)).intValue());
             
-            // 生成RTSP URL
-            String rtspUrl = generateRtspUrl(device.getIp(), device.getPort());
+            // 生成包含认证信息的RTSP URL
+            String rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(), device.getPassword());
             device.setRtspUrl(rtspUrl);
             
             // 检查设备是否已存在
@@ -290,8 +296,15 @@ public class DeviceController {
         map.put("status", device.getStatus().toUpperCase());
         map.put("lastSeen", formatLastSeen(device.getLastSeen()));
         map.put("firmware", ""); // 可以从设备信息中获取
-        map.put("rtspUrl", device.getRtspUrl());
+        
+        // 如果rtspUrl不包含认证信息，生成包含认证信息的URL
+        String rtspUrl = device.getRtspUrl();
+        if (rtspUrl == null || rtspUrl.isEmpty() || !rtspUrl.contains("@")) {
+            rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(), device.getPassword());
+        }
+        map.put("rtspUrl", rtspUrl);
         map.put("username", device.getUsername());
+        map.put("password", device.getPassword()); // 也返回密码，前端可能需要
         map.put("channel", device.getChannel());
         return map;
     }
@@ -336,6 +349,23 @@ public class DeviceController {
         // 默认RTSP端口是554，如果port是8000（SDK端口），则使用554
         int rtspPort = (port == 8000) ? 554 : port;
         return "rtsp://" + ip + ":" + rtspPort + "/Streaming/Channels/101";
+    }
+
+    /**
+     * 生成包含认证信息的RTSP URL
+     */
+    private String generateRtspUrlWithAuth(String ip, int port, String username, String password) {
+        // 默认RTSP端口是554，如果port是8000（SDK端口），则使用554
+        int rtspPort = (port == 8000) ? 554 : port;
+        
+        if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
+            // URL编码用户名和密码，避免特殊字符问题
+            String encodedUsername = java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8);
+            String encodedPassword = java.net.URLEncoder.encode(password, java.nio.charset.StandardCharsets.UTF_8);
+            return "rtsp://" + encodedUsername + ":" + encodedPassword + "@" + ip + ":" + rtspPort + "/Streaming/Channels/101";
+        } else {
+            return generateRtspUrl(ip, port);
+        }
     }
 
     /**
@@ -554,7 +584,7 @@ public class DeviceController {
     }
 
     /**
-     * 获取视频流地址
+     * 获取视频流地址（返回最新录制的视频）
      * GET /api/devices/:id/stream
      */
     public String getStreamUrl(Request request, Response response) {
@@ -567,11 +597,17 @@ public class DeviceController {
                 return createErrorResponse(404, "设备不存在");
             }
             
-            // 返回RTSP URL
+            // 返回录制视频URL
+            String videoUrl = getLatestRecordVideo(deviceId);
+            if (videoUrl == null) {
+                response.status(404);
+                return createErrorResponse(404, "暂无录制视频");
+            }
+            
             Map<String, Object> data = new HashMap<>();
-            data.put("rtspUrl", device.getRtspUrl());
-            data.put("streamType", "rtsp");
-            data.put("message", "使用RTSP URL进行视频播放，建议使用支持RTSP的播放器（如VLC）");
+            data.put("videoUrl", videoUrl);
+            data.put("streamType", "mp4");
+            data.put("message", "返回最新录制的视频文件");
             
             response.status(200);
             response.type("application/json");
@@ -580,6 +616,188 @@ public class DeviceController {
             logger.error("获取视频流地址失败", e);
             response.status(500);
             return createErrorResponse(500, "获取视频流地址失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取设备的最新录制视频文件
+     * GET /api/devices/:id/record-video
+     */
+    public String getRecordVideo(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            
+            String videoUrl = getLatestRecordVideo(deviceId);
+            if (videoUrl == null) {
+                response.status(404);
+                return createErrorResponse(404, "暂无录制视频");
+            }
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("videoUrl", videoUrl);
+            data.put("deviceId", deviceId);
+            data.put("message", "返回最新录制的视频文件");
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("获取录制视频失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取录制视频失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取设备的最新录制视频文件URL
+     */
+    private String getLatestRecordVideo(String deviceId) {
+        if (recorder == null) {
+            return null;
+        }
+        
+        try {
+            // 获取当前时间前1分钟的视频（最近录制的视频）
+            Date targetTime = new Date(System.currentTimeMillis() - 60000);
+            String filePath = recorder.getRecordFile(deviceId, targetTime);
+            
+            if (filePath == null) {
+                // 如果找不到，尝试获取最新的录制文件
+                File recordDir = new File("./records");
+                if (!recordDir.exists()) {
+                    return null;
+                }
+                
+                File[] files = recordDir.listFiles((dir, name) -> 
+                    name.startsWith("record_" + deviceId.replace(".", "_")) && name.endsWith(".mp4"));
+                
+                if (files == null || files.length == 0) {
+                    return null;
+                }
+                
+                // 按修改时间排序，获取最新的文件
+                Arrays.sort(files, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
+                filePath = files[0].getAbsolutePath();
+            }
+            
+            // 转换为HTTP访问URL
+            // 文件路径格式：./records/record_192_168_1_100_8000_20260106154930.mp4
+            // URL格式：/api/devices/:id/video?file=record_192_168_1_100_8000_20260106154930.mp4
+            File file = new File(filePath);
+            if (file.exists()) {
+                String fileName = file.getName();
+                return "/api/devices/" + java.net.URLEncoder.encode(deviceId, "UTF-8") + "/video?file=" + 
+                       java.net.URLEncoder.encode(fileName, "UTF-8");
+            }
+            
+            return null;
+        } catch (Exception e) {
+            logger.error("获取录制视频文件失败: {}", deviceId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 提供视频文件HTTP访问
+     * GET /api/devices/:id/video?file=xxx.mp4
+     */
+    public Object getVideoFile(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            String fileName = request.queryParams("file");
+            
+            if (fileName == null || fileName.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "文件名参数不能为空");
+            }
+            
+            // 安全检查：防止路径遍历攻击
+            if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
+                response.status(400);
+                return createErrorResponse(400, "无效的文件名");
+            }
+            
+            // 验证文件名格式
+            if (!fileName.startsWith("record_" + deviceId.replace(".", "_")) || !fileName.endsWith(".mp4")) {
+                response.status(400);
+                return createErrorResponse(400, "文件不属于该设备");
+            }
+            
+            File videoFile = new File("./records/" + fileName);
+            if (!videoFile.exists() || !videoFile.isFile()) {
+                response.status(404);
+                return createErrorResponse(404, "视频文件不存在");
+            }
+            
+            // 设置响应头
+            response.type("video/mp4");
+            response.header("Accept-Ranges", "bytes");
+            response.header("Content-Length", String.valueOf(videoFile.length()));
+            
+            // 支持Range请求（视频拖拽）
+            String rangeHeader = request.headers("Range");
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                return handleRangeRequest(videoFile, rangeHeader, response);
+            }
+            
+            // 返回完整文件
+            byte[] fileBytes = Files.readAllBytes(videoFile.toPath());
+            return fileBytes;
+            
+        } catch (Exception e) {
+            logger.error("获取视频文件失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取视频文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 处理Range请求（支持视频拖拽）
+     */
+    private Object handleRangeRequest(File videoFile, String rangeHeader, Response response) {
+        try {
+            long fileSize = videoFile.length();
+            String range = rangeHeader.substring(6); // 移除 "bytes="
+            String[] ranges = range.split("-");
+            
+            long start = 0;
+            long end = fileSize - 1;
+            
+            if (ranges.length > 0 && !ranges[0].isEmpty()) {
+                start = Long.parseLong(ranges[0]);
+            }
+            if (ranges.length > 1 && !ranges[1].isEmpty()) {
+                end = Long.parseLong(ranges[1]);
+            }
+            
+            if (start > end || start < 0 || end >= fileSize) {
+                response.status(416);
+                return "";
+            }
+            
+            long contentLength = end - start + 1;
+            response.status(206);
+            response.header("Content-Range", String.format("bytes %d-%d/%d", start, end, fileSize));
+            response.header("Content-Length", String.valueOf(contentLength));
+            
+            // 读取文件片段
+            byte[] buffer = new byte[(int) contentLength];
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(videoFile)) {
+                fis.skip(start);
+                fis.read(buffer);
+            }
+            
+            return buffer;
+        } catch (Exception e) {
+            logger.error("处理Range请求失败", e);
+            response.status(500);
+            return createErrorResponse(500, "处理Range请求失败: " + e.getMessage());
         }
     }
 

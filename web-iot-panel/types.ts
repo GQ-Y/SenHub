@@ -13,8 +13,10 @@ export interface Device {
   model: string;
   status: DeviceStatus;
   lastSeen: string;
-  firmware: string;
-  rtspUrl: string;
+  firmware?: string;
+  rtspUrl?: string;
+  username?: string;
+  password?: string;
 }
 
 export interface Driver {

@@ -28,6 +28,9 @@ export const DeviceDetail: React.FC = () => {
   const [isMuted, setIsMuted] = useState(true);
   const [snapshot, setSnapshot] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string>('');
+  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
 
   // 加载设备详情
@@ -39,7 +42,7 @@ export const DeviceDetail: React.FC = () => {
       try {
         const response = await deviceService.getDevice(deviceId);
         const deviceData = response.data;
-        setDevice({
+        const deviceInfo = {
           id: deviceData.id || deviceId,
           name: deviceData.name || '',
           ip: deviceData.ip || '',
@@ -50,7 +53,33 @@ export const DeviceDetail: React.FC = () => {
           lastSeen: deviceData.lastSeen || 'Never',
           firmware: deviceData.firmware || '',
           rtspUrl: deviceData.rtspUrl || '',
-        });
+          username: deviceData.username || '',
+          password: deviceData.password || '',
+        };
+        setDevice(deviceInfo);
+        
+        // 获取最新录制的视频
+        try {
+          setIsLoadingVideo(true);
+          const streamResponse = await deviceService.getStreamUrl(deviceId);
+          if (streamResponse.data) {
+            // 优先使用videoUrl，如果没有则使用rtspUrl（向后兼容）
+            const videoPath = streamResponse.data.videoUrl || streamResponse.data.rtspUrl;
+            if (videoPath) {
+              // 构建完整的视频URL
+              const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
+              const fullVideoUrl = videoPath.startsWith('http') 
+                ? videoPath 
+                : `${baseUrl}${videoPath}`;
+              setVideoUrl(fullVideoUrl);
+            }
+          }
+        } catch (err) {
+          console.error('获取录制视频失败:', err);
+          setVideoUrl('');
+        } finally {
+          setIsLoadingVideo(false);
+        }
       } catch (err) {
         console.error('加载设备详情失败:', err);
       } finally {
@@ -101,7 +130,7 @@ export const DeviceDetail: React.FC = () => {
       const response = await deviceService.captureSnapshot(deviceId, 1);
       if (response.data?.url) {
         // 构建完整的URL
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+        const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
         const fullUrl = response.data.url.startsWith('http') 
           ? response.data.url 
           : `${baseUrl}${response.data.url}`;
@@ -208,43 +237,69 @@ export const DeviceDetail: React.FC = () => {
             ref={videoContainerRef}
             className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
           >
-            <img 
-              src={`https://picsum.photos/800/450?random=${device.id}`} 
-              alt="Live Feed" 
-              className="w-full h-full object-cover opacity-80"
-            />
+            {videoUrl ? (
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                autoPlay
+                loop
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  console.error('视频播放错误:', e);
+                }}
+                onLoadedData={() => {
+                  console.log('视频加载完成');
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                <div className="text-center text-gray-400">
+                  {isLoadingVideo ? (
+                    <>
+                      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                      <p className="text-sm">正在加载视频...</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mb-2">暂无录制视频</p>
+                      <p className="text-sm">设备可能尚未开始录制</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             
-            {/* Overlay UI */}
-            <div className="absolute top-4 left-4 flex items-center space-x-2 z-10">
-                <span className="px-2 py-1 bg-red-600/90 text-white text-xs font-bold rounded flex items-center">
-                    <span className="w-2 h-2 bg-white rounded-full mr-1.5 animate-pulse"></span>
-                    LIVE
-                </span>
+            {/* Overlay UI - 时间显示 */}
+            <div className="absolute top-4 right-4 z-10">
                 <span className="px-2 py-1 bg-black/50 backdrop-blur-md text-white text-xs rounded font-mono">
                     {new Date().toLocaleTimeString()}
                 </span>
             </div>
 
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
-                <div className="flex items-center space-x-4">
-                    <button 
-                        onClick={() => setIsMuted(!isMuted)}
-                        className="text-white hover:text-blue-400 transition-colors"
-                    >
-                        {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                    </button>
-                    <input type="range" className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer" />
-                </div>
-                <div className="flex items-center space-x-3">
-                    <button 
-                        onClick={handleFullscreen}
-                        className="text-white hover:text-blue-400 transition-colors" 
-                        title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
-                    >
-                        {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-                    </button>
-                </div>
-            </div>
+            {/* 控制按钮 - 仅在视频上方显示 */}
+            {videoUrl && (
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+                  <div className="flex items-center space-x-4">
+                      <button 
+                          onClick={() => setIsMuted(!isMuted)}
+                          className="text-white hover:text-blue-400 transition-colors"
+                          title={isMuted ? '开启声音' : '关闭声音'}
+                      >
+                          {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                      </button>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                      <button 
+                          onClick={handleFullscreen}
+                          className="text-white hover:text-blue-400 transition-colors" 
+                          title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
+                      >
+                          {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                      </button>
+                  </div>
+              </div>
+            )}
           </div>
           
           {/* Timeline / Playback Controls */}
