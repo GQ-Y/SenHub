@@ -1,0 +1,5 @@
+{
+  "name": "HarmonyGuard IoT Panel",
+  "description": "A modern, HarmonyOS-inspired security device management panel featuring real-time monitoring, PTZ controls, and multi-brand SDK configuration.",
+  "requestFramePermissions": []
+}

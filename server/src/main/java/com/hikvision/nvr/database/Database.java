@@ -73,6 +73,22 @@ public class Database {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
             stmt.execute(createIndex);
+            
+            // 检查并添加channel列（如果表已存在但缺少该列）
+            try {
+                stmt.executeQuery("SELECT channel FROM devices LIMIT 1");
+            } catch (SQLException e) {
+                // 如果查询失败，说明缺少channel列，需要添加
+                logger.info("检测到缺少channel列，正在添加...");
+                try {
+                    stmt.execute("ALTER TABLE devices ADD COLUMN channel INTEGER DEFAULT 1");
+                    logger.info("成功添加channel列");
+                } catch (SQLException ex) {
+                    // 如果添加失败（可能列已存在），忽略错误
+                    logger.debug("添加channel列失败（可能已存在）: {}", ex.getMessage());
+                }
+            }
+            
             logger.info("数据库表创建成功");
         }
     }
