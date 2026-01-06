@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  nvr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hikvision-nvr-service:latest
+    container_name: hikvision-nvr-service
+    platform: linux/arm64
+    volumes:
+      # 挂载项目目录
+      - .:/app
+      # 挂载SDK库文件目录
+      - ../sdk:/app/../sdk:ro
+      # 挂载Maven仓库（可选，加速构建）
+      - maven-repo:/root/.m2
+    environment:
+      - JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64
+      - MAVEN_HOME=/opt/maven
+      - LD_LIBRARY_PATH=/app/lib:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/HCNetSDKCom
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    # 如果需要网络访问，取消下面的注释
+    # network_mode: host
+
+volumes:
+  maven-repo:
