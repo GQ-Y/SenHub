@@ -57,29 +57,6 @@ export const DeviceDetail: React.FC = () => {
           password: deviceData.password || '',
         };
         setDevice(deviceInfo);
-        
-        // 获取最新录制的视频
-        try {
-          setIsLoadingVideo(true);
-          const streamResponse = await deviceService.getStreamUrl(deviceId);
-          if (streamResponse.data) {
-            // 优先使用videoUrl，如果没有则使用rtspUrl（向后兼容）
-            const videoPath = streamResponse.data.videoUrl || streamResponse.data.rtspUrl;
-            if (videoPath) {
-              // 构建完整的视频URL
-              const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
-              const fullVideoUrl = videoPath.startsWith('http') 
-                ? videoPath 
-                : `${baseUrl}${videoPath}`;
-              setVideoUrl(fullVideoUrl);
-            }
-          }
-        } catch (err) {
-          console.error('获取录制视频失败:', err);
-          setVideoUrl('');
-        } finally {
-          setIsLoadingVideo(false);
-        }
       } catch (err) {
         console.error('加载设备详情失败:', err);
       } finally {
@@ -88,6 +65,50 @@ export const DeviceDetail: React.FC = () => {
     };
 
     loadDevice();
+  }, [deviceId]);
+
+    // 定期获取最新录制视频URL（只获取已完成的文件，确保可以播放）
+  useEffect(() => {
+    if (!deviceId) return;
+
+    const fetchVideoUrl = async () => {
+      try {
+        const streamResponse = await deviceService.getStreamUrl(deviceId);
+        if (streamResponse.data) {
+          // 优先使用videoUrl，如果没有则使用rtspUrl（向后兼容）
+          const videoPath = streamResponse.data.videoUrl || streamResponse.data.rtspUrl;
+          if (videoPath) {
+            // 构建完整的视频URL
+            const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
+            const fullVideoUrl = videoPath.startsWith('http') 
+              ? videoPath 
+              : `${baseUrl}${videoPath}`;
+            
+            // 如果URL发生变化，更新视频源
+            setVideoUrl(prevUrl => {
+              if (prevUrl !== fullVideoUrl) {
+                setIsLoadingVideo(true);
+                return fullVideoUrl;
+              }
+              return prevUrl;
+            });
+          }
+        }
+      } catch (err) {
+        console.error('获取录制视频失败:', err);
+        // 不重置videoUrl，保持当前播放
+      }
+    };
+
+    // 初始加载
+    fetchVideoUrl();
+
+    // 定期刷新视频URL（每10秒），获取最新的已完成文件
+    const refreshInterval = setInterval(fetchVideoUrl, 10000);
+
+    return () => {
+      clearInterval(refreshInterval);
+    };
   }, [deviceId]);
 
   // 全屏事件监听 - 必须在所有条件返回之前调用
@@ -240,16 +261,67 @@ export const DeviceDetail: React.FC = () => {
             {videoUrl ? (
               <video
                 ref={videoRef}
+                key={videoUrl} // 使用key强制重新加载视频源
                 src={videoUrl}
                 controls
                 autoPlay
-                loop
+                muted // 默认静音，避免自动播放被阻止
+                preload="auto"
+                playsInline
+                crossOrigin="anonymous"
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  console.error('视频播放错误:', e);
+                  const video = e.target as HTMLVideoElement;
+                  const error = video.error;
+                  console.error('视频播放错误:', {
+                    error,
+                    code: error?.code,
+                    message: error?.message,
+                    networkState: video.networkState,
+                    readyState: video.readyState,
+                    src: video.src,
+                  });
+                  
+                  // 错误代码说明：
+                  // 1 = MEDIA_ERR_ABORTED - 用户中止
+                  // 2 = MEDIA_ERR_NETWORK - 网络错误
+                  // 3 = MEDIA_ERR_DECODE - 解码错误
+                  // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED - 格式不支持或文件损坏
+                  
+                  if (error?.code === 4) {
+                    // 格式不支持或文件损坏，可能是文件正在录制中
+                    console.warn('视频文件可能正在录制中或格式不完整，等待后重试...');
+                    // 等待5秒后重新获取视频URL
+                    setTimeout(() => {
+                      if (deviceId) {
+                        deviceService.getStreamUrl(deviceId).then((response) => {
+                          if (response.data?.videoUrl) {
+                            const baseUrl = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
+                            const fullVideoUrl = response.data.videoUrl.startsWith('http') 
+                              ? response.data.videoUrl 
+                              : `${baseUrl}${response.data.videoUrl}`;
+                            setVideoUrl(fullVideoUrl);
+                          }
+                        }).catch((err) => {
+                          console.error('重新获取视频URL失败:', err);
+                        });
+                      }
+                    }, 5000);
+                  } else {
+                    // 其他错误，尝试重新加载
+                    if (videoRef.current) {
+                      setTimeout(() => {
+                        videoRef.current?.load();
+                      }, 2000);
+                    }
+                  }
                 }}
                 onLoadedData={() => {
                   console.log('视频加载完成');
+                  setIsLoadingVideo(false);
+                }}
+                onCanPlay={() => {
+                  console.log('视频可以播放');
                 }}
               />
             ) : (

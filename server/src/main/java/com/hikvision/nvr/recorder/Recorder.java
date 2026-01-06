@@ -136,6 +136,22 @@ public class Recorder {
     }
 
     /**
+     * 获取设备当前正在录制的文件路径
+     * @param deviceId 设备ID
+     * @return 当前正在录制的文件路径，如果未在录制则返回null
+     */
+    public String getCurrentRecordingFile(String deviceId) {
+        RecordingSession session = recordingSessions.get(deviceId);
+        if (session != null && session.getRecordFilePath() != null) {
+            File file = new File(session.getRecordFilePath());
+            if (file.exists()) {
+                return file.getAbsolutePath();
+            }
+        }
+        return null;
+    }
+
+    /**
      * 获取设备的录制文件路径（根据时间范围）
      * @param deviceId 设备ID
      * @param targetTime 目标时间（通常是系统时间前1分钟）

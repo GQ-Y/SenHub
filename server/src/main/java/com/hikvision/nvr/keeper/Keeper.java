@@ -3,6 +3,7 @@ package com.hikvision.nvr.keeper;
 import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.database.DeviceInfo;
+import com.hikvision.nvr.recorder.Recorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,6 +22,7 @@ public class Keeper {
     private static final Logger logger = LoggerFactory.getLogger(Keeper.class);
     private DeviceManager deviceManager;
     private Config.KeeperConfig config;
+    private Recorder recorder;
     private ScheduledExecutorService scheduler;
     private final Map<String, Integer> failureCountMap = new ConcurrentHashMap<>();
     private boolean running = false;
@@ -28,6 +30,12 @@ public class Keeper {
     public Keeper(DeviceManager deviceManager, Config.KeeperConfig config) {
         this.deviceManager = deviceManager;
         this.config = config;
+    }
+
+    public Keeper(DeviceManager deviceManager, Config.KeeperConfig config, Recorder recorder) {
+        this.deviceManager = deviceManager;
+        this.config = config;
+        this.recorder = recorder;
     }
 
     /**
@@ -118,6 +126,15 @@ public class Keeper {
                 // 登录成功
                 failureCountMap.remove(deviceId);
                 logger.info("设备自动登录成功: {}", deviceId);
+                
+                // 如果录制功能启用，自动启动录制
+                if (recorder != null && config != null) {
+                    try {
+                        recorder.startRecording(deviceId);
+                    } catch (Exception e) {
+                        logger.error("设备登录后启动录制失败: {}", deviceId, e);
+                    }
+                }
             } else {
                 // 登录失败
                 failureCount++;

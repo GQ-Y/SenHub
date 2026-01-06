@@ -597,8 +597,11 @@ public class DeviceController {
                 return createErrorResponse(404, "设备不存在");
             }
             
-            // 返回录制视频URL
-            String videoUrl = getLatestRecordVideo(deviceId);
+            // 从请求头中获取token（用于video标签访问）
+            String token = getTokenFromRequest(request);
+            
+            // 返回录制视频URL（包含token参数）
+            String videoUrl = getLatestRecordVideo(deviceId, token);
             if (videoUrl == null) {
                 response.status(404);
                 return createErrorResponse(404, "暂无录制视频");
@@ -620,6 +623,17 @@ public class DeviceController {
     }
 
     /**
+     * 从请求中获取JWT token
+     */
+    private String getTokenFromRequest(Request request) {
+        String authHeader = request.headers("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        return null;
+    }
+
+    /**
      * 获取设备的最新录制视频文件
      * GET /api/devices/:id/record-video
      */
@@ -633,7 +647,10 @@ public class DeviceController {
                 return createErrorResponse(404, "设备不存在");
             }
             
-            String videoUrl = getLatestRecordVideo(deviceId);
+            // 从请求头中获取token（用于video标签访问）
+            String token = getTokenFromRequest(request);
+            
+            String videoUrl = getLatestRecordVideo(deviceId, token);
             if (videoUrl == null) {
                 response.status(404);
                 return createErrorResponse(404, "暂无录制视频");
@@ -655,27 +672,35 @@ public class DeviceController {
     }
 
     /**
-     * 获取设备的最新录制视频文件URL
+     * 获取设备的最新录制视频文件URL（只返回已完成的文件，确保浏览器可以播放）
+     * 注意：正在录制的文件可能缺少moov atom，导致浏览器无法解析，所以只返回已完成的文件
+     * @param deviceId 设备ID
+     * @param token JWT token（已废弃，视频文件访问已免token验证）
      */
-    private String getLatestRecordVideo(String deviceId) {
+    private String getLatestRecordVideo(String deviceId, String token) {
         if (recorder == null) {
             return null;
         }
         
         try {
-            // 获取当前时间前1分钟的视频（最近录制的视频）
-            Date targetTime = new Date(System.currentTimeMillis() - 60000);
+            // 不返回正在录制的文件（可能缺少moov atom），只返回已完成的文件
+            // 获取当前时间前2分钟的视频（确保文件已完全写入）
+            Date targetTime = new Date(System.currentTimeMillis() - 120000); // 2分钟前
             String filePath = recorder.getRecordFile(deviceId, targetTime);
             
+            // 如果找不到，尝试获取最新的已完成文件
             if (filePath == null) {
-                // 如果找不到，尝试获取最新的录制文件
                 File recordDir = new File("./records");
                 if (!recordDir.exists()) {
                     return null;
                 }
                 
+                // 文件名可能包含冒号或下划线，所以需要匹配两种格式
+                String deviceIdForFile = deviceId.replace(".", "_");
+                String prefix1 = "record_" + deviceIdForFile;  // 保留冒号：record_192_168_1_100:8000
+                String prefix2 = "record_" + deviceIdForFile.replace(":", "_");  // 替换冒号：record_192_168_1_100_8000
                 File[] files = recordDir.listFiles((dir, name) -> 
-                    name.startsWith("record_" + deviceId.replace(".", "_")) && name.endsWith(".mp4"));
+                    (name.startsWith(prefix1) || name.startsWith(prefix2)) && name.endsWith(".mp4"));
                 
                 if (files == null || files.length == 0) {
                     return null;
@@ -683,12 +708,31 @@ public class DeviceController {
                 
                 // 按修改时间排序，获取最新的文件
                 Arrays.sort(files, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
-                filePath = files[0].getAbsolutePath();
+                
+                // 排除正在录制的文件
+                String currentRecordingFile = recorder.getCurrentRecordingFile(deviceId);
+                for (File file : files) {
+                    // 如果文件不是当前正在录制的文件，且文件大小稳定（最近30秒没有变化），则返回
+                    if (currentRecordingFile == null || !file.getAbsolutePath().equals(currentRecordingFile)) {
+                        // 检查文件是否稳定（最近30秒没有修改）
+                        long lastModified = file.lastModified();
+                        long now = System.currentTimeMillis();
+                        if (now - lastModified > 30000) { // 文件30秒前已停止写入
+                            filePath = file.getAbsolutePath();
+                            break;
+                        }
+                    }
+                }
+                
+                // 如果所有文件都在录制中，返回最新的文件（即使可能不完整）
+                if (filePath == null && files.length > 0) {
+                    filePath = files[0].getAbsolutePath();
+                }
             }
             
-            // 转换为HTTP访问URL
+            // 转换为HTTP访问URL（视频文件访问已免token验证）
             // 文件路径格式：./records/record_192_168_1_100_8000_20260106154930.mp4
-            // URL格式：/api/devices/:id/video?file=record_192_168_1_100_8000_20260106154930.mp4
+            // URL格式：/api/devices/:id/video?file=xxx.mp4
             File file = new File(filePath);
             if (file.exists()) {
                 String fileName = file.getName();
@@ -709,13 +753,32 @@ public class DeviceController {
      */
     public Object getVideoFile(Request request, Response response) {
         try {
+            // URL解码设备ID（Spark会自动解码，但为了安全起见，我们再次解码）
             String deviceId = request.params(":id");
+            try {
+                deviceId = java.net.URLDecoder.decode(deviceId, "UTF-8");
+            } catch (Exception e) {
+                // 如果解码失败，使用原始值
+                logger.debug("设备ID解码失败，使用原始值: {}", deviceId);
+            }
+            
+            // URL解码文件名
             String fileName = request.queryParams("file");
+            if (fileName != null && !fileName.isEmpty()) {
+                try {
+                    fileName = java.net.URLDecoder.decode(fileName, "UTF-8");
+                } catch (Exception e) {
+                    // 如果解码失败，使用原始值
+                    logger.debug("文件名解码失败，使用原始值: {}", fileName);
+                }
+            }
             
             if (fileName == null || fileName.isEmpty()) {
                 response.status(400);
                 return createErrorResponse(400, "文件名参数不能为空");
             }
+            
+            logger.debug("视频文件请求 - deviceId: {}, fileName: {}", deviceId, fileName);
             
             // 安全检查：防止路径遍历攻击
             if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
@@ -724,7 +787,13 @@ public class DeviceController {
             }
             
             // 验证文件名格式
-            if (!fileName.startsWith("record_" + deviceId.replace(".", "_")) || !fileName.endsWith(".mp4")) {
+            // 设备ID格式：192.168.1.100:8000
+            // 文件名格式：record_192_168_1_100:8000_20260106081136.mp4（只替换点号为下划线，冒号保留）
+            // 或者：record_192_168_1_100_8000_20260106081136.mp4（点号和冒号都替换为下划线）
+            String deviceIdForFile = deviceId.replace(".", "_");
+            String expectedPrefix1 = "record_" + deviceIdForFile + "_";  // 保留冒号
+            String expectedPrefix2 = "record_" + deviceIdForFile.replace(":", "_") + "_";  // 替换冒号
+            if ((!fileName.startsWith(expectedPrefix1) && !fileName.startsWith(expectedPrefix2)) || !fileName.endsWith(".mp4")) {
                 response.status(400);
                 return createErrorResponse(400, "文件不属于该设备");
             }
@@ -735,25 +804,154 @@ public class DeviceController {
                 return createErrorResponse(404, "视频文件不存在");
             }
             
-            // 设置响应头
-            response.type("video/mp4");
-            response.header("Accept-Ranges", "bytes");
-            response.header("Content-Length", String.valueOf(videoFile.length()));
+            // 检查文件是否正在写入（可能是当前正在录制的文件）
+            boolean isRecording = recorder != null && recorder.getCurrentRecordingFile(deviceId) != null && 
+                                 recorder.getCurrentRecordingFile(deviceId).equals(videoFile.getAbsolutePath());
+            
+            // 设置响应头（必须在写入输出流之前设置）
+            // 使用response.raw()直接设置，避免被CORS过滤器覆盖
+            response.raw().setContentType("video/mp4");
+            response.raw().setHeader("Accept-Ranges", "bytes");
+            
+            // 如果文件正在录制中，不设置Content-Length，允许流式传输
+            // 这样可以支持实时播放正在写入的MP4文件
+            if (!isRecording) {
+                response.raw().setContentLengthLong(videoFile.length());
+            } else {
+                // 对于正在录制的文件，使用Transfer-Encoding: chunked
+                response.raw().setHeader("Transfer-Encoding", "chunked");
+                // 移除Content-Length，允许流式传输
+            }
             
             // 支持Range请求（视频拖拽）
             String rangeHeader = request.headers("Range");
-            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+            logger.debug("视频文件请求 - deviceId: {}, fileName: {}, Range: {}, isRecording: {}", 
+                deviceId, fileName, rangeHeader, isRecording);
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=") && !isRecording) {
+                // 只有在文件未在录制时才支持Range请求
+                logger.debug("处理Range请求: {}", rangeHeader);
                 return handleRangeRequest(videoFile, rangeHeader, response);
             }
             
-            // 返回完整文件
-            byte[] fileBytes = Files.readAllBytes(videoFile.toPath());
-            return fileBytes;
+            // 对于所有文件都使用流式传输（避免大文件一次性读取到内存）
+            // 对于正在录制的文件，使用特殊的流式读取（支持实时追加）
+            if (isRecording) {
+                return streamVideoFile(videoFile, response);
+            } else {
+                // 对于已完成的文件，使用普通流式传输
+                return streamCompletedVideoFile(videoFile, response);
+            }
             
         } catch (Exception e) {
             logger.error("获取视频文件失败", e);
             response.status(500);
             return createErrorResponse(500, "获取视频文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 流式传输已完成的视频文件（非录制中）
+     * 注意：使用流式传输，确保正确设置Content-Length
+     */
+    private Object streamCompletedVideoFile(File videoFile, Response response) {
+        try {
+            logger.debug("开始流式传输视频文件: {}, 大小: {} bytes", videoFile.getName(), videoFile.length());
+            
+            // 设置响应头（必须在写入输出流之前设置）
+            // 使用response.type()和response.header()确保不会被CORS过滤器覆盖
+            response.type("video/mp4");
+            response.header("Content-Length", String.valueOf(videoFile.length()));
+            response.header("Accept-Ranges", "bytes");
+            response.raw().setStatus(200);
+            
+            // 使用流式传输，避免一次性加载到内存
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(videoFile);
+                 java.io.OutputStream os = response.raw().getOutputStream()) {
+                byte[] buffer = new byte[8192]; // 8KB缓冲区
+                int bytesRead;
+                long totalBytes = 0;
+                while ((bytesRead = fis.read(buffer)) != -1) {
+                    os.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                }
+                os.flush();
+                logger.debug("视频文件传输完成: {} bytes", totalBytes);
+            }
+            
+            return "";
+        } catch (java.io.IOException e) {
+            // 客户端断开连接是正常的，不需要记录为错误
+            if (e.getMessage() != null && (e.getMessage().contains("Broken pipe") || e.getMessage().contains("Connection reset"))) {
+                logger.debug("客户端断开连接: {}", videoFile.getName());
+            } else {
+                logger.error("流式传输视频文件失败: {}", videoFile.getName(), e);
+            }
+            try {
+                response.raw().getOutputStream().close();
+            } catch (Exception ex) {
+                // Ignore
+            }
+            return "";
+        } catch (Exception e) {
+            logger.error("流式传输视频文件失败: {}", videoFile.getName(), e);
+            try {
+                response.raw().getOutputStream().close();
+            } catch (Exception ex) {
+                // Ignore
+            }
+            response.status(500);
+            return createErrorResponse(500, "流式传输视频文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 流式传输正在录制的视频文件（支持实时播放）
+     */
+    private Object streamVideoFile(File videoFile, Response response) {
+        try {
+            // 使用流式读取，每次读取一定大小的数据块
+            // 这样可以支持播放正在写入的MP4文件
+            java.io.FileInputStream fis = new java.io.FileInputStream(videoFile);
+            java.io.OutputStream os = response.raw().getOutputStream();
+            
+            byte[] buffer = new byte[8192]; // 8KB缓冲区
+            int bytesRead;
+            long lastSize = videoFile.length();
+            int noDataCount = 0; // 连续无数据次数
+            
+            // 流式传输：持续读取文件直到没有新数据
+            // 对于正在录制的文件，会持续读取新写入的数据
+            while (noDataCount < 10) { // 最多等待10次（约1秒）
+                bytesRead = fis.read(buffer);
+                if (bytesRead > 0) {
+                    os.write(buffer, 0, bytesRead);
+                    os.flush();
+                    noDataCount = 0; // 重置计数
+                } else {
+                    // 没有更多数据，检查文件是否有新数据写入
+                    long currentSize = videoFile.length();
+                    if (currentSize > lastSize) {
+                        // 文件有新数据，继续读取
+                        lastSize = currentSize;
+                        noDataCount = 0;
+                    } else {
+                        // 文件大小没有变化，等待新数据
+                        noDataCount++;
+                        Thread.sleep(100); // 等待100ms后继续检查
+                    }
+                }
+            }
+            
+            fis.close();
+            return "";
+        } catch (Exception e) {
+            logger.error("流式传输视频文件失败", e);
+            try {
+                response.raw().getOutputStream().close();
+            } catch (Exception ex) {
+                // Ignore
+            }
+            return "";
         }
     }
 

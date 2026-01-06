@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import spark.Spark;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -127,9 +128,14 @@ public class Main {
             }
 
             // 9. 启动保活系统
-            keeper = new Keeper(deviceManager, config.getKeeper());
+            keeper = new Keeper(deviceManager, config.getKeeper(), recorder);
             keeper.start();
             logger.info("保活系统启动成功");
+
+            // 9.5. 为所有已存在的设备启动录制（如果录制功能启用）
+            if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
+                startRecordingForExistingDevices();
+            }
 
             // 10. 启动HTTP服务器
             startHttpServer();
@@ -169,6 +175,45 @@ public class Main {
                 logger.error("处理MQTT消息失败", e);
             }
         });
+    }
+
+    /**
+     * 为所有已存在的设备启动录制
+     */
+    private void startRecordingForExistingDevices() {
+        try {
+            List<DeviceInfo> devices = deviceManager.getAllDevices();
+            logger.info("开始为已存在的设备启动录制，设备数量: {}", devices.size());
+            
+            for (DeviceInfo device : devices) {
+                String deviceId = device.getDeviceId();
+                
+                // 检查设备是否已登录
+                if (deviceManager.isDeviceLoggedIn(deviceId)) {
+                    // 设备已登录，启动录制
+                    if (recorder.startRecording(deviceId)) {
+                        logger.info("已为设备启动录制: {}", deviceId);
+                    } else {
+                        logger.warn("为设备启动录制失败: {}", deviceId);
+                    }
+                } else {
+                    // 设备未登录，尝试登录后启动录制
+                    if (deviceManager.loginDevice(device)) {
+                        if (recorder.startRecording(deviceId)) {
+                            logger.info("已为设备登录并启动录制: {}", deviceId);
+                        } else {
+                            logger.warn("设备登录成功但启动录制失败: {}", deviceId);
+                        }
+                    } else {
+                        logger.debug("设备未登录，跳过录制启动: {}", deviceId);
+                    }
+                }
+            }
+            
+            logger.info("已存在的设备录制启动完成");
+        } catch (Exception e) {
+            logger.error("为已存在的设备启动录制失败", e);
+        }
     }
 
     /**
@@ -229,12 +274,19 @@ public class Main {
         
         Spark.port(port);
         
-        // 设置CORS
-        Spark.before((request, response) -> {
+        // 设置CORS（使用after过滤器，避免覆盖控制器设置的Content-Type）
+        Spark.after((request, response) -> {
             response.header("Access-Control-Allow-Origin", "*");
             response.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             response.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-            response.type("application/json");
+        });
+        
+        // 为API请求设置默认Content-Type（不包括视频文件）
+        Spark.before((request, response) -> {
+            String path = request.pathInfo();
+            if (path != null && !path.contains("/video") && !path.contains("/snapshot/file") && !path.contains("/export/file")) {
+                response.type("application/json");
+            }
         });
         
         // 处理OPTIONS请求

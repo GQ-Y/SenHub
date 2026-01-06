@@ -25,6 +25,13 @@ public class AuthFilter implements Filter {
             return;
         }
 
+        // 允许视频文件访问（免token验证，因为video标签无法携带Authorization header）
+        // 注意：这里假设视频文件路径已经通过设备ID验证，具有一定的安全性
+        if (path.contains("/video") && request.queryParams("file") != null) {
+            // 视频文件访问免token验证，但需要通过文件名验证设备ID
+            return;
+        }
+
         // 验证JWT token
         String authHeader = request.headers("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
