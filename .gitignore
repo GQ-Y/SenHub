@@ -1,0 +1,43 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+
+# Go
+vendor/
+*.mod.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Database
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Config (if contains secrets)
+# config.yaml
+
+# Build artifacts
+build/
+tmp/
+temp/
+
+# OS
+.DS_Store
+Thumbs.db
