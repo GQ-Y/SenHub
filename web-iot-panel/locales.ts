@@ -1,6 +1,6 @@
 export const translations = {
   en: {
-    app_name: "HarmonyGuard",
+    app_name: "AI Smart Driver Gateway Management Platform",
     login_title: "Security Management System",
     login_subtitle: "Sign in to access your dashboard",
     username: "Username",

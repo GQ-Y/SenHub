@@ -418,13 +418,6 @@ export const DeviceDetail: React.FC = () => {
                         <span className="text-xs font-medium">{t('export')}</span>
                     </button>
                 </div>
-
-                {snapshot && (
-                    <div className="mt-4 p-2 bg-gray-50 rounded-lg border border-gray-100 animate-fade-in">
-                        <p className="text-xs text-gray-500 mb-2">Latest Snapshot:</p>
-                        <img src={snapshot} alt="Snapshot" className="w-full rounded-md shadow-sm" />
-                    </div>
-                )}
             </div>
         </div>
       </div>

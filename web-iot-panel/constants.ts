@@ -1,6 +1,6 @@
 import { Device, DeviceStatus, Driver } from './types';
 
-export const APP_NAME = "HarmonyGuard";
+export const APP_NAME = "AI智能驱动网关管理平台";
 
 export const MOCK_DEVICES: Device[] = [
   {

@@ -167,7 +167,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30">
               <Camera className="text-white" size={18} />
             </div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Harmony<span className="text-blue-400">Guard</span></h1>
+            <h1 className="text-xl font-bold text-white tracking-tight">AI智能<span className="text-blue-400">管理系统</span></h1>
           </div>
 
           <nav className="space-y-2">

@@ -120,14 +120,34 @@ public class CommandHandler {
             jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
             jpegPara.write();
 
-            // 创建临时文件保存图片
+            // 创建临时文件保存图片（每个设备只保留一张最新图片）
             String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
             String picDir = "./captures";
             File dir = new File(picDir);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
-            String picFileName = picDir + "/capture_" + deviceId.replace(".", "_") + "_" + timestamp + ".jpg";
+            
+            // 删除该设备的所有旧图片（只保留最新一张）
+            String deviceIdForFile = deviceId.replace(".", "_").replace(":", "_");
+            String prefix = "capture_" + deviceIdForFile + "_";
+            File[] oldFiles = dir.listFiles((d, name) -> name.startsWith(prefix) && name.endsWith(".jpg"));
+            if (oldFiles != null && oldFiles.length > 0) {
+                int deletedCount = 0;
+                for (File oldFile : oldFiles) {
+                    if (oldFile.delete()) {
+                        deletedCount++;
+                        logger.debug("已删除旧抓图文件: {}", oldFile.getName());
+                    } else {
+                        logger.warn("删除旧抓图文件失败: {}", oldFile.getName());
+                    }
+                }
+                if (deletedCount > 0) {
+                    logger.info("已删除 {} 个旧抓图文件（设备: {}）", deletedCount, deviceId);
+                }
+            }
+            
+            String picFileName = picDir + "/capture_" + deviceIdForFile + "_" + timestamp + ".jpg";
             byte[] fileNameBytes = picFileName.getBytes("UTF-8");
             byte[] fileNameArray = new byte[256];
             System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));

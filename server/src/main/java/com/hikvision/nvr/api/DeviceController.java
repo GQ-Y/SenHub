@@ -419,15 +419,59 @@ public class DeviceController {
             jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
             jpegPara.write();
             
-            // 创建临时文件保存图片
+            // 创建临时文件保存图片（每个设备只保留一张最新图片）
             SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
             String timestamp = sdf.format(new Date());
+            
+            // 使用绝对路径，确保路径正确
             String picDir = "./captures";
             java.io.File dir = new java.io.File(picDir);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
-            String picFileName = picDir + "/capture_" + deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".jpg";
+            
+            // 获取绝对路径，确保查找和删除时使用正确的路径
+            String absolutePicDir = dir.getAbsolutePath();
+            logger.info("抓图目录（绝对路径）: {}", absolutePicDir);
+            
+            // 删除该设备的所有旧图片（只保留最新一张）- 在抓图前先清理旧图
+            String deviceIdForFile = deviceId.replace(".", "_").replace(":", "_");
+            String prefix = "capture_" + deviceIdForFile + "_";
+            logger.info("开始清理旧抓图文件，设备ID: {}, 文件前缀: {}", deviceId, prefix);
+            
+            // 使用绝对路径的目录对象来查找文件
+            java.io.File absoluteDir = new java.io.File(absolutePicDir);
+            java.io.File[] oldFiles = absoluteDir.listFiles((d, name) -> {
+                boolean matches = name.startsWith(prefix) && name.endsWith(".jpg");
+                if (matches) {
+                    logger.info("匹配到旧文件: {}", name);
+                }
+                return matches;
+            });
+            
+            if (oldFiles != null && oldFiles.length > 0) {
+                logger.info("找到 {} 个旧抓图文件，准备删除（设备: {}）", oldFiles.length, deviceId);
+                int deletedCount = 0;
+                for (java.io.File oldFile : oldFiles) {
+                    String fileName = oldFile.getName();
+                    String filePath = oldFile.getAbsolutePath();
+                    if (oldFile.exists()) {
+                        if (oldFile.delete()) {
+                            deletedCount++;
+                            logger.info("已删除旧抓图文件: {} (路径: {})", fileName, filePath);
+                        } else {
+                            logger.warn("删除旧抓图文件失败: {} (路径: {})", fileName, filePath);
+                        }
+                    } else {
+                        logger.warn("旧抓图文件不存在: {} (路径: {})", fileName, filePath);
+                    }
+                }
+                logger.info("清理完成，已删除 {} 个旧抓图文件（设备: {}）", deletedCount, deviceId);
+            } else {
+                logger.info("未找到旧抓图文件（设备: {}, 前缀: {}）", deviceId, prefix);
+            }
+            
+            String picFileName = absolutePicDir + "/capture_" + deviceIdForFile + "_" + timestamp + ".jpg";
             byte[] fileNameBytes = picFileName.getBytes("UTF-8");
             byte[] fileNameArray = new byte[256];
             System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
