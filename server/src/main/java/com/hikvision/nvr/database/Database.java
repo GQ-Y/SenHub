@@ -50,28 +50,25 @@ public class Database {
      * 创建数据库表
      */
     private void createTables() throws SQLException {
-        String createDevicesTable = """
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id TEXT UNIQUE NOT NULL,
-                ip TEXT NOT NULL,
-                port INTEGER NOT NULL,
-                name TEXT,
-                username TEXT,
-                password TEXT,
-                rtsp_url TEXT,
-                status TEXT DEFAULT 'offline',
-                user_id INTEGER DEFAULT -1,
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """;
+        String createDevicesTable = "CREATE TABLE IF NOT EXISTS devices (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "device_id TEXT UNIQUE NOT NULL, " +
+            "ip TEXT NOT NULL, " +
+            "port INTEGER NOT NULL, " +
+            "name TEXT, " +
+            "username TEXT, " +
+            "password TEXT, " +
+            "rtsp_url TEXT, " +
+            "status TEXT DEFAULT 'offline', " +
+            "user_id INTEGER DEFAULT -1, " +
+            "channel INTEGER DEFAULT 1, " +
+            "last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+            ")";
 
-        String createIndex = """
-            CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id);
-            CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port);
-            """;
+        String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
+            "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port);";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
@@ -84,11 +81,9 @@ public class Database {
      * 保存或更新设备信息
      */
     public boolean saveOrUpdateDevice(DeviceInfo device) {
-        String sql = """
-            INSERT OR REPLACE INTO devices 
-            (device_id, ip, port, name, username, password, rtsp_url, status, user_id, last_seen, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """;
+        String sql = "INSERT OR REPLACE INTO devices " +
+            "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, last_seen, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
@@ -100,6 +95,7 @@ public class Database {
             pstmt.setString(7, device.getRtspUrl());
             pstmt.setString(8, device.getStatus());
             pstmt.setInt(9, device.getUserId());
+            pstmt.setInt(10, device.getChannel() > 0 ? device.getChannel() : 1);
 
             pstmt.executeUpdate();
             logger.debug("设备信息已保存: {}:{}", device.getIp(), device.getPort());
@@ -224,6 +220,7 @@ public class Database {
         device.setRtspUrl(rs.getString("rtsp_url"));
         device.setStatus(rs.getString("status"));
         device.setUserId(rs.getInt("user_id"));
+        device.setChannel(rs.getInt("channel"));
         device.setLastSeen(rs.getTimestamp("last_seen"));
         device.setCreatedAt(rs.getTimestamp("created_at"));
         device.setUpdatedAt(rs.getTimestamp("updated_at"));

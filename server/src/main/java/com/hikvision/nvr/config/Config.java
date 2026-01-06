@@ -157,7 +157,11 @@ public class Config {
         @JsonProperty("default_password")
         private String defaultPassword;
         @JsonProperty("default_port")
-        private int defaultPort;
+        private int defaultPort;  // SDK端口，默认8000
+        @JsonProperty("http_port")
+        private int httpPort = 80;  // HTTP端口，默认80
+        @JsonProperty("rtsp_port")
+        private int rtspPort = 554;  // RTSP端口，默认554
         @JsonProperty("login_timeout")
         private int loginTimeout;
         @JsonProperty("reconnect_interval")
@@ -170,6 +174,10 @@ public class Config {
         public void setDefaultPassword(String defaultPassword) { this.defaultPassword = defaultPassword; }
         public int getDefaultPort() { return defaultPort; }
         public void setDefaultPort(int defaultPort) { this.defaultPort = defaultPort; }
+        public int getHttpPort() { return httpPort; }
+        public void setHttpPort(int httpPort) { this.httpPort = httpPort; }
+        public int getRtspPort() { return rtspPort; }
+        public void setRtspPort(int rtspPort) { this.rtspPort = rtspPort; }
         public int getLoginTimeout() { return loginTimeout; }
         public void setLoginTimeout(int loginTimeout) { this.loginTimeout = loginTimeout; }
         public int getReconnectInterval() { return reconnectInterval; }

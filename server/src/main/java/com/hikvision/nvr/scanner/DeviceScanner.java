@@ -142,8 +142,9 @@ public class DeviceScanner {
             device.setStatus("offline");
             device.setUserId(-1);
 
-            // 生成RTSP URL
-            device.setRtspUrl(String.format("rtsp://%s:%d/Streaming/Channels/101", ip, port));
+            // 生成RTSP URL（使用RTSP端口，不是SDK端口）
+            int rtspPort = deviceConfig.getRtspPort();
+            device.setRtspUrl(String.format("rtsp://%s:%d/Streaming/Channels/101", ip, rtspPort));
 
             // 保存到数据库
             database.saveOrUpdateDevice(device);

@@ -16,6 +16,7 @@ public class DeviceInfo {
     private String rtspUrl;
     private String status;  // online, offline
     private int userId;  // SDK登录返回的用户ID
+    private int channel;  // 通道号（起始通道号）
     private Timestamp lastSeen;
     private Timestamp createdAt;
     private Timestamp updatedAt;
@@ -50,6 +51,9 @@ public class DeviceInfo {
 
     public int getUserId() { return userId; }
     public void setUserId(int userId) { this.userId = userId; }
+
+    public int getChannel() { return channel; }
+    public void setChannel(int channel) { this.channel = channel; }
 
     public Timestamp getLastSeen() { return lastSeen; }
     public void setLastSeen(Timestamp lastSeen) { this.lastSeen = lastSeen; }

@@ -8,13 +8,18 @@ services:
     image: hikvision-nvr-service:latest
     container_name: hikvision-nvr-service
     platform: linux/arm64
+    network_mode: host  # 使用host网络模式，方便访问局域网设备和MQTT服务器
     volumes:
-      # 挂载项目目录
+      # 挂载整个server目录（代码修改立即生效）
       - .:/app
       # 挂载SDK库文件目录
       - ../sdk:/app/../sdk:ro
-      # 挂载Maven仓库（可选，加速构建）
+      # 挂载Maven仓库（持久化，加速后续构建）
       - maven-repo:/root/.m2
+      # 持久化数据目录
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./sdkLog:/app/sdkLog
     environment:
       - JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64
       - MAVEN_HOME=/opt/maven
@@ -22,8 +27,6 @@ services:
     working_dir: /app
     stdin_open: true
     tty: true
-    # 如果需要网络访问，取消下面的注释
-    # network_mode: host
 
 volumes:
   maven-repo:

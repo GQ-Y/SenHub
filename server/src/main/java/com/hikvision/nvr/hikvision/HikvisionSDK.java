@@ -193,33 +193,77 @@ public class HikvisionSDK {
         HCNetSDK.NET_DVR_USER_LOGIN_INFO loginInfo = new HCNetSDK.NET_DVR_USER_LOGIN_INFO();
         HCNetSDK.NET_DVR_DEVICEINFO_V40 deviceInfo = new HCNetSDK.NET_DVR_DEVICEINFO_V40();
 
-        // 设置设备IP地址
+        // 设置设备IP地址（按照示例代码的方式）
         byte[] deviceAddress = new byte[HCNetSDK.NET_DVR_DEV_ADDRESS_MAX_LEN];
         byte[] ipBytes = ip.getBytes();
-        System.arraycopy(ipBytes, 0, deviceAddress, 0, Math.min(ipBytes.length, deviceAddress.length - 1));
+        System.arraycopy(ipBytes, 0, deviceAddress, 0, Math.min(ipBytes.length, deviceAddress.length));
         loginInfo.sDeviceAddress = deviceAddress;
 
-        // 设置用户名
+        // 设置用户名（按照示例代码的方式）
         byte[] userName = new byte[HCNetSDK.NET_DVR_LOGIN_USERNAME_MAX_LEN];
         byte[] userBytes = username.getBytes();
-        System.arraycopy(userBytes, 0, userName, 0, Math.min(userBytes.length, userName.length - 1));
+        System.arraycopy(userBytes, 0, userName, 0, Math.min(userBytes.length, userName.length));
         loginInfo.sUserName = userName;
 
-        // 设置密码
+        // 设置密码（按照示例代码的方式）
         byte[] passwordBytes = password.getBytes();
-        System.arraycopy(passwordBytes, 0, loginInfo.sPassword, 0, Math.min(passwordBytes.length, loginInfo.sPassword.length - 1));
+        System.arraycopy(passwordBytes, 0, loginInfo.sPassword, 0, Math.min(passwordBytes.length, loginInfo.sPassword.length));
 
         // 设置端口和登录模式
         loginInfo.wPort = port;
         loginInfo.bUseAsynLogin = false; // 同步登录
         loginInfo.byLoginMode = 0; // 使用SDK私有协议
+        loginInfo.byUseTransport = 0; // 不使用传输层协议
+        loginInfo.byProxyType = 0; // 不使用代理
+        loginInfo.byHttps = 0; // 不使用HTTPS
+        
+        // 设置连接超时（可选，默认可能较短）
+        // NET_DVR_SetConnectTime(等待时间ms, 重试次数)
+        hCNetSDK.NET_DVR_SetConnectTime(10000, 3); // 等待10秒，重试3次
+
+        // 确保结构体数据同步到本地内存（JNA需要）
+        loginInfo.write();
+        deviceInfo.write();
 
         // 执行登录
+        logger.info("开始登录设备: {}:{}, 用户: {}", ip, port, username);
+        logger.debug("登录参数详情: IP={}, Port={}, Username={}, Password长度={}, LoginMode={}", 
+            ip, port, username, password != null ? password.length() : 0, loginInfo.byLoginMode);
+        
         int userID = hCNetSDK.NET_DVR_Login_V40(loginInfo, deviceInfo);
+        
+        // 读取设备信息（登录成功后设备信息会被填充）
+        deviceInfo.read();
+        
+        logger.debug("登录调用返回: userID={}", userID);
+        
+        // 检查设备信息（登录成功后设备信息会被填充）
+        if (deviceInfo.struDeviceV30 != null) {
+            int chanNum = deviceInfo.struDeviceV30.byChanNum & 0xFF; // 转换为无符号
+            int startDChan = deviceInfo.struDeviceV30.byStartDChan & 0xFF;
+            logger.debug("设备信息: 通道数={}, 起始通道={}", chanNum, startDChan);
+        }
+        
+        // 按照示例代码的逻辑：只要 userID != -1 就认为登录成功（包括 userID=0）
         if (userID == -1) {
-            logger.error("登录失败，错误码: {}", getLastError());
+            int errorCode = hCNetSDK.NET_DVR_GetLastError();
+            logger.error("登录失败，错误码: {} (IP: {}:{}, 用户: {})", errorCode, ip, port, username);
+            
+            // 输出常见错误码的含义
+            if (errorCode == HCNetSDK.NET_DVR_PASSWORD_ERROR) {
+                logger.error("错误原因: 用户名或密码错误");
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_SEND_ERROR || errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_ERROR) {
+                logger.error("错误原因: 网络通信错误，请检查网络连接和端口");
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_TIMEOUT) {
+                logger.error("错误原因: 网络接收超时，设备可能未响应");
+            } else if (errorCode == 0) {
+                logger.warn("注意: 错误码为0，可能是设备未响应或连接超时");
+                logger.warn("可能原因: 1)设备不在线 2)端口错误 3)防火墙阻止 4)设备不支持该登录方式");
+            } else {
+                logger.warn("其他错误，错误码: {}", errorCode);
+            }
         } else {
-            logger.info("设备登录成功: {}:{}", ip, port);
+            logger.info("设备登录成功: {}:{} (userId: {})", ip, port, userID);
         }
 
         return userID;

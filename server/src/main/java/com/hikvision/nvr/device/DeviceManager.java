@@ -50,19 +50,32 @@ public class DeviceManager {
         String password = device.getPassword() != null ? device.getPassword() : config.getDefaultPassword();
         int port = device.getPort() > 0 ? device.getPort() : config.getDefaultPort();
 
-        int userId = sdk.login(device.getIp(), (short) port, username, password);
-        
-        if (userId > 0) {
-            deviceLoginMap.put(deviceId, userId);
-            device.setUserId(userId);
-            device.setStatus("online");
-            database.updateDeviceStatus(deviceId, "online", userId);
-            logger.info("设备登录成功: {} (userId: {})", deviceId, userId);
-            return true;
-        } else {
+                int userId = sdk.login(device.getIp(), (short) port, username, password);
+
+                // 按照示例代码的逻辑：只要 userId != -1 就认为登录成功（包括 userId=0）
+                // 示例代码中：if (userID == -1) 表示失败，else 表示成功
+                if (userId != -1) {
+                    deviceLoginMap.put(deviceId, userId);
+                    device.setUserId(userId);
+                    device.setStatus("online");
+                    
+                    // 获取并保存通道号（从SDK登录返回的设备信息中获取）
+                    // 注意：这里需要从HikvisionSDK获取设备信息，暂时使用默认值1
+                    // 实际应该从登录时返回的设备信息中获取byStartChan
+                    if (device.getChannel() <= 0) {
+                        device.setChannel(1); // 默认通道1
+                    }
+                    
+                    database.updateDeviceStatus(deviceId, "online", userId);
+                    database.saveOrUpdateDevice(device); // 保存设备信息包括通道号
+                    logger.info("设备登录成功: {} (userId: {}, channel: {})", deviceId, userId, device.getChannel());
+                    return true;
+                } else {
             device.setStatus("offline");
             database.updateDeviceStatus(deviceId, "offline", -1);
-            logger.warn("设备登录失败: {}", deviceId);
+            int errorCode = sdk.getLastError();
+            logger.warn("设备登录失败: {} (错误码: {})", deviceId, errorCode);
+            logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
             return false;
         }
     }

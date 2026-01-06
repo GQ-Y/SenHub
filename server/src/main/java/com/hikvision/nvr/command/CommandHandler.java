@@ -8,8 +8,13 @@ import com.hikvision.nvr.hikvision.HikvisionSDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
 import java.util.Base64;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -95,12 +100,69 @@ public class CommandHandler {
                 return createErrorResponse(requestId, deviceId, "capture", "SDK未初始化");
             }
 
-            // 注意：抓图需要先启动预览，这里简化处理
-            // 实际实现需要先调用NET_DVR_RealPlay_V30启动预览，然后调用NET_DVR_CapturePicture
-            // 这里先返回占位响应
+            // 获取设备信息以获取通道号
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            if (device == null) {
+                return createErrorResponse(requestId, deviceId, "capture", "设备不存在");
+            }
+
+            // 获取通道号（默认使用通道1，如果设备信息中有通道号则使用设备的）
+            int channel = device.getChannel() > 0 ? device.getChannel() : 1;
+
+            // 设置抓图参数
+            HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
+            jpegPara.wPicSize = 0; // 0=CIF, 使用当前分辨率
+            jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
+            jpegPara.write();
+
+            // 创建临时文件保存图片
+            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+            String picDir = "./captures";
+            File dir = new File(picDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            String picFileName = picDir + "/capture_" + deviceId.replace(".", "_") + "_" + timestamp + ".jpg";
+            byte[] fileNameBytes = picFileName.getBytes("UTF-8");
+            byte[] fileNameArray = new byte[256];
+            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
+
+            // 执行抓图
+            logger.info("开始抓图: 设备={}, 通道={}, 文件={}", deviceId, channel, picFileName);
+            boolean result = hcNetSDK.NET_DVR_CaptureJPEGPicture(userId, channel, jpegPara, fileNameArray);
+
+            if (!result) {
+                int errorCode = sdk.getLastError();
+                logger.error("抓图失败，错误码: {}", errorCode);
+                return createErrorResponse(requestId, deviceId, "capture", "抓图失败，错误码: " + errorCode);
+            }
+
+            // 等待文件写入完成
+            Thread.sleep(500);
+
+            // 读取图片文件并转换为base64
+            File picFile = new File(picFileName);
+            if (!picFile.exists()) {
+                return createErrorResponse(requestId, deviceId, "capture", "抓图文件未生成");
+            }
+
+            byte[] imageBytes = Files.readAllBytes(Paths.get(picFileName));
+            String base64Image = Base64.getEncoder().encodeToString(imageBytes);
+
+            // 构建响应数据
             Map<String, Object> captureData = new HashMap<>();
-            captureData.put("message", "抓图功能需要先启动预览，待完善实现");
+            captureData.put("image_base64", base64Image);
+            captureData.put("image_size", imageBytes.length);
+            captureData.put("channel", channel);
+            captureData.put("timestamp", timestamp);
+
+            logger.info("抓图成功: 设备={}, 通道={}, 文件大小={}字节", deviceId, channel, imageBytes.length);
+
+            // 可选：删除临时文件（如果需要保留则注释掉）
+            // picFile.delete();
+
             return createSuccessResponse(requestId, deviceId, "capture", captureData);
+
         } catch (Exception e) {
             logger.error("抓图失败", e);
             return createErrorResponse(requestId, deviceId, "capture", "抓图异常: " + e.getMessage());
@@ -117,11 +179,23 @@ public class CommandHandler {
                 return createErrorResponse(requestId, deviceId, "reboot", "SDK未初始化");
             }
 
-            // 注意：重启功能需要查找正确的SDK函数
-            // 这里先返回占位响应
+            // 使用NET_DVR_RemoteControl进行远程重启
+            // MINOR_REMOTE_REBOOT = 0x7b 表示远程重启命令
+            boolean result = hcNetSDK.NET_DVR_RemoteControl(userId, HCNetSDK.MINOR_REMOTE_REBOOT, null, 0);
+
+            if (!result) {
+                int errorCode = sdk.getLastError();
+                logger.error("重启设备失败，错误码: {}", errorCode);
+                return createErrorResponse(requestId, deviceId, "reboot", "重启设备失败，错误码: " + errorCode);
+            }
+
             Map<String, Object> rebootData = new HashMap<>();
-            rebootData.put("message", "重启功能待实现，需要查找正确的SDK函数");
+            rebootData.put("message", "设备重启命令已发送");
+            rebootData.put("device_id", deviceId);
+            logger.info("设备重启命令已发送: {}", deviceId);
+
             return createSuccessResponse(requestId, deviceId, "reboot", rebootData);
+
         } catch (Exception e) {
             logger.error("重启失败", e);
             return createErrorResponse(requestId, deviceId, "reboot", "重启异常: " + e.getMessage());
@@ -129,13 +203,122 @@ public class CommandHandler {
     }
 
     /**
-     * 处理回放命令
+     * 处理回放命令（按时间下载录像）
      */
     private CommandResponse handlePlayback(int userId, String deviceId, String requestId, Map<String, Object> command) {
-        // 回放功能需要更复杂的实现，这里先返回占位响应
-        Map<String, Object> data = new HashMap<>();
-        data.put("message", "回放功能待实现");
-        return createSuccessResponse(requestId, deviceId, "playback", data);
+        try {
+            HCNetSDK hcNetSDK = sdk.getSDK();
+            if (hcNetSDK == null) {
+                return createErrorResponse(requestId, deviceId, "playback", "SDK未初始化");
+            }
+
+            // 获取设备信息
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            if (device == null) {
+                return createErrorResponse(requestId, deviceId, "playback", "设备不存在");
+            }
+
+            // 获取参数
+            String startTimeStr = (String) command.get("start_time");
+            String endTimeStr = (String) command.get("end_time");
+            int channel = command.get("channel") != null ? ((Number) command.get("channel")).intValue() : 1;
+
+            if (startTimeStr == null || endTimeStr == null) {
+                return createErrorResponse(requestId, deviceId, "playback", "开始时间和结束时间不能为空");
+            }
+
+            // 解析时间字符串 "2024-01-01 10:00:00"
+            HCNetSDK.NET_DVR_TIME startTime = parseTimeString(startTimeStr);
+            HCNetSDK.NET_DVR_TIME endTime = parseTimeString(endTimeStr);
+
+            if (startTime == null || endTime == null) {
+                return createErrorResponse(requestId, deviceId, "playback", "时间格式错误，应为: YYYY-MM-DD HH:mm:ss");
+            }
+
+            // 设置下载条件
+            HCNetSDK.NET_DVR_PLAYCOND playCond = new HCNetSDK.NET_DVR_PLAYCOND();
+            playCond.dwChannel = channel; // 通道号
+            playCond.struStartTime = startTime;
+            playCond.struStopTime = endTime;
+            playCond.write();
+
+            // 创建下载目录
+            String downloadDir = "./downloads";
+            File dir = new File(downloadDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+
+            // 生成文件名
+            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+            String fileName = downloadDir + "/playback_" + deviceId.replace(".", "_") + "_" + timestamp + ".mp4";
+            byte[] fileNameBytes = fileName.getBytes("UTF-8");
+            byte[] fileNameArray = new byte[256];
+            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
+
+            // 开始下载录像
+            logger.info("开始下载录像: 设备={}, 通道={}, 时间={} 到 {}", deviceId, channel, startTimeStr, endTimeStr);
+            int downloadHandle = hcNetSDK.NET_DVR_GetFileByTime_V40(userId, fileName, playCond);
+
+            if (downloadHandle < 0) {
+                int errorCode = sdk.getLastError();
+                logger.error("开始下载录像失败，错误码: {}", errorCode);
+                return createErrorResponse(requestId, deviceId, "playback", "开始下载录像失败，错误码: " + errorCode);
+            }
+
+            // 启动下载
+            boolean playResult = hcNetSDK.NET_DVR_PlayBackControl(downloadHandle, HCNetSDK.NET_DVR_PLAYSTART, 0, null);
+            if (!playResult) {
+                int errorCode = sdk.getLastError();
+                logger.error("启动下载失败，错误码: {}", errorCode);
+                hcNetSDK.NET_DVR_StopGetFile(downloadHandle);
+                return createErrorResponse(requestId, deviceId, "playback", "启动下载失败，错误码: " + errorCode);
+            }
+
+            // 构建响应数据
+            Map<String, Object> playbackData = new HashMap<>();
+            playbackData.put("download_handle", downloadHandle);
+            playbackData.put("file_path", fileName);
+            playbackData.put("channel", channel);
+            playbackData.put("start_time", startTimeStr);
+            playbackData.put("end_time", endTimeStr);
+            playbackData.put("message", "录像下载已启动，请使用download_handle查询下载进度");
+
+            logger.info("录像下载已启动: 设备={}, 句柄={}, 文件={}", deviceId, downloadHandle, fileName);
+
+            // 注意：实际下载是异步的，需要定期查询下载进度
+            // 这里返回下载句柄，客户端可以通过其他接口查询下载状态
+
+            return createSuccessResponse(requestId, deviceId, "playback", playbackData);
+
+        } catch (Exception e) {
+            logger.error("回放失败", e);
+            return createErrorResponse(requestId, deviceId, "playback", "回放异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 解析时间字符串为NET_DVR_TIME结构
+     * 格式: "2024-01-01 10:00:00"
+     */
+    private HCNetSDK.NET_DVR_TIME parseTimeString(String timeStr) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            Date date = sdf.parse(timeStr);
+
+            HCNetSDK.NET_DVR_TIME time = new HCNetSDK.NET_DVR_TIME();
+            time.dwYear = Integer.parseInt(new SimpleDateFormat("yyyy").format(date));
+            time.dwMonth = Integer.parseInt(new SimpleDateFormat("MM").format(date));
+            time.dwDay = Integer.parseInt(new SimpleDateFormat("dd").format(date));
+            time.dwHour = Integer.parseInt(new SimpleDateFormat("HH").format(date));
+            time.dwMinute = Integer.parseInt(new SimpleDateFormat("mm").format(date));
+            time.dwSecond = Integer.parseInt(new SimpleDateFormat("ss").format(date));
+
+            return time;
+        } catch (Exception e) {
+            logger.error("解析时间字符串失败: {}", timeStr, e);
+            return null;
+        }
     }
 
     /**
@@ -197,10 +380,10 @@ public class CommandHandler {
         switch (action.toLowerCase()) {
             case "up":
             case "tilt_up":
-                return HCNetSDK.PAN_TILT_UP;
+                return HCNetSDK.TILT_UP;
             case "down":
             case "tilt_down":
-                return HCNetSDK.PAN_TILT_DOWN;
+                return HCNetSDK.TILT_DOWN;
             case "left":
             case "pan_left":
                 return HCNetSDK.PAN_LEFT;

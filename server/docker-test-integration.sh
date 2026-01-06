@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Docker快速测试脚本
-# 在容器中编译并运行测试
+# Docker集成测试脚本
+# 测试所有功能模块和摄像头连接
 
 set -e
 
-echo "=== Docker快速测试 ==="
+echo "=== 集成测试 - Docker环境 ==="
 echo ""
 
 # 检查Docker是否运行
@@ -24,10 +24,17 @@ fi
 # 创建必要的目录
 mkdir -p data logs sdkLog
 
-echo "🧪 编译并运行集成测试..."
+echo "🧪 运行集成测试..."
+echo "测试内容："
+echo "  1. 配置加载"
+echo "  2. SDK初始化"
+echo "  3. 数据库初始化"
+echo "  4. 设备管理器初始化"
+echo "  5. 摄像头连接测试 (192.168.1.100:8000)"
+echo "  6. MQTT连接测试 (mqtt.yingzhu.net:1883)"
+echo "  7. 数据库操作测试"
 echo ""
 
-# 运行测试
 docker run --rm \
     --platform linux/arm64 \
     --network host \
@@ -36,18 +43,14 @@ docker run --rm \
     -v "$(pwd)/data:/app/data" \
     -v "$(pwd)/logs:/app/logs" \
     -v "$(pwd)/sdkLog:/app/sdkLog" \
-    -v maven-repo:/root/.m2 \
-    -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64 \
-    -e MAVEN_HOME=/opt/maven \
     -e LD_LIBRARY_PATH="/app/lib:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/HCNetSDKCom" \
-    -w /app \
     hikvision-nvr-service:latest \
-    bash -c "mvn clean compile -q && mvn exec:java -Dexec.mainClass='com.hikvision.nvr.IntegrationTest' -q"
+    bash -c "cd /app && mvn clean compile exec:java -Dexec.mainClass='com.hikvision.nvr.IntegrationTest'"
 
 echo ""
-echo "✅ 测试完成"
+echo "✅ 集成测试完成"
 echo ""
-echo "查看日志："
+echo "查看日志文件："
 echo "  - 应用日志: logs/app.log"
 echo "  - SDK日志: sdkLog/"
 echo "  - 数据库: data/devices.db"

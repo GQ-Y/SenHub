@@ -2,10 +2,10 @@
 
 # MQTT配置
 mqtt:
-  broker: "tcp://localhost:1883"  # MQTT服务器地址
+  broker: "tcp://mqtt.yingzhu.net:1883"  # MQTT服务器地址
   client_id: "hikvision-nvr-control"  # 客户端ID
-  username: ""  # MQTT用户名（可选）
-  password: ""  # MQTT密码（可选）
+  username: "demos1"  # MQTT用户名
+  password: "demos1"  # MQTT密码
   status_topic: "hikvision/status"  # 状态上报主题
   command_topic: "hikvision/command"  # 命令接收主题
   response_topic: "hikvision/response"  # 命令响应主题
@@ -22,8 +22,10 @@ scanner:
 # 设备认证配置
 device:
   default_username: "admin"  # 默认用户名
-  default_password: ""  # 默认密码（如果为空，需要手动配置）
-  default_port: 8000  # 默认端口
+  default_password: "hk12345678"  # 默认密码
+  default_port: 8000  # SDK默认端口（用于SDK协议通信）
+  http_port: 80  # HTTP端口（用于Web访问、抓图等）
+  rtsp_port: 554  # RTSP端口（用于视频流）
   login_timeout: 5  # 登录超时时间（秒）
   reconnect_interval: 30  # 重连间隔（秒）
 
