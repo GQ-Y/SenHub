@@ -1,14 +1,14 @@
 package com.hikvision.nvr.hikvision;
 
 import com.sun.jna.*;
-import com.sun.jna.examples.win32.W32API;
-import com.sun.jna.examples.win32.W32API.HWND;
 import com.sun.jna.ptr.ByteByReference;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.ShortByReference;
 
 import java.util.Arrays;
 import java.util.List;
+
+// Linux环境下，HWND使用Pointer代替（在Java中直接使用Pointer）
 
 //SDK接口说明,HCNetSDK.dll
 public interface HCNetSDK extends Library {
@@ -4251,7 +4251,7 @@ DVR实现巡航数据结构
         public NET_DVR_STREAM_INFO struIDInfo;
         public NET_DVR_TIME struBeginTime;
         public NET_DVR_TIME struEndTime;
-        public HWND hWnd;
+        public Pointer hWnd;  // Linux环境下使用Pointer代替HWND
         public byte byDrawFrame; //0:不抽帧，1：抽帧
         public byte byVolumeType;  //0-普通录像卷  1-存档卷
         public byte byVolumeNum;  //卷号，目前指存档卷号
@@ -9582,7 +9582,7 @@ DVR实现巡航数据结构
     }
 
     public static interface FDrawFun extends Callback {
-        public void invoke(int lRealHandle, W32API.HDC hDc, int dwUser);
+        public void invoke(int lRealHandle, Pointer hDc, int dwUser);  // Linux环境下使用Pointer代替HDC
     }
 
     public static interface FStdDataCallBack extends Callback {
@@ -9679,9 +9679,9 @@ DVR实现巡航数据结构
 
     boolean NET_DVR_UnlockFileByName(int lUserID, String sUnlockFileName);
 
-    int NET_DVR_PlayBackByName(int lUserID, String sPlayBackFileName, HWND hWnd);
+    int NET_DVR_PlayBackByName(int lUserID, String sPlayBackFileName, Pointer hWnd);
 
-    int NET_DVR_PlayBackByTime(int lUserID, int lChannel, NET_DVR_TIME lpStartTime, NET_DVR_TIME lpStopTime, HWND hWnd);
+    int NET_DVR_PlayBackByTime(int lUserID, int lChannel, NET_DVR_TIME lpStartTime, NET_DVR_TIME lpStopTime, Pointer hWnd);
 
     int NET_DVR_PlayBackByTime_V40(int lUserID, NET_DVR_VOD_PARA pVodPara);
 
@@ -10700,7 +10700,7 @@ interface PlayCtrl extends Library {
 
     boolean PlayM4_SetStreamOpenMode(int nPort, int nMode);
 
-    boolean PlayM4_Play(int nPort, HWND hWnd);
+    boolean PlayM4_Play(int nPort, Pointer hWnd);  // Linux环境下使用Pointer代替HWND
 
     boolean PlayM4_Stop(int nPort);
 
@@ -10729,6 +10729,10 @@ interface PlayCtrl extends Library {
 
 }
 
+// Windows GDI和USER32接口在Linux环境下不需要
+// 这些接口仅在Windows系统上用于设置遮挡区域、移动侦测区域等
+// Linux环境下可以忽略这些接口
+/*
 //windows gdi接口,gdi32.dll in system32 folder, 在设置遮挡区域,移动侦测区域等情况下使用
 interface GDI32 extends W32API {
     GDI32 INSTANCE = (GDI32) Native.loadLibrary("gdi32", GDI32.class, DEFAULT_OPTIONS);
@@ -10756,4 +10760,5 @@ interface USER32 extends W32API {
 
     int FillRect(HDC hDC, com.sun.jna.examples.win32.GDI32.RECT lprc, HANDLE hbr);
 }
+*/
 
