@@ -52,7 +52,7 @@ public class SDKTest {
         try {
             // 创建测试配置
             Config.SdkConfig sdkConfig = new Config.SdkConfig();
-            sdkConfig.setLibPath(System.getProperty("user.dir") + "/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll");
+            sdkConfig.setLibPath(System.getProperty("user.dir") + "/lib/hikvision");
             sdkConfig.setLogPath("./sdkLog");
             sdkConfig.setLogLevel(3);
 

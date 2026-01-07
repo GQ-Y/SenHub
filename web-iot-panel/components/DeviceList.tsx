@@ -74,9 +74,14 @@ export const DeviceList: React.FC = () => {
   // 弹窗管理
   const modal = useModal();
 
+  // 品牌列表状态
+  const [brands, setBrands] = useState<string[]>(['Hikvision', 'Dahua', 'Tiandy', 'Auto']);
+  const [defaultBrand, setDefaultBrand] = useState<string>('Auto');
+  const [isLoadingBrands, setIsLoadingBrands] = useState(false);
+
   // Form State
   const [formData, setFormData] = useState<Partial<Device> & { username?: string; password?: string }>({
-    name: '', ip: '', port: 8000, brand: 'Hikvision', model: '', username: 'admin', password: '123456'
+    name: '', ip: '', port: 8000, brand: 'Auto', model: '', username: 'admin', password: '123456'
   });
 
   // 加载设备列表
@@ -95,7 +100,7 @@ export const DeviceList: React.FC = () => {
         name: d.name || '',
         ip: d.ip || '',
         port: d.port || 8000,
-        brand: d.brand || 'Hikvision',
+        brand: d.brand || defaultBrand || 'Auto',
         model: d.model || '',
         status: (d.status?.toUpperCase() as DeviceStatus) || DeviceStatus.OFFLINE,
         lastSeen: d.lastSeen || 'Never',
@@ -111,13 +116,39 @@ export const DeviceList: React.FC = () => {
     }
   };
 
-  // 初始加载和搜索/过滤变化时重新加载
+  // 加载品牌列表
+  const loadBrands = async () => {
+    setIsLoadingBrands(true);
+    try {
+      const response = await deviceService.getBrands();
+      if (response.data?.supported) {
+        setBrands(response.data.supported);
+        if (response.data.default) {
+          setDefaultBrand(response.data.default);
+        }
+      }
+    } catch (err: any) {
+      console.error('加载品牌列表失败:', err);
+      // 失败时使用默认品牌列表
+      setBrands(['Hikvision', 'Dahua', 'Tiandy', 'Auto']);
+      setDefaultBrand('Auto');
+    } finally {
+      setIsLoadingBrands(false);
+    }
+  };
+
+  // 初始加载品牌列表（只执行一次）
+  useEffect(() => {
+    loadBrands();
+  }, []);
+
+  // 初始加载和搜索/过滤变化时重新加载设备列表
   useEffect(() => {
     loadDevices();
   }, [searchTerm, statusFilter]);
 
   const openAddModal = () => {
-    setFormData({ name: '', ip: '', port: 8000, brand: 'Hikvision', model: '' });
+    setFormData({ name: '', ip: '', port: 8000, brand: defaultBrand, model: '', username: 'admin', password: '123456' });
     setActiveModal('ADD');
   };
 
@@ -465,13 +496,19 @@ export const DeviceList: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand')}</label>
               <select 
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.brand}
+                value={formData.brand || defaultBrand}
                 onChange={e => setFormData({...formData, brand: e.target.value})}
+                disabled={isLoadingBrands}
               >
-                  <option>Hikvision</option>
-                  <option>Dahua</option>
-                  <option>Uniview</option>
-                  <option>ONVIF</option>
+                {isLoadingBrands ? (
+                  <option>加载中...</option>
+                ) : (
+                  brands.map(brand => (
+                    <option key={brand} value={brand}>
+                      {brand === 'Auto' ? (language === 'zh' ? '自动检测' : 'Auto Detect') : brand}
+                    </option>
+                  ))
+                )}
               </select>
            </div>
            <div>

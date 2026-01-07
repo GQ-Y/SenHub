@@ -37,6 +37,6 @@ docker run --rm -it \
     --platform linux/arm64 \
     -v "$(pwd):/app" \
     -v "$(pwd)/../sdk:/app/../sdk:ro" \
-    -e LD_LIBRARY_PATH="/app/lib:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/HCNetSDKCom" \
+    -e LD_LIBRARY_PATH="/app/lib:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/tiandy:/app/lib/dahua" \
     hikvision-nvr-service:latest \
     "$@"

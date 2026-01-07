@@ -1,4 +1,4 @@
-package Common;
+package com.hikvision.nvr.Common;
 
 public class CommonUtil {
 

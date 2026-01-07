@@ -68,6 +68,7 @@ public class Database {
             "status TEXT DEFAULT 'offline', " +
             "user_id INTEGER DEFAULT -1, " +
             "channel INTEGER DEFAULT 1, " +
+            "brand TEXT DEFAULT 'auto', " +
             "last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
@@ -121,6 +122,7 @@ public class Database {
 
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
             "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port); " +
+            "CREATE INDEX IF NOT EXISTS idx_brand ON devices(brand); " +
             "CREATE INDEX IF NOT EXISTS idx_config_key ON configs(config_key); " +
             "CREATE INDEX IF NOT EXISTS idx_driver_id ON drivers(driver_id); " +
             "CREATE INDEX IF NOT EXISTS idx_device_history_device_id ON device_history(device_id); " +
@@ -151,6 +153,21 @@ public class Database {
                 }
             }
             
+            // 检查并添加brand列（如果表已存在但缺少该列）
+            try {
+                stmt.executeQuery("SELECT brand FROM devices LIMIT 1");
+            } catch (SQLException e) {
+                // 如果查询失败，说明缺少brand列，需要添加
+                logger.info("检测到缺少brand列，正在添加...");
+                try {
+                    stmt.execute("ALTER TABLE devices ADD COLUMN brand TEXT DEFAULT 'auto'");
+                    logger.info("成功添加brand列");
+                } catch (SQLException ex) {
+                    // 如果添加失败（可能列已存在），忽略错误
+                    logger.debug("添加brand列失败（可能已存在）: {}", ex.getMessage());
+                }
+            }
+            
             logger.info("数据库表创建成功");
         }
     }
@@ -160,8 +177,8 @@ public class Database {
      */
     public boolean saveOrUpdateDevice(DeviceInfo device) {
         String sql = "INSERT OR REPLACE INTO devices " +
-            "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, last_seen, updated_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+            "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, brand, last_seen, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
@@ -174,6 +191,7 @@ public class Database {
             pstmt.setString(8, device.getStatus());
             pstmt.setInt(9, device.getUserId());
             pstmt.setInt(10, device.getChannel() > 0 ? device.getChannel() : 1);
+            pstmt.setString(11, device.getBrand() != null ? device.getBrand() : "auto");
 
             pstmt.executeUpdate();
             logger.debug("设备信息已保存: {}:{}", device.getIp(), device.getPort());
@@ -318,7 +336,7 @@ public class Database {
             "hikvision_sdk",
             "Hikvision SDK",
             "6.1.9.45",
-            "./MakeAll",
+            "./lib/hikvision",
             "./sdkLog",
             3,
             "ACTIVE"
@@ -365,6 +383,12 @@ public class Database {
         device.setStatus(rs.getString("status"));
         device.setUserId(rs.getInt("user_id"));
         device.setChannel(rs.getInt("channel"));
+        // 处理brand字段，如果不存在则使用默认值
+        try {
+            device.setBrand(rs.getString("brand"));
+        } catch (SQLException e) {
+            device.setBrand("auto");
+        }
         device.setLastSeen(rs.getTimestamp("last_seen"));
         device.setCreatedAt(rs.getTimestamp("created_at"));
         device.setUpdatedAt(rs.getTimestamp("updated_at"));

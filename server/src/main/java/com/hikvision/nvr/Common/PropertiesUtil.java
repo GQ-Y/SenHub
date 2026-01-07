@@ -1,4 +1,4 @@
-package Common;
+package com.hikvision.nvr.Common;
 
 import java.io.*;
 import java.util.Enumeration;

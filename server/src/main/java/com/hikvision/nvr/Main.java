@@ -10,6 +10,7 @@ import com.hikvision.nvr.config.ConfigLoader;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.device.DeviceManager;
+import com.hikvision.nvr.device.SDKFactory;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import com.hikvision.nvr.keeper.Keeper;
 import com.hikvision.nvr.mqtt.MqttClient;
@@ -31,7 +32,6 @@ public class Main {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
     
     private Config config;
-    private HikvisionSDK sdk;
     private Database database;
     private MqttClient mqttClient;
     private DeviceManager deviceManager;
@@ -62,13 +62,9 @@ public class Main {
             }
             logger.info("配置文件加载成功");
 
-            // 2. 初始化SDK
-            sdk = HikvisionSDK.getInstance();
-            if (!sdk.init(config.getSdk())) {
-                logger.error("SDK初始化失败，错误码: {}", sdk.getLastError());
-                System.exit(1);
-            }
-            logger.info("SDK初始化成功");
+            // 2. 初始化多品牌SDK工厂
+            SDKFactory.init(config);
+            logger.info("多品牌SDK工厂初始化完成");
 
             // 3. 初始化数据库
             database = new Database(config.getDatabase().getPath());
@@ -90,7 +86,7 @@ public class Main {
                     "hikvision_sdk",
                     "Hikvision SDK",
                     "6.1.9.45",
-                    sdkConfig.getLibPath() != null ? sdkConfig.getLibPath() : "./MakeAll",
+                    sdkConfig.getLibPath() != null ? sdkConfig.getLibPath() : "./lib/hikvision",
                     sdkConfig.getLogPath() != null ? sdkConfig.getLogPath() : "./sdkLog",
                     sdkConfig.getLogLevel() > 0 ? sdkConfig.getLogLevel() : 3,
                     "ACTIVE"
@@ -99,11 +95,12 @@ public class Main {
             }
 
             // 4. 初始化设备管理器
-            deviceManager = new DeviceManager(sdk, database, config.getDevice());
+            deviceManager = new DeviceManager(database, config.getDevice());
             logger.info("设备管理器初始化成功");
 
-            // 5. 初始化录制管理器
-            recorder = new Recorder(sdk, deviceManager, config.getRecorder());
+            // 5. 初始化录制管理器（暂时使用海康SDK，后续可扩展为多品牌）
+            HikvisionSDK hikvisionSDK = (HikvisionSDK) SDKFactory.getSDK("hikvision");
+            recorder = new Recorder(hikvisionSDK, deviceManager, config.getRecorder());
             recorder.start();
             logger.info("录制管理器初始化成功");
 
@@ -116,12 +113,12 @@ public class Main {
             }
             logger.info("MQTT客户端连接成功");
 
-            // 7. 初始化命令处理器
-            commandHandler = new CommandHandler(deviceManager, sdk, recorder);
+            // 7. 初始化命令处理器（暂时使用海康SDK，后续可扩展为多品牌）
+            commandHandler = new CommandHandler(deviceManager, hikvisionSDK, recorder);
             logger.info("命令处理器初始化成功");
 
-            // 8. 启动设备扫描器
-            scanner = new DeviceScanner(sdk, database, config.getScanner(), config.getDevice());
+            // 8. 启动设备扫描器（暂时使用海康SDK，后续可扩展为多品牌）
+            scanner = new DeviceScanner(hikvisionSDK, database, config.getScanner(), config.getDevice());
             scanner.setDeviceFoundCallback(this::onDeviceFound);
             if (scanner.start()) {
                 logger.info("设备扫描器启动成功");
@@ -299,7 +296,8 @@ public class Main {
         
         // 初始化控制器
         AuthController authController = new AuthController(database);
-        DeviceController deviceController = new DeviceController(deviceManager, sdk, database, recorder);
+        HikvisionSDK hikvisionSDKForController = (HikvisionSDK) SDKFactory.getSDK("hikvision");
+        DeviceController deviceController = new DeviceController(deviceManager, hikvisionSDKForController, database, recorder);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);
@@ -311,6 +309,7 @@ public class Main {
         
         // 设备路由
         Spark.get("/api/devices", deviceController::getDevices);
+        Spark.get("/api/devices/brands", deviceController::getBrands);
         Spark.get("/api/devices/:id", deviceController::getDevice);
         Spark.post("/api/devices", deviceController::addDevice);
         Spark.put("/api/devices/:id", deviceController::updateDevice);
@@ -411,10 +410,8 @@ public class Main {
             // 停止HTTP服务器
             Spark.stop();
             
-            // 清理SDK
-            if (sdk != null) {
-                sdk.cleanup();
-            }
+            // 清理所有SDK
+            SDKFactory.cleanup();
 
             logger.info("服务已关闭");
         } catch (Exception e) {

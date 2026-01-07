@@ -63,7 +63,7 @@ else
         -v maven-repo:/root/.m2 \
         -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64 \
         -e MAVEN_HOME=/opt/maven \
-        -e LD_LIBRARY_PATH="/app/lib:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/HCNetSDKCom" \
+        -e LD_LIBRARY_PATH="/app/lib:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/tiandy:/app/lib/dahua" \
         -w /app \
         hikvision-nvr-service:latest \
         /bin/bash

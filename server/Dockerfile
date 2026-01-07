@@ -28,7 +28,7 @@ WORKDIR /app
 # 注意：这些目录通过volume挂载，不需要在镜像中创建
 
 # 设置SDK库文件路径（通过挂载）
-ENV LD_LIBRARY_PATH=/app/lib:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/HCNetSDKCom
+ENV LD_LIBRARY_PATH=/app/lib:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/tiandy:/app/lib/dahua
 
 # 安装Maven
 RUN wget https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz && \

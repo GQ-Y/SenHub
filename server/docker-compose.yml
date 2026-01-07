@@ -25,7 +25,7 @@ services:
     environment:
       - JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64
       - MAVEN_HOME=/opt/maven
-      - LD_LIBRARY_PATH=/app/lib:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll:/app/../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/HCNetSDKCom
+      - LD_LIBRARY_PATH=/app/lib:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/tiandy:/app/lib/dahua
     working_dir: /app
     stdin_open: true
     tty: true

@@ -119,6 +119,9 @@ public class DeviceController {
             device.setPassword((String) body.getOrDefault("password", ""));
             device.setStatus("offline");
             device.setChannel(((Number) body.getOrDefault("channel", 1)).intValue());
+            // 设置品牌，如果未指定则使用auto（自动检测）
+            String brand = (String) body.getOrDefault("brand", DeviceInfo.BRAND_AUTO);
+            device.setBrand(brand != null ? brand : DeviceInfo.BRAND_AUTO);
             
             // 生成包含认证信息的RTSP URL
             String rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(), device.getPassword());
@@ -178,6 +181,12 @@ public class DeviceController {
             }
             if (body.containsKey("channel")) {
                 device.setChannel(((Number) body.get("channel")).intValue());
+            }
+            if (body.containsKey("brand")) {
+                String brand = (String) body.get("brand");
+                if (brand != null && !brand.isEmpty()) {
+                    device.setBrand(brand);
+                }
             }
             
             // 更新RTSP URL
@@ -305,7 +314,12 @@ public class DeviceController {
         map.put("name", device.getName());
         map.put("ip", device.getIp());
         map.put("port", device.getPort());
-        map.put("brand", "Hikvision"); // 可以从设备信息中获取
+        // 从设备信息中获取brand，如果为空则使用默认值
+        String brand = device.getBrand();
+        if (brand == null || brand.isEmpty()) {
+            brand = DeviceInfo.BRAND_AUTO;
+        }
+        map.put("brand", brand);
         map.put("model", ""); // 可以从设备信息中获取
         map.put("status", device.getStatus().toUpperCase());
         map.put("lastSeen", formatLastSeen(device.getLastSeen()));
@@ -1431,6 +1445,31 @@ public class DeviceController {
         } catch (Exception e) {
             logger.error("创建响应失败", e);
             return "{\"code\":500,\"message\":\"Internal error\",\"data\":null}";
+        }
+    }
+
+    /**
+     * 获取支持的品牌列表
+     * GET /api/devices/brands
+     */
+    public String getBrands(Request request, Response response) {
+        try {
+            Map<String, Object> brands = new HashMap<>();
+            brands.put("supported", Arrays.asList(
+                DeviceInfo.BRAND_HIKVISION,
+                DeviceInfo.BRAND_TIANDY,
+                DeviceInfo.BRAND_DAHUA,
+                DeviceInfo.BRAND_AUTO
+            ));
+            brands.put("default", DeviceInfo.BRAND_AUTO);
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(brands);
+        } catch (Exception e) {
+            logger.error("获取品牌列表失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取品牌列表失败: " + e.getMessage());
         }
     }
 

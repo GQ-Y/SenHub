@@ -5,6 +5,8 @@ import com.hikvision.nvr.config.ConfigLoader;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.device.DeviceManager;
+import com.hikvision.nvr.device.DeviceSDK;
+import com.hikvision.nvr.device.SDKFactory;
 import com.hikvision.nvr.hikvision.HCNetSDK;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import org.slf4j.Logger;
@@ -36,14 +38,10 @@ public class PlaybackTest {
             }
             logger.info("✓ 配置加载成功");
 
-            // 2. 初始化SDK
-            logger.info("\n[2/5] 初始化SDK...");
-            HikvisionSDK sdk = HikvisionSDK.getInstance();
-            if (!sdk.init(config.getSdk())) {
-                logger.error("✗ SDK初始化失败，错误码: {}", sdk.getLastError());
-                System.exit(1);
-            }
-            logger.info("✓ SDK初始化成功");
+            // 2. 初始化SDK工厂
+            logger.info("\n[2/5] 初始化SDK工厂...");
+            SDKFactory.init(config);
+            logger.info("✓ SDK工厂初始化成功");
 
             // 3. 初始化数据库和设备管理器
             logger.info("\n[3/5] 初始化数据库和设备管理器...");
@@ -51,7 +49,7 @@ public class PlaybackTest {
             database.init();
             logger.info("✓ 数据库初始化成功");
 
-            DeviceManager deviceManager = new DeviceManager(sdk, database, config.getDevice());
+            DeviceManager deviceManager = new DeviceManager(database, config.getDevice());
             logger.info("✓ 设备管理器初始化成功");
 
             // 4. 连接设备
@@ -83,7 +81,10 @@ public class PlaybackTest {
             boolean loginSuccess = deviceManager.loginDevice(testDevice);
             if (!loginSuccess) {
                 logger.error("✗ 设备登录失败");
-                logger.error("  - SDK错误码: {}", sdk.getLastError());
+                DeviceSDK deviceSDK = SDKFactory.getSDK(testDevice.getBrand());
+                if (deviceSDK != null) {
+                    logger.error("  - SDK错误码: {}", deviceSDK.getLastError());
+                }
                 System.exit(1);
             }
 
@@ -99,7 +100,15 @@ public class PlaybackTest {
             int userId = testDevice.getUserId();
             int channel = testDevice.getChannel() > 0 ? testDevice.getChannel() : 1;
 
-            HCNetSDK hcNetSDK = sdk.getSDK();
+            // 获取SDK实例（仅支持海康SDK回放）
+            DeviceSDK deviceSDK = SDKFactory.getSDK(testDevice.getBrand());
+            if (deviceSDK == null || !(deviceSDK instanceof HikvisionSDK)) {
+                logger.error("✗ 当前仅支持海康SDK回放，设备品牌: {}", testDevice.getBrand());
+                deviceManager.logoutDevice(testDevice.getDeviceId());
+                System.exit(1);
+            }
+            HikvisionSDK hikvisionSDK = (HikvisionSDK) deviceSDK;
+            HCNetSDK hcNetSDK = hikvisionSDK.getSDK();
 
             // 计算时间：当前时间往前推，下载30秒的录像
             // 当前是1月6日12:53，我们往前找录像，比如12:50:00到12:50:30
@@ -165,7 +174,7 @@ public class PlaybackTest {
             int downloadHandle = hcNetSDK.NET_DVR_GetFileByTime_V40(userId, fileName, playCond);
 
             if (downloadHandle < 0) {
-                int errorCode = sdk.getLastError();
+                int errorCode = hikvisionSDK.getLastError();
                 logger.error("✗ 开始下载录像失败，错误码: {}", errorCode);
                 deviceManager.logoutDevice(testDevice.getDeviceId());
                 System.exit(1);
@@ -176,7 +185,7 @@ public class PlaybackTest {
             // 启动下载
             boolean playResult = hcNetSDK.NET_DVR_PlayBackControl(downloadHandle, HCNetSDK.NET_DVR_PLAYSTART, 0, null);
             if (!playResult) {
-                int errorCode = sdk.getLastError();
+                int errorCode = hikvisionSDK.getLastError();
                 logger.error("✗ 启动下载失败，错误码: {}", errorCode);
                 hcNetSDK.NET_DVR_StopGetFile(downloadHandle);
                 deviceManager.logoutDevice(testDevice.getDeviceId());

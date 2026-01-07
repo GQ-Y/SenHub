@@ -139,6 +139,14 @@ export const deviceService = {
     const response = await post<{ downloadUrl: string; fileName: string; fileSize: number }>(`/devices/${encodeURIComponent(deviceId)}/export`, { filePath });
     return response;
   },
+
+  /**
+   * 获取支持的品牌列表
+   */
+  async getBrands() {
+    const response = await get<{ supported: string[]; default: string }>('/devices/brands');
+    return response;
+  },
 };
 
 // ==================== 驱动服务 ====================

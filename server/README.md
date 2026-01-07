@@ -58,7 +58,7 @@ server/
 ```bash
 cd server
 mkdir -p lib
-cp -r ../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/* lib/
+cp -r ../sdk/HCNetSDKV6.1.9.45_build20220902_ArmLinux64_ZH/MakeAll/* lib/hikvision/
 ```
 
 ### 2. 编译项目

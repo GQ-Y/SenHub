@@ -6,6 +6,8 @@ import com.hikvision.nvr.config.ConfigLoader;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.device.DeviceManager;
+import com.hikvision.nvr.device.DeviceSDK;
+import com.hikvision.nvr.device.SDKFactory;
 import com.hikvision.nvr.hikvision.HCNetSDK;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import org.slf4j.Logger;
@@ -39,14 +41,10 @@ public class CaptureTest {
             }
             logger.info("✓ 配置加载成功");
 
-            // 2. 初始化SDK
-            logger.info("\n[2/4] 初始化SDK...");
-            HikvisionSDK sdk = HikvisionSDK.getInstance();
-            if (!sdk.init(config.getSdk())) {
-                logger.error("✗ SDK初始化失败，错误码: {}", sdk.getLastError());
-                System.exit(1);
-            }
-            logger.info("✓ SDK初始化成功");
+            // 2. 初始化SDK工厂
+            logger.info("\n[2/4] 初始化SDK工厂...");
+            SDKFactory.init(config);
+            logger.info("✓ SDK工厂初始化成功");
 
             // 3. 初始化数据库和设备管理器
             logger.info("\n[3/4] 初始化数据库和设备管理器...");
@@ -54,7 +52,7 @@ public class CaptureTest {
             database.init();
             logger.info("✓ 数据库初始化成功");
 
-            DeviceManager deviceManager = new DeviceManager(sdk, database, config.getDevice());
+            DeviceManager deviceManager = new DeviceManager(database, config.getDevice());
             logger.info("✓ 设备管理器初始化成功");
 
             // 4. 连接设备并测试抓图
@@ -86,7 +84,10 @@ public class CaptureTest {
             boolean loginSuccess = deviceManager.loginDevice(testDevice);
             if (!loginSuccess) {
                 logger.error("✗ 设备登录失败");
-                logger.error("  - SDK错误码: {}", sdk.getLastError());
+                DeviceSDK deviceSDK = SDKFactory.getSDK(testDevice.getBrand());
+                if (deviceSDK != null) {
+                    logger.error("  - SDK错误码: {}", deviceSDK.getLastError());
+                }
                 System.exit(1);
             }
 
@@ -102,7 +103,15 @@ public class CaptureTest {
             int userId = testDevice.getUserId();
             int channel = testDevice.getChannel() > 0 ? testDevice.getChannel() : 1;
 
-            HCNetSDK hcNetSDK = sdk.getSDK();
+            // 获取SDK实例（仅支持海康SDK抓图）
+            DeviceSDK deviceSDK = SDKFactory.getSDK(testDevice.getBrand());
+            if (deviceSDK == null || !(deviceSDK instanceof HikvisionSDK)) {
+                logger.error("✗ 当前仅支持海康SDK抓图，设备品牌: {}", testDevice.getBrand());
+                deviceManager.logoutDevice(testDevice.getDeviceId());
+                System.exit(1);
+            }
+            HikvisionSDK hikvisionSDK = (HikvisionSDK) deviceSDK;
+            HCNetSDK hcNetSDK = hikvisionSDK.getSDK();
             
             // 设置抓图参数
             HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
@@ -132,7 +141,7 @@ public class CaptureTest {
             boolean captureResult = hcNetSDK.NET_DVR_CaptureJPEGPicture(userId, channel, jpegPara, fileNameArray);
 
             if (!captureResult) {
-                int errorCode = sdk.getLastError();
+                int errorCode = hikvisionSDK.getLastError();
                 logger.error("✗ 抓图失败，错误码: {}", errorCode);
                 deviceManager.logoutDevice(testDevice.getDeviceId());
                 System.exit(1);

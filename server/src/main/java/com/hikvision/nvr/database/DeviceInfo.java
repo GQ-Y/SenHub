@@ -6,6 +6,13 @@ import java.sql.Timestamp;
  * 设备信息实体类
  */
 public class DeviceInfo {
+    // 品牌常量
+    public static final String BRAND_HIKVISION = "hikvision";
+    public static final String BRAND_TIANDY = "tiandy";
+    public static final String BRAND_DAHUA = "dahua";
+    public static final String BRAND_AUTO = "auto";
+    public static final String BRAND_UNKNOWN = "unknown";
+    
     private int id;
     private String deviceId;  // 设备ID，通常使用IP地址
     private String ip;
@@ -17,6 +24,7 @@ public class DeviceInfo {
     private String status;  // online, offline
     private int userId;  // SDK登录返回的用户ID
     private int channel;  // 通道号（起始通道号）
+    private String brand;  // 设备品牌：hikvision, tiandy, dahua, auto, unknown
     private Timestamp lastSeen;
     private Timestamp createdAt;
     private Timestamp updatedAt;
@@ -55,6 +63,9 @@ public class DeviceInfo {
     public int getChannel() { return channel; }
     public void setChannel(int channel) { this.channel = channel; }
 
+    public String getBrand() { return brand != null ? brand : BRAND_AUTO; }
+    public void setBrand(String brand) { this.brand = brand; }
+
     public Timestamp getLastSeen() { return lastSeen; }
     public void setLastSeen(Timestamp lastSeen) { this.lastSeen = lastSeen; }
 
@@ -66,7 +77,7 @@ public class DeviceInfo {
 
     @Override
     public String toString() {
-        return String.format("DeviceInfo{deviceId='%s', ip='%s', port=%d, name='%s', status='%s'}", 
-            deviceId, ip, port, name, status);
+        return String.format("DeviceInfo{deviceId='%s', ip='%s', port=%d, name='%s', status='%s', brand='%s'}", 
+            deviceId, ip, port, name, status, brand);
     }
 }

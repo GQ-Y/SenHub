@@ -2,6 +2,7 @@ package com.hikvision.nvr.hikvision;
 
 import com.hikvision.nvr.Common.osSelect;
 import com.hikvision.nvr.config.Config;
+import com.hikvision.nvr.device.DeviceSDK;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import org.slf4j.Logger;
@@ -12,7 +13,7 @@ import java.io.File;
 /**
  * 海康威视SDK封装类
  */
-public class HikvisionSDK {
+public class HikvisionSDK implements DeviceSDK {
     private static final Logger logger = LoggerFactory.getLogger(HikvisionSDK.class);
     private static HikvisionSDK instance;
     private HCNetSDK hCNetSDK;
@@ -39,6 +40,7 @@ public class HikvisionSDK {
     /**
      * 初始化SDK
      */
+    @Override
     public boolean init(Config.SdkConfig config) {
         if (initialized) {
             return true;
@@ -102,7 +104,7 @@ public class HikvisionSDK {
             if (sdkConfig != null && sdkConfig.getLibPath() != null) {
                 libPath = sdkConfig.getLibPath() + "/libhcnetsdk.so";
             } else {
-                libPath = System.getProperty("user.dir") + "/lib/libhcnetsdk.so";
+                libPath = System.getProperty("user.dir") + "/lib/hikvision/libhcnetsdk.so";
             }
 
             File libFile = new File(libPath);
@@ -128,7 +130,7 @@ public class HikvisionSDK {
         try {
             String libPath = config.getLibPath();
             if (libPath == null) {
-                libPath = System.getProperty("user.dir") + "/lib";
+                libPath = System.getProperty("user.dir") + "/lib/hikvision";
             }
 
             // 设置crypto和ssl库路径
@@ -163,6 +165,7 @@ public class HikvisionSDK {
     /**
      * 清理SDK资源
      */
+    @Override
     public void cleanup() {
         if (initialized && hCNetSDK != null) {
             hCNetSDK.NET_DVR_Cleanup();
@@ -174,16 +177,61 @@ public class HikvisionSDK {
     /**
      * 获取最后错误码
      */
+    @Override
     public int getLastError() {
         if (hCNetSDK == null) {
             return -1;
         }
         return hCNetSDK.NET_DVR_GetLastError();
     }
+    
+    /**
+     * 获取最后错误信息（字符串描述）
+     */
+    @Override
+    public String getLastErrorString() {
+        int errorCode = getLastError();
+        if (errorCode == 0) {
+            return "没有错误";
+        }
+        switch (errorCode) {
+            case HCNetSDK.NET_DVR_PASSWORD_ERROR:
+                return "用户名或密码错误";
+            case HCNetSDK.NET_DVR_NOENOUGHPRI:
+                return "权限不足";
+            case HCNetSDK.NET_DVR_NOINIT:
+                return "没有初始化";
+            case HCNetSDK.NET_DVR_CHANNEL_ERROR:
+                return "通道号错误";
+            case HCNetSDK.NET_DVR_OVER_MAXLINK:
+                return "连接到DVR的客户端个数超过最大";
+            case HCNetSDK.NET_DVR_VERSIONNOMATCH:
+                return "版本不匹配";
+            case HCNetSDK.NET_DVR_NETWORK_FAIL_CONNECT:
+                return "连接服务器失败";
+            case HCNetSDK.NET_DVR_NETWORK_SEND_ERROR:
+                return "向服务器发送失败";
+            case HCNetSDK.NET_DVR_NETWORK_RECV_ERROR:
+                return "从服务器接收数据失败";
+            case HCNetSDK.NET_DVR_NETWORK_RECV_TIMEOUT:
+                return "从服务器接收数据超时";
+            default:
+                return "未知错误，错误码: " + errorCode;
+        }
+    }
+    
+    /**
+     * 获取品牌名称
+     */
+    @Override
+    public String getBrand() {
+        return "hikvision";
+    }
 
     /**
      * 登录设备
      */
+    @Override
     public int login(String ip, short port, String username, String password) {
         if (!initialized || hCNetSDK == null) {
             logger.error("SDK未初始化");
@@ -277,6 +325,7 @@ public class HikvisionSDK {
     /**
      * 登出设备
      */
+    @Override
     public boolean logout(int userID) {
         if (!initialized || hCNetSDK == null) {
             return false;

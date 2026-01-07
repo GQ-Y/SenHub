@@ -5,6 +5,8 @@ import com.hikvision.nvr.config.ConfigLoader;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.device.DeviceManager;
+import com.hikvision.nvr.device.DeviceSDK;
+import com.hikvision.nvr.device.SDKFactory;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import com.hikvision.nvr.mqtt.MqttClient;
 import org.slf4j.Logger;
@@ -39,14 +41,10 @@ public class IntegrationTest {
             logger.info("  - HTTP端口: {}", config.getDevice().getHttpPort());
             logger.info("  - RTSP端口: {}", config.getDevice().getRtspPort());
 
-            // 2. 初始化SDK
-            logger.info("\n[2/7] 初始化SDK...");
-            HikvisionSDK sdk = HikvisionSDK.getInstance();
-            if (!sdk.init(config.getSdk())) {
-                logger.error("✗ SDK初始化失败，错误码: {}", sdk.getLastError());
-                System.exit(1);
-            }
-            logger.info("✓ SDK初始化成功");
+            // 2. 初始化SDK工厂
+            logger.info("\n[2/7] 初始化SDK工厂...");
+            SDKFactory.init(config);
+            logger.info("✓ SDK工厂初始化成功");
 
             // 3. 初始化数据库
             logger.info("\n[3/7] 初始化数据库...");
@@ -59,7 +57,7 @@ public class IntegrationTest {
 
             // 4. 初始化设备管理器
             logger.info("\n[4/7] 初始化设备管理器...");
-            DeviceManager deviceManager = new DeviceManager(sdk, database, config.getDevice());
+            DeviceManager deviceManager = new DeviceManager(database, config.getDevice());
             logger.info("✓ 设备管理器初始化成功");
 
             // 5. 测试摄像头连接
@@ -102,8 +100,10 @@ public class IntegrationTest {
                 logger.info("✓ 摄像头已登出");
             } else {
                 logger.error("✗ 摄像头连接失败");
-                int errorCode = sdk.getLastError();
-                logger.error("  - SDK错误码: {}", errorCode);
+                DeviceSDK deviceSDK = SDKFactory.getSDK(testDevice != null ? testDevice.getBrand() : "hikvision");
+                if (deviceSDK != null) {
+                    logger.error("  - SDK错误码: {}", deviceSDK.getLastError());
+                }
                 logger.error("请检查：");
                 logger.error("  1. 摄像头IP地址是否正确: {}", testIp);
                 logger.error("  2. 摄像头是否在线（可尝试ping {}）", testIp);
@@ -156,7 +156,7 @@ public class IntegrationTest {
             // 清理
             logger.info("\n清理资源...");
             database.close();
-            sdk.cleanup();
+            SDKFactory.cleanup();
 
             logger.info("\n========================================");
             logger.info("集成测试完成");

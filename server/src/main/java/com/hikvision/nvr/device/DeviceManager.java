@@ -3,7 +3,6 @@ package com.hikvision.nvr.device;
 import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
-import com.hikvision.nvr.hikvision.HikvisionSDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,18 +13,19 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 设备管理器
  * 管理设备的登录状态、设备信息等
+ * 支持多品牌SDK（海康、天地伟业、大华）
  */
 public class DeviceManager {
     private static final Logger logger = LoggerFactory.getLogger(DeviceManager.class);
-    private HikvisionSDK sdk;
     private Database database;
     private Config.DeviceConfig config;
     
     // 设备登录状态映射：deviceId -> userId
     private final Map<String, Integer> deviceLoginMap = new ConcurrentHashMap<>();
+    // 设备SDK映射：deviceId -> SDK实例
+    private final Map<String, DeviceSDK> deviceSDKMap = new ConcurrentHashMap<>();
 
-    public DeviceManager(HikvisionSDK sdk, Database database, Config.DeviceConfig config) {
-        this.sdk = sdk;
+    public DeviceManager(Database database, Config.DeviceConfig config) {
         this.database = database;
         this.config = config;
     }
@@ -49,32 +49,71 @@ public class DeviceManager {
         String username = device.getUsername() != null ? device.getUsername() : config.getDefaultUsername();
         String password = device.getPassword() != null ? device.getPassword() : config.getDefaultPassword();
         int port = device.getPort() > 0 ? device.getPort() : config.getDefaultPort();
-
-                int userId = sdk.login(device.getIp(), (short) port, username, password);
-
-                // 按照示例代码的逻辑：只要 userId != -1 就认为登录成功（包括 userId=0）
-                // 示例代码中：if (userID == -1) 表示失败，else 表示成功
-                if (userId != -1) {
-                    deviceLoginMap.put(deviceId, userId);
-                    device.setUserId(userId);
-                    device.setStatus("online");
-                    
-                    // 获取并保存通道号（从SDK登录返回的设备信息中获取）
-                    // 注意：这里需要从HikvisionSDK获取设备信息，暂时使用默认值1
-                    // 实际应该从登录时返回的设备信息中获取byStartChan
-                    if (device.getChannel() <= 0) {
-                        device.setChannel(1); // 默认通道1
-                    }
-                    
-                    database.updateDeviceStatus(deviceId, "online", userId);
-                    database.saveOrUpdateDevice(device); // 保存设备信息包括通道号
-                    logger.info("设备登录成功: {} (userId: {}, channel: {})", deviceId, userId, device.getChannel());
-                    return true;
-                } else {
+        
+        // 获取设备品牌
+        String brand = device.getBrand();
+        if (brand == null || brand.isEmpty() || DeviceInfo.BRAND_AUTO.equals(brand)) {
+            brand = DeviceInfo.BRAND_AUTO;
+        }
+        
+        DeviceSDK sdk = null;
+        int userId = -1;
+        String detectedBrand = brand;
+        
+        // 如果品牌是auto，进行自动检测
+        if (DeviceInfo.BRAND_AUTO.equals(brand)) {
+            SDKFactory.BrandDetectionResult result = SDKFactory.detectBrand(
+                device.getIp(), (short)port, username, password);
+            if (result != null) {
+                sdk = result.getSdk();
+                userId = result.getUserId();
+                detectedBrand = result.getBrand();
+                // 保存检测到的品牌
+                device.setBrand(detectedBrand);
+            } else {
+                // 所有SDK都失败
+                device.setBrand(DeviceInfo.BRAND_UNKNOWN);
+                device.setStatus("offline");
+                database.updateDeviceStatus(deviceId, "offline", -1);
+                logger.warn("设备登录失败: {} (所有SDK都失败)", deviceId);
+                logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
+                return false;
+            }
+        } else {
+            // 使用指定的品牌SDK
+            sdk = SDKFactory.getSDK(brand);
+            if (sdk == null) {
+                logger.error("无法获取品牌SDK: {} (设备: {})", brand, deviceId);
+                device.setStatus("offline");
+                database.updateDeviceStatus(deviceId, "offline", -1);
+                return false;
+            }
+            userId = sdk.login(device.getIp(), (short)port, username, password);
+        }
+        
+        // 检查登录结果
+        if (userId != -1) {
+            deviceLoginMap.put(deviceId, userId);
+            deviceSDKMap.put(deviceId, sdk);
+            device.setUserId(userId);
+            device.setStatus("online");
+            device.setBrand(detectedBrand);
+            
+            // 获取并保存通道号（从SDK登录返回的设备信息中获取）
+            if (device.getChannel() <= 0) {
+                device.setChannel(1); // 默认通道1
+            }
+            
+            database.updateDeviceStatus(deviceId, "online", userId);
+            database.saveOrUpdateDevice(device); // 保存设备信息包括品牌和通道号
+            logger.info("设备登录成功: {} (品牌: {}, userId: {}, channel: {})", 
+                deviceId, detectedBrand, userId, device.getChannel());
+            return true;
+        } else {
             device.setStatus("offline");
             database.updateDeviceStatus(deviceId, "offline", -1);
-            int errorCode = sdk.getLastError();
-            logger.warn("设备登录失败: {} (错误码: {})", deviceId, errorCode);
+            String errorMsg = sdk != null ? sdk.getLastErrorString() : "SDK未初始化";
+            logger.warn("设备登录失败: {} (品牌: {}, 错误: {})", deviceId, brand, errorMsg);
             logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
             return false;
         }
@@ -89,14 +128,22 @@ public class DeviceManager {
             logger.debug("设备未登录: {}", deviceId);
             return false;
         }
+        
+        DeviceSDK sdk = deviceSDKMap.get(deviceId);
+        if (sdk == null) {
+            logger.warn("设备SDK不存在: {}", deviceId);
+            deviceLoginMap.remove(deviceId);
+            return false;
+        }
 
         boolean result = sdk.logout(userId);
         if (result) {
             deviceLoginMap.remove(deviceId);
+            deviceSDKMap.remove(deviceId);
             database.updateDeviceStatus(deviceId, "offline", -1);
             logger.info("设备登出成功: {}", deviceId);
         } else {
-            logger.error("设备登出失败: {}", deviceId);
+            logger.error("设备登出失败: {} (错误: {})", deviceId, sdk.getLastErrorString());
         }
         return result;
     }
