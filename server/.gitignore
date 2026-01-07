@@ -7,8 +7,8 @@ target/
 logs/
 data/
 sdkLog/
-lib/
 .idea/
 *.iml
 .DS_Store
-
+sdk/*
+lib/*

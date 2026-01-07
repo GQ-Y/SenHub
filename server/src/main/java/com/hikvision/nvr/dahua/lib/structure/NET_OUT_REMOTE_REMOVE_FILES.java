@@ -1,0 +1,17 @@
+package com.hikvision.nvr.dahua.lib.structure;
+import com.hikvision.nvr.dahua.lib.NetSDKLib;
+/**
+ * CLIENT_RemoteRemoveFiles 接口输出参数
+*/
+public class NET_OUT_REMOTE_REMOVE_FILES extends com.hikvision.nvr.dahua.lib.NetSDKLib.SdkStructure
+{
+    /**
+     * 结构体大小
+    */
+    public int              dwSize;
+
+    public NET_OUT_REMOTE_REMOVE_FILES() {
+        this.dwSize = this.size();
+    }
+}
+
