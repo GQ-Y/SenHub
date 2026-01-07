@@ -9,7 +9,15 @@ import com.sun.jna.Pointer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -25,6 +33,8 @@ public class DeviceScanner {
     private int listenHandle = -1;
     private boolean running = false;
     private Consumer<DeviceInfo> deviceFoundCallback;
+    private ExecutorService scanExecutor;
+    private boolean scanning = false;
 
     // SDK消息类型常量
     private static final int NET_DVR_DEVICE_ADD = 0x1000; // 设备上线
@@ -76,6 +86,10 @@ public class DeviceScanner {
 
             running = true;
             logger.info("设备扫描器已启动 - 监听地址: {}:{}", config.getListenIp(), config.getListenPort());
+            
+            // 启动主动扫描
+            startActiveScanning();
+            
             return true;
 
         } catch (Exception e) {
@@ -208,9 +222,165 @@ public class DeviceScanner {
     }
 
     /**
+     * 启动主动扫描
+     * 定期扫描局域网中的设备（IP段10-100）
+     */
+    private void startActiveScanning() {
+        if (scanExecutor == null) {
+            scanExecutor = Executors.newFixedThreadPool(10); // 使用10个线程并发扫描
+        }
+        
+        // 立即执行一次扫描
+        scanNetwork();
+        
+        // 如果配置了扫描间隔，定期执行扫描
+        if (config.getInterval() > 0) {
+            Thread scanThread = new Thread(() -> {
+                while (running) {
+                    try {
+                        Thread.sleep(config.getInterval() * 1000L);
+                        if (running) {
+                            scanNetwork();
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }, "DeviceScanner-ActiveScan");
+            scanThread.setDaemon(true);
+            scanThread.start();
+        }
+    }
+
+    /**
+     * 主动扫描局域网设备
+     * 扫描范围：当前网段的10-100
+     */
+    private void scanNetwork() {
+        if (scanning) {
+            logger.debug("扫描正在进行中，跳过本次扫描");
+            return;
+        }
+        
+        try {
+            scanning = true;
+            String networkSegment = getCurrentNetworkSegment();
+            if (networkSegment == null) {
+                logger.warn("无法获取当前网段，跳过主动扫描");
+                return;
+            }
+            
+            logger.info("开始主动扫描局域网设备，网段: {}，IP范围: {}.{}-{}", 
+                networkSegment, networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
+            
+            // 扫描IP范围：10-100
+            for (int i = config.getScanRangeStart(); i <= config.getScanRangeEnd(); i++) {
+                final String ip = networkSegment + "." + i;
+                final int port = deviceConfig.getDefaultPort();
+                
+                // 使用线程池并发扫描
+                scanExecutor.submit(() -> scanDevice(ip, port));
+            }
+            
+            logger.info("主动扫描任务已提交，IP范围: {}.{}-{}", 
+                networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
+        } catch (Exception e) {
+            logger.error("启动主动扫描失败", e);
+        } finally {
+            // 延迟重置扫描标志，避免频繁扫描
+            scanExecutor.submit(() -> {
+                try {
+                    Thread.sleep(5000); // 等待5秒后重置标志
+                    scanning = false;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+    }
+
+    /**
+     * 获取当前主网段（例如：192.168.1）
+     * @return 网段字符串，如果无法获取则返回null
+     */
+    private String getCurrentNetworkSegment() {
+        try {
+            Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
+            
+            while (networkInterfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = networkInterfaces.nextElement();
+                
+                // 跳过回环接口和未启用的接口
+                if (networkInterface.isLoopback() || !networkInterface.isUp()) {
+                    continue;
+                }
+                
+                Enumeration<InetAddress> inetAddresses = networkInterface.getInetAddresses();
+                while (inetAddresses.hasMoreElements()) {
+                    InetAddress inetAddress = inetAddresses.nextElement();
+                    
+                    // 只处理IPv4地址
+                    if (inetAddress instanceof Inet4Address && !inetAddress.isLoopbackAddress()) {
+                        String hostAddress = inetAddress.getHostAddress();
+                        // 提取网段（例如：192.168.1.100 -> 192.168.1）
+                        int lastDotIndex = hostAddress.lastIndexOf('.');
+                        if (lastDotIndex > 0) {
+                            String segment = hostAddress.substring(0, lastDotIndex);
+                            logger.debug("获取到当前网段: {}", segment);
+                            return segment;
+                        }
+                    }
+                }
+            }
+        } catch (SocketException e) {
+            logger.error("获取网络接口失败", e);
+        }
+        
+        logger.warn("无法获取当前网段，使用默认网段: 192.168.1");
+        return "192.168.1"; // 默认网段
+    }
+
+    /**
+     * 扫描单个设备
+     * 使用TCP连接测试设备是否在线
+     */
+    private void scanDevice(String ip, int port) {
+        try {
+            // 使用TCP连接测试设备是否在线
+            java.net.Socket socket = new java.net.Socket();
+            socket.setSoTimeout(2000); // 2秒超时
+            boolean connected = false;
+            
+            try {
+                socket.connect(new java.net.InetSocketAddress(ip, port), 2000);
+                connected = true;
+            } catch (Exception e) {
+                // 连接失败，设备可能不在线或端口未开放
+                logger.debug("设备连接失败: {}:{} - {}", ip, port, e.getMessage());
+            } finally {
+                try {
+                    socket.close();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+            
+            if (connected) {
+                logger.debug("发现设备在线: {}:{}", ip, port);
+                // 设备在线，保存到数据库并触发登录
+                handleDeviceFound(ip, port, null);
+            }
+        } catch (Exception e) {
+            logger.debug("扫描设备失败: {}:{} - {}", ip, port, e.getMessage());
+        }
+    }
+
+    /**
      * 检查是否正在运行
      */
     public boolean isRunning() {
         return running;
     }
+    
 }

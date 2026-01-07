@@ -3,7 +3,10 @@ package com.hikvision.nvr.hikvision;
 import com.hikvision.nvr.Common.ArchitectureChecker;
 import com.hikvision.nvr.Common.osSelect;
 import com.hikvision.nvr.config.Config;
+import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.device.DeviceSDK;
+import com.hikvision.nvr.database.DeviceInfo;
+import com.hikvision.nvr.mqtt.MqttClient;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import org.slf4j.Logger;
@@ -20,6 +23,8 @@ public class HikvisionSDK implements DeviceSDK {
     private HCNetSDK hCNetSDK;
     private boolean initialized = false;
     private Config.SdkConfig sdkConfig;
+    private DeviceManager deviceManager;
+    private MqttClient mqttClient;
 
     private HikvisionSDK() {
     }
@@ -67,7 +72,7 @@ public class HikvisionSDK implements DeviceSDK {
                 return false;
             }
 
-            // 设置异常回调
+            // 设置异常回调（此时deviceManager和mqttClient可能还未设置，稍后通过setStatusCallbacks设置）
             FExceptionCallBack_Imp exceptionCallback = new FExceptionCallBack_Imp();
             if (!hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, exceptionCallback, null)) {
                 logger.warn("设置异常回调失败");
@@ -347,6 +352,21 @@ public class HikvisionSDK implements DeviceSDK {
     }
 
     /**
+     * 设置DeviceManager和MqttClient（用于状态回调）
+     */
+    public void setStatusCallbacks(DeviceManager deviceManager, MqttClient mqttClient) {
+        this.deviceManager = deviceManager;
+        this.mqttClient = mqttClient;
+        // 更新异常回调中的引用（如果回调已创建）
+        if (hCNetSDK != null) {
+            // 重新设置异常回调，确保回调可以访问最新的deviceManager和mqttClient
+            FExceptionCallBack_Imp exceptionCallback = new FExceptionCallBack_Imp();
+            hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, exceptionCallback, null);
+        }
+        logger.debug("已设置状态回调：DeviceManager和MqttClient");
+    }
+
+    /**
      * 获取SDK接口
      */
     public HCNetSDK getSDK() {
@@ -356,12 +376,63 @@ public class HikvisionSDK implements DeviceSDK {
     /**
      * 异常回调实现
      */
-    static class FExceptionCallBack_Imp implements HCNetSDK.FExceptionCallBack {
-        private static final Logger logger = LoggerFactory.getLogger(FExceptionCallBack_Imp.class);
+    class FExceptionCallBack_Imp implements HCNetSDK.FExceptionCallBack {
+        private final Logger logger = LoggerFactory.getLogger(FExceptionCallBack_Imp.class);
 
         @Override
         public void invoke(int dwType, int lUserID, int lHandle, Pointer pUser) {
-            logger.warn("SDK异常事件 - 类型: {}, 用户ID: {}, 句柄: {}", dwType, lUserID, lHandle);
+            logger.warn("SDK异常事件 - 类型: 0x{}, 用户ID: {}, 句柄: {}", Integer.toHexString(dwType), lUserID, lHandle);
+            
+            // 处理设备离线事件
+            // 海康SDK的异常类型：
+            // EXCEPTION_EXCHANGE = 0x8000 (用户交互时异常，可能包括设备离线)
+            // EXCEPTION_PREVIEW = 0x8003 (网络预览异常，可能包括设备离线)
+            // EXCEPTION_RECONNECT = 0x8005 (预览时重连，可能表示设备离线后重连)
+            if (dwType == HCNetSDK.EXCEPTION_EXCHANGE || 
+                dwType == HCNetSDK.EXCEPTION_PREVIEW || 
+                dwType == HCNetSDK.EXCEPTION_RECONNECT) {
+                handleDeviceOffline(lUserID, dwType);
+            }
+        }
+        
+        /**
+         * 处理设备离线事件
+         */
+        private void handleDeviceOffline(int userId, int exceptionType) {
+            if (deviceManager == null) {
+                logger.debug("DeviceManager未设置，跳过设备离线处理");
+                return;
+            }
+            
+            try {
+                // 通过userId查找deviceId
+                String deviceId = deviceManager.getDeviceIdByUserId(userId);
+                if (deviceId == null) {
+                    logger.debug("无法通过userId找到deviceId: {}", userId);
+                    return;
+                }
+                
+                // 获取设备信息
+                DeviceInfo device = deviceManager.getDevice(deviceId);
+                if (device == null) {
+                    logger.warn("设备不存在: {}", deviceId);
+                    return;
+                }
+                
+                // 检查设备当前状态
+                String currentStatus = device.getStatus();
+                if ("offline".equals(currentStatus)) {
+                    logger.debug("设备已经是离线状态，跳过更新: {}", deviceId);
+                    return;
+                }
+                
+                // 更新设备状态为离线并发送MQTT通知
+                deviceManager.updateDeviceStatusWithNotification(deviceId, "offline");
+                logger.info("设备离线事件已处理: {} (userId: {}, 异常类型: 0x{})", 
+                    deviceId, userId, Integer.toHexString(exceptionType));
+            } catch (Exception e) {
+                logger.error("处理设备离线事件失败: userId={}", userId, e);
+            }
         }
     }
 }

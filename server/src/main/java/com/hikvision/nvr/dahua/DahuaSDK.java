@@ -1,16 +1,22 @@
 package com.hikvision.nvr.dahua;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hikvision.nvr.Common.ArchitectureChecker;
 import com.hikvision.nvr.config.Config;
+import com.hikvision.nvr.device.DeviceManager;
 import com.hikvision.nvr.device.DeviceSDK;
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 import com.hikvision.nvr.dahua.lib.ToolKits;
 import com.hikvision.nvr.dahua.lib.LastError;
+import com.hikvision.nvr.database.DeviceInfo;
+import com.hikvision.nvr.mqtt.MqttClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.sun.jna.Native;
+import com.sun.jna.Pointer;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,9 +30,13 @@ public class DahuaSDK implements DeviceSDK {
     private NetSDKLib netsdk;
     private boolean initialized = false;
     private Config.SdkConfig sdkConfig;
+    private DeviceManager deviceManager;
+    private MqttClient mqttClient;
     
     // 存储登录句柄：userId -> loginHandle
     private final Map<Integer, NetSDKLib.LLong> loginHandles = new ConcurrentHashMap<>();
+    // 存储userId映射：loginHandle -> userId（用于回调中查找）
+    private final Map<Long, Integer> handleToUserIdMap = new ConcurrentHashMap<>();
     private int nextUserId = 1;
     
     private DahuaSDK() {
@@ -64,6 +74,12 @@ public class DahuaSDK implements DeviceSDK {
             
             // 设置连接超时
             netsdk.CLIENT_SetConnectTime(10000, 3);
+            
+            // 设置消息回调（用于设备状态监听）
+            // 注意：此时deviceManager和mqttClient可能还未设置，稍后通过setStatusCallbacks更新
+            MessCallBackImpl messCallBack = new MessCallBackImpl();
+            netsdk.CLIENT_SetDVRMessCallBack(messCallBack, null);
+            logger.debug("大华SDK消息回调已设置");
             
             initialized = true;
             logger.info("大华SDK初始化成功");
@@ -168,6 +184,7 @@ public class DahuaSDK implements DeviceSDK {
             // 分配一个userId并存储登录句柄
             int userId = nextUserId++;
             loginHandles.put(userId, loginHandle);
+            handleToUserIdMap.put(loginHandle.longValue(), userId);
             
             logger.info("大华设备登录成功: {}:{} (userId: {}, handle: {})", ip, port, userId, loginHandle.longValue());
             return userId;
@@ -194,6 +211,7 @@ public class DahuaSDK implements DeviceSDK {
             boolean result = netsdk.CLIENT_Logout(loginHandle);
             if (result) {
                 loginHandles.remove(userId);
+                handleToUserIdMap.remove(loginHandle.longValue());
                 logger.info("大华设备登出成功: {}", userId);
             } else {
                 logger.error("大华设备登出失败: {}", userId);
@@ -253,5 +271,78 @@ public class DahuaSDK implements DeviceSDK {
     @Override
     public String getBrand() {
         return "dahua";
+    }
+    
+    /**
+     * 设置DeviceManager和MqttClient（用于状态回调）
+     */
+    public void setStatusCallbacks(DeviceManager deviceManager, MqttClient mqttClient) {
+        this.deviceManager = deviceManager;
+        this.mqttClient = mqttClient;
+        // 重新设置消息回调，确保回调可以访问最新的deviceManager和mqttClient
+        if (netsdk != null) {
+            MessCallBackImpl messCallBack = new MessCallBackImpl();
+            netsdk.CLIENT_SetDVRMessCallBack(messCallBack, null);
+        }
+        logger.debug("已设置状态回调：DeviceManager和MqttClient");
+    }
+    
+    /**
+     * 大华SDK消息回调实现
+     * 用于监听设备离线/在线事件
+     */
+    class MessCallBackImpl implements NetSDKLib.fMessCallBack {
+        private final Logger logger = LoggerFactory.getLogger(MessCallBackImpl.class);
+        
+        @Override
+        public boolean invoke(int lCommand, NetSDKLib.LLong lLoginID, Pointer pBuf, int dwBufLen, String szDeviceIP, com.sun.jna.NativeLong nDevicePort, Pointer dwUser) {
+            try {
+                // 通过loginHandle查找userId
+                Integer userId = handleToUserIdMap.get(lLoginID.longValue());
+                if (userId == null) {
+                    logger.debug("无法通过loginHandle找到userId: {}", lLoginID.longValue());
+                    return false;
+                }
+                
+                logger.debug("大华SDK消息回调 - 命令: 0x{}, userId: {}, IP: {}", 
+                    Integer.toHexString(lCommand), userId, szDeviceIP);
+                
+                // 处理设备状态变化事件
+                // 注意：大华SDK的设备状态变化可能通过不同的命令码来通知
+                // 由于SDK文档不完整，我们主要依赖定期检查登录状态来判断设备是否离线
+                // 如果收到明确的错误或异常消息，可以判断为设备离线
+                // 这里先记录日志，后续可以根据实际SDK文档来完善
+                
+                return true;
+            } catch (Exception e) {
+                logger.error("处理大华SDK消息回调失败", e);
+                return false;
+            }
+        }
+        
+        /**
+         * 处理设备离线事件
+         */
+        private void handleDeviceOffline(int userId) {
+            if (deviceManager == null) {
+                logger.debug("DeviceManager未设置，跳过设备离线处理");
+                return;
+            }
+            
+            try {
+                // 通过userId查找deviceId
+                String deviceId = deviceManager.getDeviceIdByUserId(userId);
+                if (deviceId == null) {
+                    logger.debug("无法通过userId找到deviceId: {}", userId);
+                    return;
+                }
+                
+                // 更新设备状态为离线并发送MQTT通知
+                deviceManager.updateDeviceStatusWithNotification(deviceId, "offline");
+                logger.info("设备离线事件已处理: {} (userId: {})", deviceId, userId);
+            } catch (Exception e) {
+                logger.error("处理设备离线事件失败: userId={}", userId, e);
+            }
+        }
     }
 }

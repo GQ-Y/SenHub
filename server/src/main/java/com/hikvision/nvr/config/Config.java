@@ -150,6 +150,10 @@ public class Config {
         private int listenPort;
         @JsonProperty("listen_ip")
         private String listenIp;
+        @JsonProperty("scan_range_start")
+        private int scanRangeStart = 10;  // 扫描IP范围起始值，默认10
+        @JsonProperty("scan_range_end")
+        private int scanRangeEnd = 100;   // 扫描IP范围结束值，默认100
 
         // Getters and Setters
         public boolean isEnabled() { return enabled; }
@@ -160,6 +164,10 @@ public class Config {
         public void setListenPort(int listenPort) { this.listenPort = listenPort; }
         public String getListenIp() { return listenIp; }
         public void setListenIp(String listenIp) { this.listenIp = listenIp; }
+        public int getScanRangeStart() { return scanRangeStart; }
+        public void setScanRangeStart(int scanRangeStart) { this.scanRangeStart = scanRangeStart; }
+        public int getScanRangeEnd() { return scanRangeEnd; }
+        public void setScanRangeEnd(int scanRangeEnd) { this.scanRangeEnd = scanRangeEnd; }
     }
 
     public static class DeviceConfig {

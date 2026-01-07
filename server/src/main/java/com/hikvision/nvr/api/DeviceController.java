@@ -137,6 +137,10 @@ public class DeviceController {
             // 保存到数据库
             database.saveOrUpdateDevice(device);
             
+            // 立即触发登录
+            logger.info("设备保存成功，立即尝试登录: {}", device.getDeviceId());
+            deviceManager.loginDevice(device);
+            
             response.status(201);
             response.type("application/json");
             return createSuccessResponse(convertDeviceToMap(device));
@@ -190,11 +194,25 @@ public class DeviceController {
             }
             
             // 更新RTSP URL
-            String rtspUrl = generateRtspUrl(device.getIp(), device.getPort());
+            String rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(), device.getPassword());
             device.setRtspUrl(rtspUrl);
             
             // 保存到数据库
             database.saveOrUpdateDevice(device);
+            
+            // 如果设备信息发生变化（IP、端口、用户名、密码、品牌），立即触发登录
+            boolean needRelogin = body.containsKey("ip") || body.containsKey("port") || 
+                                 body.containsKey("username") || body.containsKey("password") || 
+                                 body.containsKey("brand");
+            if (needRelogin) {
+                // 如果设备已登录，先登出
+                if (deviceManager.isDeviceLoggedIn(deviceId)) {
+                    deviceManager.logoutDevice(deviceId);
+                }
+                // 立即触发登录
+                logger.info("设备信息已更新，立即尝试重新登录: {}", deviceId);
+                deviceManager.loginDevice(device);
+            }
             
             response.status(200);
             response.type("application/json");

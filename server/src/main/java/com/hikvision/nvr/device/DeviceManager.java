@@ -1,11 +1,14 @@
 package com.hikvision.nvr.device;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
+import com.hikvision.nvr.mqtt.MqttClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,6 +22,8 @@ public class DeviceManager {
     private static final Logger logger = LoggerFactory.getLogger(DeviceManager.class);
     private Database database;
     private Config.DeviceConfig config;
+    private MqttClient mqttClient;
+    private ObjectMapper objectMapper = new ObjectMapper();
     
     // 设备登录状态映射：deviceId -> userId
     private final Map<String, Integer> deviceLoginMap = new ConcurrentHashMap<>();
@@ -52,7 +57,7 @@ public class DeviceManager {
         
         // 获取设备品牌
         String brand = device.getBrand();
-        if (brand == null || brand.isEmpty() || DeviceInfo.BRAND_AUTO.equals(brand)) {
+        if (brand == null || brand.isEmpty()) {
             brand = DeviceInfo.BRAND_AUTO;
         }
         
@@ -60,8 +65,21 @@ public class DeviceManager {
         int userId = -1;
         String detectedBrand = brand;
         
-        // 如果品牌是auto，进行自动检测
-        if (DeviceInfo.BRAND_AUTO.equals(brand)) {
+        // 如果品牌已指定且不是auto，直接使用对应品牌的SDK，不再循环尝试
+        if (!DeviceInfo.BRAND_AUTO.equals(brand) && !brand.isEmpty()) {
+            // 使用指定的品牌SDK
+            sdk = SDKFactory.getSDK(brand);
+            if (sdk == null) {
+                logger.error("无法获取品牌SDK: {} (设备: {})，SDK可能未初始化", brand, deviceId);
+                device.setStatus("offline");
+                database.updateDeviceStatus(deviceId, "offline", -1);
+                return false;
+            }
+            logger.debug("使用指定品牌SDK登录: {} (品牌: {})", deviceId, brand);
+            userId = sdk.login(device.getIp(), (short)port, username, password);
+        } else {
+            // 只有品牌为auto时才进行自动检测
+            logger.debug("品牌为auto，开始自动检测设备品牌: {}", deviceId);
             SDKFactory.BrandDetectionResult result = SDKFactory.detectBrand(
                 device.getIp(), (short)port, username, password);
             if (result != null) {
@@ -70,6 +88,7 @@ public class DeviceManager {
                 detectedBrand = result.getBrand();
                 // 保存检测到的品牌
                 device.setBrand(detectedBrand);
+                logger.info("自动检测到设备品牌: {} (品牌: {})", deviceId, detectedBrand);
             } else {
                 // 所有SDK都失败
                 device.setBrand(DeviceInfo.BRAND_UNKNOWN);
@@ -79,16 +98,6 @@ public class DeviceManager {
                 logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
                 return false;
             }
-        } else {
-            // 使用指定的品牌SDK
-            sdk = SDKFactory.getSDK(brand);
-            if (sdk == null) {
-                logger.error("无法获取品牌SDK: {} (设备: {})", brand, deviceId);
-                device.setStatus("offline");
-                database.updateDeviceStatus(deviceId, "offline", -1);
-                return false;
-            }
-            userId = sdk.login(device.getIp(), (short)port, username, password);
         }
         
         // 检查登录结果
@@ -192,11 +201,121 @@ public class DeviceManager {
     }
 
     /**
+     * 通过userId查找deviceId
+     */
+    public String getDeviceIdByUserId(int userId) {
+        for (Map.Entry<String, Integer> entry : deviceLoginMap.entrySet()) {
+            if (entry.getValue() != null && entry.getValue() == userId) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 更新设备状态并触发通知（用于SDK回调）
+     * 注意：此方法不发送MQTT通知，MQTT通知由调用者负责
+     */
+    public boolean updateDeviceStatusFromCallback(int userId, String status) {
+        String deviceId = getDeviceIdByUserId(userId);
+        if (deviceId == null) {
+            logger.debug("无法通过userId找到deviceId: {}", userId);
+            return false;
+        }
+        
+        DeviceInfo device = getDevice(deviceId);
+        if (device == null) {
+            logger.warn("设备不存在: {}", deviceId);
+            return false;
+        }
+        
+        String oldStatus = device.getStatus();
+        if (status.equals(oldStatus)) {
+            logger.debug("设备状态未变化，跳过更新: {} (状态: {})", deviceId, status);
+            return false;
+        }
+        
+        // 更新数据库状态
+        updateDeviceStatus(deviceId, status);
+        
+        // 如果设备离线，从登录映射中移除
+        if ("offline".equals(status)) {
+            deviceLoginMap.remove(deviceId);
+            deviceSDKMap.remove(deviceId);
+            logger.info("设备离线，已从登录映射中移除: {} (userId: {})", deviceId, userId);
+        }
+        
+        logger.info("设备状态已更新: {} ({} -> {})", deviceId, oldStatus, status);
+        return true;
+    }
+
+    /**
      * 登出所有设备
      */
     public void logoutAll() {
         for (String deviceId : deviceLoginMap.keySet()) {
             logoutDevice(deviceId);
+        }
+    }
+
+    /**
+     * 设置MQTT客户端（用于状态通知）
+     */
+    public void setMqttClient(MqttClient mqttClient) {
+        this.mqttClient = mqttClient;
+        logger.debug("DeviceManager已设置MQTT客户端");
+    }
+
+    /**
+     * 更新设备状态并触发MQTT通知（统一的状态更新和通知机制）
+     */
+    public void updateDeviceStatusWithNotification(String deviceId, String status) {
+        DeviceInfo device = getDevice(deviceId);
+        if (device == null) {
+            logger.warn("尝试更新不存在的设备状态: {}", deviceId);
+            return;
+        }
+
+        String oldStatus = device.getStatus();
+        if (!status.equals(oldStatus)) {
+            // 更新数据库
+            int userId = getDeviceUserId(deviceId);
+            database.updateDeviceStatus(deviceId, status, userId);
+            device.setStatus(status); // 更新内存中的设备对象状态
+            logger.info("设备状态更新: {} -> {} (设备: {})", oldStatus, status, deviceId);
+
+            // 发送MQTT通知
+            publishDeviceStatus(device, status);
+        }
+    }
+
+    /**
+     * 发布设备状态到MQTT
+     */
+    private void publishDeviceStatus(DeviceInfo device, String status) {
+        if (mqttClient == null) {
+            logger.warn("MQTT客户端未设置，无法发布设备状态");
+            return;
+        }
+        try {
+            Map<String, Object> statusMessage = new HashMap<>();
+            statusMessage.put("device_id", device.getDeviceId());
+            statusMessage.put("status", status);
+            statusMessage.put("timestamp", System.currentTimeMillis() / 1000);
+
+            Map<String, Object> deviceInfoMap = new HashMap<>();
+            deviceInfoMap.put("name", device.getName());
+            deviceInfoMap.put("ip", device.getIp());
+            deviceInfoMap.put("port", device.getPort());
+            deviceInfoMap.put("rtsp_url", device.getRtspUrl());
+            deviceInfoMap.put("brand", device.getBrand());
+            statusMessage.put("device_info", deviceInfoMap);
+
+            String messageJson = objectMapper.writeValueAsString(statusMessage);
+            mqttClient.publishStatus(messageJson);
+            logger.debug("设备状态已发布到MQTT: {}", messageJson);
+        } catch (Exception e) {
+            logger.error("发布设备状态到MQTT失败: {}", device.getDeviceId(), e);
         }
     }
 }

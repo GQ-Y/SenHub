@@ -18,6 +18,8 @@ scanner:
   interval: 300  # 扫描间隔（秒）
   listen_port: 7200  # 监听端口
   listen_ip: "0.0.0.0"  # 监听IP地址
+  scan_range_start: 10  # 扫描IP范围起始值（例如：192.168.1.10）
+  scan_range_end: 100  # 扫描IP范围结束值（例如：192.168.1.100）
 
 # 设备认证配置
 device:

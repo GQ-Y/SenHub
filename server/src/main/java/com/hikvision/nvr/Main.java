@@ -112,6 +112,22 @@ public class Main {
                 System.exit(1);
             }
             logger.info("MQTT客户端连接成功");
+            
+            // 6.5. 设置DeviceManager的MQTT客户端（用于状态通知）
+            deviceManager.setMqttClient(mqttClient);
+            logger.info("DeviceManager已设置MQTT客户端");
+            
+            // 6.6. 设置SDK状态回调（用于设备离线/在线监听）
+            if (hikvisionSDK != null) {
+                hikvisionSDK.setStatusCallbacks(deviceManager, mqttClient);
+                logger.info("海康SDK状态回调已设置");
+            }
+            
+            com.hikvision.nvr.dahua.DahuaSDK dahuaSDK = (com.hikvision.nvr.dahua.DahuaSDK) SDKFactory.getSDK("dahua");
+            if (dahuaSDK != null) {
+                dahuaSDK.setStatusCallbacks(deviceManager, mqttClient);
+                logger.info("大华SDK状态回调已设置");
+            }
 
             // 7. 初始化命令处理器（暂时使用海康SDK，后续可扩展为多品牌）
             commandHandler = new CommandHandler(deviceManager, hikvisionSDK, recorder);
@@ -129,14 +145,22 @@ public class Main {
             keeper.start();
             logger.info("保活系统启动成功");
 
-            // 9.5. 为所有已存在的设备启动录制（如果录制功能启用）
-            if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
-                startRecordingForExistingDevices();
-            }
-
-            // 10. 启动HTTP服务器
+            // 10. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
             logger.info("HTTP服务器启动成功");
+
+            // 10.5. 为所有已存在的设备启动录制（如果录制功能启用，异步执行避免阻塞）
+            if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
+                // 在后台线程中执行，避免阻塞主线程
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(2000); // 等待2秒，确保HTTP服务器完全启动
+                        startRecordingForExistingDevices();
+                    } catch (Exception e) {
+                        logger.error("后台启动设备录制失败", e);
+                    }
+                }, "DeviceRecordingStarter").start();
+            }
 
             // 11. 注册JVM关闭钩子
             Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
@@ -176,6 +200,7 @@ public class Main {
 
     /**
      * 为所有已存在的设备启动录制
+     * 确保设备在线后再启动录制
      */
     private void startRecordingForExistingDevices() {
         try {
@@ -185,24 +210,34 @@ public class Main {
             for (DeviceInfo device : devices) {
                 String deviceId = device.getDeviceId();
                 
-                // 检查设备是否已登录
-                if (deviceManager.isDeviceLoggedIn(deviceId)) {
-                    // 设备已登录，启动录制
+                // 确保设备在线（status == "online" 且已登录）
+                boolean isOnline = "online".equals(device.getStatus()) && 
+                                 deviceManager.isDeviceLoggedIn(deviceId);
+                
+                if (isOnline) {
+                    // 设备在线，启动录制
                     if (recorder.startRecording(deviceId)) {
-                        logger.info("已为设备启动录制: {}", deviceId);
+                        logger.info("已为在线设备启动录制: {}", deviceId);
                     } else {
-                        logger.warn("为设备启动录制失败: {}", deviceId);
+                        logger.warn("为在线设备启动录制失败: {}", deviceId);
                     }
                 } else {
-                    // 设备未登录，尝试登录后启动录制
+                    // 设备不在线，先尝试登录
+                    logger.debug("设备不在线，尝试登录: {} (当前状态: {})", deviceId, device.getStatus());
                     if (deviceManager.loginDevice(device)) {
-                        if (recorder.startRecording(deviceId)) {
-                            logger.info("已为设备登录并启动录制: {}", deviceId);
+                        // 登录成功后，再次检查设备状态
+                        device = deviceManager.getDevice(deviceId); // 重新获取最新状态
+                        if ("online".equals(device.getStatus()) && deviceManager.isDeviceLoggedIn(deviceId)) {
+                            if (recorder.startRecording(deviceId)) {
+                                logger.info("设备登录成功并启动录制: {}", deviceId);
+                            } else {
+                                logger.warn("设备登录成功但启动录制失败: {}", deviceId);
+                            }
                         } else {
-                            logger.warn("设备登录成功但启动录制失败: {}", deviceId);
+                            logger.warn("设备登录后状态仍为离线，跳过录制启动: {}", deviceId);
                         }
                     } else {
-                        logger.debug("设备未登录，跳过录制启动: {}", deviceId);
+                        logger.debug("设备登录失败，跳过录制启动: {}", deviceId);
                     }
                 }
             }
