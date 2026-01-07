@@ -4,7 +4,7 @@ import com.hikvision.nvr.dahua.lib.NetSDKLib;
 import com.hikvision.nvr.dahua.lib.enumeration.EM_REAL_DATA_TYPE;
 import com.sun.jna.Pointer;
 
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_PATH;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_PATH;
 
 /**
  * 自适应下载录像 按文件 {@link NetSDKLib#CLIENT_DownloadByFileSelfAdapt} 入参

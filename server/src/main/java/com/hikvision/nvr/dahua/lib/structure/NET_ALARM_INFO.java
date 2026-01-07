@@ -2,7 +2,7 @@ package com.hikvision.nvr.dahua.lib.structure;
 
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_CHANNEL_ID_LEN;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_CHANNEL_ID_LEN;
 
 /**
  * 报警相关信息

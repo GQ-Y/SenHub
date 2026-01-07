@@ -1,9 +1,11 @@
 package com.hikvision.nvr.tiandy;
 
+import com.hikvision.nvr.Common.ArchitectureChecker;
 import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.device.DeviceSDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.sun.jna.Native;
 
 import java.io.File;
 
@@ -71,12 +73,8 @@ public class TiandySDK implements DeviceSDK {
         }
         
         try {
-            String libDir;
-            if (sdkConfig != null && sdkConfig.getLibPath() != null) {
-                libDir = sdkConfig.getLibPath() + "/tiandy";
-            } else {
-                libDir = System.getProperty("user.dir") + "/lib/tiandy";
-            }
+            // 天地伟业SDK库文件在 ./lib/tiandy/ 目录下，不依赖config中的lib_path
+            String libDir = System.getProperty("user.dir") + "/lib/tiandy";
             
             File libDirFile = new File(libDir);
             if (!libDirFile.exists()) {
@@ -84,18 +82,35 @@ public class TiandySDK implements DeviceSDK {
                 return false;
             }
             
-            // 设置库路径到LD_LIBRARY_PATH
+            // 查找实际的库文件
+            String libFileName = "libnvssdk.so";
+            File libFile = new File(libDir, libFileName);
+            
+            if (!libFile.exists()) {
+                logger.error("天地伟业SDK库文件不存在: {}", libFile.getAbsolutePath());
+                return false;
+            }
+            
+            // 检查库文件架构是否与系统架构匹配
+            if (!ArchitectureChecker.checkArchitecture(libFile)) {
+                logger.warn("天地伟业SDK库文件架构不匹配，跳过加载");
+                return false;
+            }
+            
+            String actualLibPath = libFile.getAbsolutePath();
+            
+            // 设置库路径到LD_LIBRARY_PATH（用于加载依赖库）
             String currentLibPath = System.getProperty("java.library.path");
             String newLibPath = libDir + (currentLibPath != null ? ":" + currentLibPath : "");
             System.setProperty("java.library.path", newLibPath);
             
-            // 尝试加载库
+            // 使用绝对路径加载库（类似海康SDK的方式）
             try {
-                nvssdkLibrary = NvssdkLibrary.INSTANCE;
-                logger.info("天地伟业SDK库加载成功，库目录: {}", libDir);
+                nvssdkLibrary = (NvssdkLibrary) Native.loadLibrary(actualLibPath, NvssdkLibrary.class);
+                logger.info("天地伟业SDK库加载成功，库路径: {}", actualLibPath);
                 return true;
             } catch (UnsatisfiedLinkError e) {
-                logger.error("加载天地伟业SDK库失败，请确保库文件在: {}", libDir, e);
+                logger.error("加载天地伟业SDK库失败，库路径: {}，错误: {}", actualLibPath, e.getMessage());
                 return false;
             }
             

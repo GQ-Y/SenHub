@@ -8,8 +8,7 @@ package com.hikvision.nvr.dahua.lib.structure;
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 
 import static com.hikvision.nvr.dahua.lib.NetSDKLib.CFG_COMMON_STRING_64;
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOTION_COL;
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOTION_ROW;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOTION_ROW;
 
 /**
  * @author 47081

@@ -8,7 +8,8 @@ import com.sun.jna.Pointer;
  * 天地伟业SDK JNA接口定义
  */
 public interface NvssdkLibrary extends Library {
-    NvssdkLibrary INSTANCE = (NvssdkLibrary) Native.loadLibrary("libnvssdk", NvssdkLibrary.class);
+    // INSTANCE 将在 TiandySDK.loadLibrary() 中动态创建，避免静态初始化时找不到库文件
+    // NvssdkLibrary INSTANCE = (NvssdkLibrary) Native.loadLibrary("libnvssdk", NvssdkLibrary.class);
     
     // 返回值常量
     int RET_SUCCESS = 0;

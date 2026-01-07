@@ -29,6 +29,19 @@ public class SDKFactory {
         }
         
         try {
+            // 预先设置大华SDK库路径，避免NetSDKLib静态初始化时找不到库
+            // 必须在任何SDK初始化之前设置，因为NetSDKLib.NETSDK_INSTANCE是静态的
+            try {
+                String libDir = System.getProperty("user.dir") + "/lib/dahua";
+                java.io.File libDirFile = new java.io.File(libDir);
+                if (libDirFile.exists()) {
+                    com.hikvision.nvr.dahua.lib.LibraryLoad.setExtractPath(libDir);
+                    logger.debug("大华SDK库路径已设置: {}", libDir);
+                }
+            } catch (Exception e) {
+                logger.debug("设置大华SDK库路径失败: {}", e.getMessage());
+            }
+            
             // 初始化海康SDK
             if (config.getSdk() != null) {
                 hikvisionSDK = HikvisionSDK.getInstance();

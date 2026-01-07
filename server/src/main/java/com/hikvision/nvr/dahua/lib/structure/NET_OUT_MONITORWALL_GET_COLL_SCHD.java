@@ -2,7 +2,7 @@ package com.hikvision.nvr.dahua.lib.structure;
 
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.NET_MAX_COLLECTION_NUM;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.NET_MAX_COLLECTION_NUM;
 
 /**
  * 获取预案时间表 出参 {@link NetSDKLib#CLIENT_OperateMonitorWall}

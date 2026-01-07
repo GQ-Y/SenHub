@@ -4,7 +4,9 @@ import com.hikvision.nvr.dahua.lib.NetSDKLib;
 import com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth;
 
 import static com.hikvision.nvr.dahua.lib.NetSDKLib.MAX_NAME_LEN;
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.*;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_OBJECT_LIST_SIZE;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.WEEK_DAY_NUM;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_REC_TSECT_EX;
 
 /**
  * @author 47081

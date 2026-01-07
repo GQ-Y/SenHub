@@ -1,5 +1,6 @@
 package com.hikvision.nvr.dahua;
 
+import com.hikvision.nvr.Common.ArchitectureChecker;
 import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.device.DeviceSDK;
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
@@ -7,6 +8,7 @@ import com.hikvision.nvr.dahua.lib.ToolKits;
 import com.hikvision.nvr.dahua.lib.LastError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.sun.jna.Native;
 
 import java.io.File;
 import java.util.Map;
@@ -46,14 +48,11 @@ public class DahuaSDK implements DeviceSDK {
         this.sdkConfig = config;
         
         try {
-            // 加载大华SDK库
+            // 加载大华SDK库（使用绝对路径，避免静态初始化问题）
             if (!loadLibrary()) {
                 logger.error("加载大华SDK库失败");
                 return false;
             }
-            
-            // 获取NetSDK实例
-            netsdk = NetSDKLib.NETSDK_INSTANCE;
             
             // 调用CLIENT_Init
             boolean initResult = netsdk.CLIENT_Init(null, null);
@@ -78,15 +77,17 @@ public class DahuaSDK implements DeviceSDK {
     
     /**
      * 加载SDK库
+     * 使用绝对路径直接加载，避免NetSDKLib静态初始化时路径未设置的问题
      */
     private boolean loadLibrary() {
+        if (netsdk != null) {
+            return true;
+        }
+        
         try {
-            String libPath;
-            if (sdkConfig != null && sdkConfig.getLibPath() != null) {
-                libPath = sdkConfig.getLibPath() + "/libdhnetsdk.so";
-            } else {
-                libPath = System.getProperty("user.dir") + "/lib/dahua/libdhnetsdk.so";
-            }
+            // 大华SDK库文件在 ./lib/dahua/ 目录下
+            String libDir = System.getProperty("user.dir") + "/lib/dahua";
+            String libPath = libDir + "/libdhnetsdk.so";
             
             File libFile = new File(libPath);
             if (!libFile.exists()) {
@@ -94,14 +95,38 @@ public class DahuaSDK implements DeviceSDK {
                 return false;
             }
             
-            // 设置库路径
+            // 检查库文件架构是否与系统架构匹配
+            if (!ArchitectureChecker.checkArchitecture(libFile)) {
+                logger.warn("大华SDK库文件架构不匹配，跳过加载");
+                return false;
+            }
+            
+            // 设置库路径到LD_LIBRARY_PATH（用于加载依赖库）
             String currentLibPath = System.getProperty("java.library.path");
-            String newLibPath = libFile.getParent() + 
+            String newLibPath = libDir + 
                 (currentLibPath != null ? ":" + currentLibPath : "");
             System.setProperty("java.library.path", newLibPath);
             
-            logger.info("大华SDK库路径设置成功: {}", libPath);
-            return true;
+            // 使用绝对路径直接加载NetSDKLib，而不是使用静态的NETSDK_INSTANCE
+            // 这样可以避免静态初始化时路径未设置的问题
+            try {
+                netsdk = (NetSDKLib) Native.load(libPath, NetSDKLib.class);
+                logger.info("大华SDK库加载成功，库路径: {}", libPath);
+                return true;
+            } catch (UnsatisfiedLinkError e) {
+                logger.error("加载大华SDK库失败，库路径: {}，错误: {}", libPath, e.getMessage());
+                // 如果直接加载失败，尝试使用LibraryLoad方式（作为备选）
+                try {
+                    com.hikvision.nvr.dahua.lib.LibraryLoad.setExtractPath(libDir);
+                    String loadPath = com.hikvision.nvr.dahua.lib.LibraryLoad.getLoadLibrary("dhnetsdk");
+                    netsdk = (NetSDKLib) Native.load(loadPath, NetSDKLib.class);
+                    logger.info("大华SDK库加载成功（使用LibraryLoad方式），库路径: {}", loadPath);
+                    return true;
+                } catch (Exception e2) {
+                    logger.error("使用LibraryLoad方式加载也失败: {}", e2.getMessage());
+                    return false;
+                }
+            }
             
         } catch (Exception e) {
             logger.error("加载大华SDK库异常", e);

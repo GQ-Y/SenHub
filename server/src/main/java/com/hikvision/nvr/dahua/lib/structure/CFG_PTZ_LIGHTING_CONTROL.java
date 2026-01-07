@@ -7,7 +7,7 @@ package com.hikvision.nvr.dahua.lib.structure;/**
 
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.CFG_COMMON_STRING_32;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.CFG_COMMON_STRING_32;
 
 /**
  * @author 47081

@@ -3,7 +3,7 @@ package com.hikvision.nvr.dahua.lib.structure;
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 
 import static com.hikvision.nvr.dahua.lib.NetSDKLib.HDBJ_MAX_OBJECTS_NUM;
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.SDK_MAX_DETECT_REGION_NUM;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.SDK_MAX_DETECT_REGION_NUM;
 
 /**
  * @author 47081

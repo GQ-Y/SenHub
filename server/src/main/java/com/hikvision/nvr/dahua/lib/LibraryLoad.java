@@ -56,16 +56,21 @@ public class LibraryLoad {
     currentFold = getLibraryFold();
     if (dynamicParseUtil == null) {
       try {
-        dynamicParseUtil =
-            new DynamicParseUtil(
-                LibraryLoad.class.getClassLoader().getResourceAsStream("dynamic-lib-load.xml"));
-        if (!written) {
-          for (String libName : dynamicParseUtil.getLibsSystem(currentFold)) {
-            extractLibrary(libName);
+        InputStream xmlStream = LibraryLoad.class.getClassLoader().getResourceAsStream("dynamic-lib-load.xml");
+        if (xmlStream != null) {
+          dynamicParseUtil = new DynamicParseUtil(xmlStream);
+          if (!written) {
+            for (String libName : dynamicParseUtil.getLibsSystem(currentFold)) {
+              extractLibrary(libName);
+            }
+            written = true;
           }
-          written = true;
+        } else {
+          // XML配置文件不存在，使用默认方式处理库名
+          System.out.println("Warning: dynamic-lib-load.xml not found, using default library name");
         }
       } catch (Exception e) {
+        System.err.println("Error loading dynamic-lib-load.xml: " + e.getMessage());
         e.printStackTrace();
       }
     }
@@ -155,7 +160,10 @@ public class LibraryLoad {
         libExtension = EXTERNAL_MAC;
       }
     }
-    libName = dynamicParseUtil.compareLibName(currentFold, libName);
+    // 如果dynamicParseUtil为null（XML文件不存在），直接使用原始库名
+    if (dynamicParseUtil != null) {
+      libName = dynamicParseUtil.compareLibName(currentFold, libName);
+    }
     // 动态库以lib开头，则不添加lib前缀
     // 以lib开头的库则不添加lib前缀
     return (libName.startsWith("lib") ? "" : libPrefix) + libName + libExtension;

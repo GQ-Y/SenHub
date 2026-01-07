@@ -1,5 +1,6 @@
 package com.hikvision.nvr.hikvision;
 
+import com.hikvision.nvr.Common.ArchitectureChecker;
 import com.hikvision.nvr.Common.osSelect;
 import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.device.DeviceSDK;
@@ -110,6 +111,12 @@ public class HikvisionSDK implements DeviceSDK {
             File libFile = new File(libPath);
             if (!libFile.exists()) {
                 logger.error("SDK库文件不存在: {}", libPath);
+                return false;
+            }
+            
+            // 检查库文件架构是否与系统架构匹配
+            if (!ArchitectureChecker.checkArchitecture(libFile)) {
+                logger.warn("海康SDK库文件架构不匹配，跳过加载");
                 return false;
             }
 

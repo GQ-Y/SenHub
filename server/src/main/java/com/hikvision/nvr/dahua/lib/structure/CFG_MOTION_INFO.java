@@ -11,7 +11,9 @@ import com.sun.jna.ptr.IntByReference;
 import java.util.Arrays;
 
 import static com.hikvision.nvr.dahua.lib.NetSDKLib.MAX_REC_TSECT;
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.*;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOTION_ROW;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.WEEK_DAY_NUM;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOTION_WINDOW;
 
 /**
  * @author 47081

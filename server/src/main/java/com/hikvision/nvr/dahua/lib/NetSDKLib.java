@@ -2777,12 +2777,12 @@ public interface NetSDKLib extends Library {
          * UTC结束时间(标准UTC时间), 与stuStartTimeRealUTC配对使用
          */
         public NET_TIME         stuEndTimeRealUTC = new NET_TIME();
-        public NET_PLATE_IMAGE_INFO stuPlateImageInfo = new NET_PLATE_IMAGE_INFO(); //车牌图片信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_PLATE_IMAGE_INFO}
-        public NET_CARBODY_IMAGE_INFO stuCarBodyImageInfo = new NET_CARBODY_IMAGE_INFO(); //车身图片信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_CARBODY_IMAGE_INFO}
+        public NET_PLATE_IMAGE_INFO stuPlateImageInfo = new NET_PLATE_IMAGE_INFO(); //车牌图片信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PLATE_IMAGE_INFO}
+        public NET_CARBODY_IMAGE_INFO stuCarBodyImageInfo = new NET_CARBODY_IMAGE_INFO(); //车身图片信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CARBODY_IMAGE_INFO}
         public byte[]           szPlateCode = new byte[16];           //车牌代码
         public byte[]           szEventUUIDStr = new byte[32];        //离线补传字段，唯一标识一个事件
-        public NET_CODRIVER_FACE_IMAGE_INFO stuCodriverFaceImageInfo = new NET_CODRIVER_FACE_IMAGE_INFO(); //副驾驶人脸图片信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_CODRIVER_FACE_IMAGE_INFO}
-        public NET_DRIVER_FACE_IMAGE_INFO stuDriverFaceImageInfo = new NET_DRIVER_FACE_IMAGE_INFO(); //主驾驶人脸图片信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_DRIVER_FACE_IMAGE_INFO}
+        public NET_CODRIVER_FACE_IMAGE_INFO stuCodriverFaceImageInfo = new NET_CODRIVER_FACE_IMAGE_INFO(); //副驾驶人脸图片信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CODRIVER_FACE_IMAGE_INFO}
+        public NET_DRIVER_FACE_IMAGE_INFO stuDriverFaceImageInfo = new NET_DRIVER_FACE_IMAGE_INFO(); //主驾驶人脸图片信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_DRIVER_FACE_IMAGE_INFO}
 
         public MEDIAFILE_TRAFFICCAR_INFO_EX() {
             for (int i = 0; i < stuAttachMent.length; i++) {
@@ -4701,7 +4701,7 @@ public interface NetSDKLib extends Library {
         public int              abAudioPlayTimes;                     // 联动语音播放使能
         public int              nAudioPlayTimes;                      // 联动语音播放次数
         public int              abLightingLink;                       //云台补光灯联动项使能
-        public NET_CFG_LIGHTING_LINK_INFO stuLightingLink = new NET_CFG_LIGHTING_LINK_INFO(); //云台补光灯联动项,参见结构体定义 {@link com.netsdk.lib.structure.NET_CFG_LIGHTING_LINK_INFO}
+        public NET_CFG_LIGHTING_LINK_INFO stuLightingLink = new NET_CFG_LIGHTING_LINK_INFO(); //云台补光灯联动项,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CFG_LIGHTING_LINK_INFO}
         public byte[]           byReserve = new byte[828];            // 预留字节
     }
 
@@ -4834,7 +4834,7 @@ public interface NetSDKLib extends Library {
         public int              bFeatureFilter;                       // 在人脸属性开启前提下，如果人脸图像质量太差，是否不上报属性
         // true-图像太差不上报属性 false-图像很差也上报属性(可能会非常不准，影响用户体验)
         public int              nMinQuality;                          // 人脸图片质量阈值,和bFeatureFilter一起使用 范围[1,100]
-        public CFG_FACE_BEAUTIFICATION stuFaceBeautification = new CFG_FACE_BEAUTIFICATION(); //人Lian美化,参见结构体定义 {@link com.netsdk.lib.structure.CFG_FACE_BEAUTIFICATION}
+        public CFG_FACE_BEAUTIFICATION stuFaceBeautification = new CFG_FACE_BEAUTIFICATION(); //人Lian美化,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_FACE_BEAUTIFICATION}
         public byte[]           szReserved = new byte[1024];          //保留字段
     }
 
@@ -4919,7 +4919,7 @@ public interface NetSDKLib extends Library {
         public long             nEventUUID;                           //唯一标识一个事件
         public int              bRealUTC;                             //判断stuRealUTC字段是否可用
         public int              nRecognitionType;                     //人员识别类型: -1：未知 0：未比对到人员 1：比对到未过期人员 2：比对到过期人员
-        public Pointer          pstuInfoEx;                           //目标识别数据扩展,参见结构体定义 {@link com.netsdk.lib.structure.DEV_EVENT_FACERECOGNITION_INFO_EX}
+        public Pointer          pstuInfoEx;                           //目标识别数据扩展,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.DEV_EVENT_FACERECOGNITION_INFO_EX}
         public	byte[]           byReserved3 = new byte[140-POINTERSIZE]; //保留字节
 
         @Override
@@ -4953,7 +4953,7 @@ public interface NetSDKLib extends Library {
         public NET_PIC_INFO_EX3 stuSceneImage = new NET_PIC_INFO_EX3(); // 人脸全景图
         public int              nChannelID;                           // 通道号
         public byte[]           szFilePathEx = new byte[256];         // 文件路径
-        public NET_HISTORY_HUMAN_INFO stuHistoryHumanInfo = new NET_HISTORY_HUMAN_INFO(); //历史库人体信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_HISTORY_HUMAN_INFO}
+        public NET_HISTORY_HUMAN_INFO stuHistoryHumanInfo = new NET_HISTORY_HUMAN_INFO(); //历史库人体信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_HISTORY_HUMAN_INFO}
         public byte[]           szChannelString = new byte[32];       //视频通道号
         public NET_TIME         stuTimeRealUTC = new NET_TIME();      //历史库中人员出现的时间(UTC时间格式),参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_TIME}
         public int              bIsTimeRealUTCValid;                  //stuTimeRealUTC字段是否有效
@@ -5046,11 +5046,11 @@ public interface NetSDKLib extends Library {
         public byte[]           szReserved = new byte[4];             // 保留字节
         public NET_PERSON_FREQUENCY_INFO stuFrequencyInfo = new NET_PERSON_FREQUENCY_INFO(); // 频次报警信息
         public  byte[]          szUUID = new byte[64];
-        public Pointer          pstuCustomPasserbyInfo;               //路人信息,由用户申请内存, 一次申请一个,参见结构体定义 {@link com.netsdk.lib.structure.FACERECOGNITION_CUSTOM_PASSER_BY_INFO}
-        public Pointer          pstuCustomExamineeInfo;               //考生考试信息, 由用户申请内存, 一次申请一个,参见结构体定义 {@link com.netsdk.lib.structure.FACERECOGNITION_CUSTOM_EXAMINEE_INFO}
-        public Pointer          pstuCustomResidentsInfo;              //住户信息, 由用户申请内存, 一次申请一个,参见结构体定义 {@link com.netsdk.lib.structure.FACERECOGNITION_CUSTOM_RESIDENTS_INFO}
+        public Pointer          pstuCustomPasserbyInfo;               //路人信息,由用户申请内存, 一次申请一个,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.FACERECOGNITION_CUSTOM_PASSER_BY_INFO}
+        public Pointer          pstuCustomExamineeInfo;               //考生考试信息, 由用户申请内存, 一次申请一个,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.FACERECOGNITION_CUSTOM_EXAMINEE_INFO}
+        public Pointer          pstuCustomResidentsInfo;              //住户信息, 由用户申请内存, 一次申请一个,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.FACERECOGNITION_CUSTOM_RESIDENTS_INFO}
         public byte[]           szRecordID = new byte[64];            //对应抓拍的唯一id
-        public Pointer          pstuPersonInfoEx2;                    //人员信息扩展2, 由用户申请内存, 一次申请一个,参见结构体定义 {@link com.netsdk.lib.structure.FACERECOGNITION_PERSON_INFOEX2}
+        public Pointer          pstuPersonInfoEx2;                    //人员信息扩展2, 由用户申请内存, 一次申请一个,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.FACERECOGNITION_PERSON_INFOEX2}
         public int              bPersonFeatureValue;                  //人员特征信息使能
         public byte[]           byReserved = new byte[120-POINTERSIZE*4]; // 保留字节
 
@@ -5310,12 +5310,12 @@ public interface NetSDKLib extends Library {
         public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); // 事件公共扩展字段结构体
         public Pointer          pstuImageInfo;                        // 图片信息数组 ,指正对应结构体   NET_IMAGE_INFO_EX3的数组
         public int              nImageInfoNum;                        // 图片信息个数
-        public Pointer          pstFeatureAlarm;                      //属性报警,参见结构体定义 {@link com.netsdk.lib.structure.NET_FEATURE_ALARM_INFO}
+        public Pointer          pstFeatureAlarm;                      //属性报警,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FEATURE_ALARM_INFO}
         public int              nFeatureAlarmNum;                     //属性报警个数
         public byte[]           szGMIDNumber = new byte[64];          //国芯安全模块ID
         public byte[]           szFaceKeyVersion = new byte[8];       //人像认证密钥版本
         public byte[]           szFaceDataHmac = new byte[256];       //人像数据认证码
-        public Pointer          pstuFaceDetectInfo;                   //目标检测事件扩展信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_FACE_DETECT_INFO_EX}
+        public Pointer          pstuFaceDetectInfo;                   //目标检测事件扩展信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FACE_DETECT_INFO_EX}
         public byte[]           bReserved = new byte[60-POINTERSIZE*3]; // 保留字节,留待扩展
     }
 
@@ -5405,7 +5405,7 @@ public interface NetSDKLib extends Library {
          * 区域拥堵标志 0-车道拥堵 1-区域拥堵
          */
         public int              nJamRegionFlag;
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         /**
@@ -5420,7 +5420,7 @@ public interface NetSDKLib extends Library {
          * 公共信息
          */
         public EVENT_COMM_INFO  stCommInfo = new EVENT_COMM_INFO();
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
 
         public DEV_EVENT_TRAFFICJAM_INFO() {
         }                           // 公共信息
@@ -5824,12 +5824,12 @@ public interface NetSDKLib extends Library {
         public int              nDriverNum;                           //车辆前排驾驶室人员数量
         public byte[]           szSEMotorVehicleType_i = new byte[64]; //I级机动车交调(SE)车型
         public byte[]           szReserved1 = new byte[4];            //字节对齐
-        public Pointer          pstuYunTongInfo;                      //云瞳平台的部分图片信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_YUNTONG_INFO}
+        public Pointer          pstuYunTongInfo;                      //云瞳平台的部分图片信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_YUNTONG_INFO}
         public int              nRegionType;                          //检测区域类型, 0:未知,1:普通区域,2:应急区域,3:超车区域,4:导流带
         public int              nRegionDirection;                     //检测区域方向, 0:未知,1:上行，即车辆离设备部署点越来越近,2:下行，即车辆离设备部署点越来越远
         public int              nLaneType;                            //车辆所在的车道类型, 0:未知,1:普通车道,2:应急车道
         public int              nLaneDirection;                       //检测区域方向, 0:未知,1:上行，即车辆离设备部署点越来越近,2:下行，即车辆离设备部署点越来越远
-        public Pointer          pstuLaneInfos;                        //车道信息，每个车道两条边界线,参见结构体定义 {@link com.netsdk.lib.structure.NET_LANE_INFOS}
+        public Pointer          pstuLaneInfos;                        //车道信息，每个车道两条边界线,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_LANE_INFOS}
         public int              nLaneInfosNum;                        //车道信息个数
         /**
          预留字节
@@ -6035,7 +6035,7 @@ public interface NetSDKLib extends Library {
          */
         public int              emPlateAttribute;
         /**
-         * 交通车辆信息扩展, refer to {@link com.netsdk.lib.structure.NET_TRAFFICCAR_INFO_EXTERN}
+         * 交通车辆信息扩展, refer to {@link com.hikvision.nvr.dahua.lib.structure.NET_TRAFFICCAR_INFO_EXTERN}
          */
         public Pointer          pTrafficInfoExtern;
         public byte[]           szCarNoGroupType = new byte[64];      //分组类别,出租车、网约车、私家车等等
@@ -6162,7 +6162,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szRecordEndTime = new byte[64];       //最后一张图片的时间, 格式为：yyyy-MM-ddTHH:mm:ss.SSSXXX, 其中T为不需要解析的无意义字符，XXX为时区
         public Pointer          pstuVehicleEx2;                       //车身信息扩展,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT_EX2}
         public byte[]           bReserved = new byte[48-2*POINTERSIZE]; //保留字节,留待扩展.
-        public com.netsdk.lib.structure.DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO stTrafficCar = new com.netsdk.lib.structure.DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO(); //交通车辆信息
+        public com.hikvision.nvr.dahua.lib.structure.DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO stTrafficCar = new com.hikvision.nvr.dahua.lib.structure.DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO(); //交通车辆信息
         public EVENT_COMM_INFO  stCommInfo = new EVENT_COMM_INFO();   //公共信息
         public VA_OBJECT_NONMOTOR stuNonMotor = new VA_OBJECT_NONMOTOR(); //非机动车对象
         public int              bHasNonMotor;                         //是否有非机动车对象
@@ -6284,7 +6284,7 @@ public interface NetSDKLib extends Library {
         public int              bSceneImage;                          //pstuSceneImage是否有效
         public int              nRemainingParkingSpace;               //剩余车位数
         public Pointer          pstuObjectEx2;                        //检测到的物体扩展,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT_EX2}
-        public NET_GLOBAL_SCENE_INFO stuGlobalScene = new NET_GLOBAL_SCENE_INFO(); //大图信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_GLOBAL_SCENE_INFO}
+        public NET_GLOBAL_SCENE_INFO stuGlobalScene = new NET_GLOBAL_SCENE_INFO(); //大图信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_GLOBAL_SCENE_INFO}
         public byte[]           szOptNum = new byte[64];              //事件流水号,全局唯一
         /**
          * 保留字节
@@ -6691,12 +6691,12 @@ public interface NetSDKLib extends Library {
          * 行人信息, refer to {@link NET_MSG_OBJECT}
          */
         public Pointer          pstuVehicle;
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public Pointer          pstuObjects;                          //上报一个报警中行人多目标的信息，内存由NetSDK申请释放,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT}
         public int              nObjectsNum;                          //行人多目标信息有效个数, 最大值为100
-        public Pointer          pstuHumanList;                        //上报一个报警中行人多目标的信息，内存由NetSDK申请释放,参见结构体定义 {@link com.netsdk.lib.structure.NET_VAOBJECT_ROADCONE_INFO}
+        public Pointer          pstuHumanList;                        //上报一个报警中行人多目标的信息，内存由NetSDK申请释放,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_VAOBJECT_ROADCONE_INFO}
         public int              nHumanListNum;                        //行人多目标信息有效个数, 最大值为100
         /**
          * 保留字节
@@ -6706,7 +6706,7 @@ public interface NetSDKLib extends Library {
          * 公共信息
          */
         public EVENT_COMM_INFO  stCommInfo = new EVENT_COMM_INFO();
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
 
         public DEV_EVENT_TRAFFIC_PEDESTRAIN_INFO() {
         }
@@ -6732,7 +6732,7 @@ public interface NetSDKLib extends Library {
         public EVENT_TRAFFIC_CAR_PART_INFO stuTrafficCarPartInfo;     // 交通车辆部分信息
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
         public SCENE_IMAGE_INFO stuSceneImage = new SCENE_IMAGE_INFO(); //全景广角图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO}
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public byte[]           bReserved = new byte[264-POINTERSIZE]; // 保留字节
         public EVENT_COMM_INFO  stCommInfo;                           // 公共信息
@@ -6867,7 +6867,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szSourceID = new byte[32];            //事件关联ID,格式：类型+时间+序列号，其中类型2位，时间14位，序列号5位。类型：02-图像,时间：YYYYMMDDhhmmss,序列号：00001,如"022019030714003000001"
         public int              emVehicleAction;                      //车辆行为类型,0：未知,1：伐木盗林,2：偷盗沙石,参见枚举定义 {@link com.netsdk.lib.enumeration.EM_TRAFFIC_VEHICLE_ACTION}
         public int              nImageInfoEx3Num;                     //图片信息个数
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nDirectionStatsResult;                //结构化统计方向检测结果 0：未知，1：从左到右，2：从右到左
         public byte[]           szReserved1 = new byte[4];            //字节对齐
         public byte[]           szEventUUID = new byte[40];           //事件ID，由UUID生成，标识唯一事件
@@ -7204,9 +7204,9 @@ public interface NetSDKLib extends Library {
         public int              emHasHat;                             //是否戴帽子,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_HAS_HAT}
         public int              emCap;                                //帽类型,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_CAP_TYPE}
         public int              emHairStyle;                          //头发样式,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_HAIR_STYLE}
-        public NET_FACE_FEATURE_VECTOR_INFO stuFaceFeatureVectorInfo = new NET_FACE_FEATURE_VECTOR_INFO(); //目标特征值数据在二进制数据中的位置信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_FACE_FEATURE_VECTOR_INFO}
+        public NET_FACE_FEATURE_VECTOR_INFO stuFaceFeatureVectorInfo = new NET_FACE_FEATURE_VECTOR_INFO(); //目标特征值数据在二进制数据中的位置信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FACE_FEATURE_VECTOR_INFO}
         public int              emFaceFeatureVersion;                 //目标特征值版本号,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_FEATURE_VERSION}
-        public NET_HUMAN_FEATURE_VECTOR_INFO stuHumanFeatureVectorInfo = new NET_HUMAN_FEATURE_VECTOR_INFO(); //人体特征值数据在二进制数据中的位置信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_HUMAN_FEATURE_VECTOR_INFO}
+        public NET_HUMAN_FEATURE_VECTOR_INFO stuHumanFeatureVectorInfo = new NET_HUMAN_FEATURE_VECTOR_INFO(); //人体特征值数据在二进制数据中的位置信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_HUMAN_FEATURE_VECTOR_INFO}
         public int              emHumanFeatureVersion;                //人体特征值版本号,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_FEATURE_VERSION}
         public int              nAgeConf;                             //年龄段置信度
         public int              nUpColorConf;                         //上衣颜色置信度
@@ -7227,7 +7227,7 @@ public interface NetSDKLib extends Library {
         public int              emNewUpClothes;                       //新上衣类型,参见枚举定义 {@link com.netsdk.lib.enumeration.EM_NEWUPCLOTHES_TYPE}
         public int              bNewDownClothes;                      //是否支持新下衣类型
         public int              emNewDownClothes;                     //新下衣类型,参见枚举定义 {@link com.netsdk.lib.enumeration.EM_NEWDOWNCLOTHES_TYPE}
-        public NET_HUMAN_RECT   stuHumanRect = new NET_HUMAN_RECT();  //骑车人坐标图信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_HUMAN_RECT}
+        public NET_HUMAN_RECT   stuHumanRect = new NET_HUMAN_RECT();  //骑车人坐标图信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_HUMAN_RECT}
         public byte[]           byReserved = new byte[100];           // 保留
     }
 
@@ -7506,7 +7506,7 @@ public interface NetSDKLib extends Library {
         public int              dwSnapFlagMask;                       // 抓图标志(按位),具体见NET_RESERVED_COMMON, 0位:"*",1位:"Timing",2位:"Manual",3位:"Marked",4位:"Event",5位:"Mosaic",6位:"Cutout"
         public NET_RESOLUTION_INFO stuResolution;                     // 对应图片的分辨率
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[964-2*POINTERSIZE]; // 保留字节
@@ -7540,7 +7540,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szAlarmRecordPath = new byte[NET_COMMON_STRING_256]; // 录像路径
         public EVENT_INTELLI_COMM_INFO intelliCommInfo;               // 智能事件公共信息
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public Pointer          pstuVehicleEx2;                       //车身信息扩展,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT_EX2}
@@ -7580,7 +7580,7 @@ public interface NetSDKLib extends Library {
         public EVENT_INTELLI_COMM_INFO stuIntelliCommInfo;            // 智能事件公共信息
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
         public int              nSpeedingPercentage;                  // 超速百分比
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public int              bSceneImage;                          //pstuSceneImage是否有效
         public Pointer          pstuSceneImage;                       //全景广角图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
@@ -7620,7 +7620,7 @@ public interface NetSDKLib extends Library {
         public NET_RESOLUTION_INFO stuResolution;                     // 对应图片的分辨率
         public EVENT_INTELLI_COMM_INFO stuIntelliCommInfo;            // 智能事件公共信息
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[828-2*POINTERSIZE]; // 保留字节
@@ -7676,7 +7676,7 @@ public interface NetSDKLib extends Library {
         public int              dwSnapFlagMask;                       // 抓图标志(按位),具体见  NET_RESERVED_COMMON, 0位:"*",1位:"Timing",2位:"Manual",3位:"Marked",4位:"Event",5位:"Mosaic",6位:"Cutout"
         public NET_RESOLUTION_INFO stuResolution;                     // 对应图片的分辨率
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[964-2*POINTERSIZE]; // 保留字节
@@ -7708,7 +7708,7 @@ public interface NetSDKLib extends Library {
         public int              dwSnapFlagMask;                       // 抓图标志(按位),具体见  NET_RESERVED_COMMON, 0位:"*",1位:"Timing",2位:"Manual",3位:"Marked",4位:"Event",5位:"Mosaic",6位:"Cutout"
         public NET_RESOLUTION_INFO stuResolution;                     // 对应图片的分辨率
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[964-2*POINTERSIZE]; // 保留字节
@@ -7739,7 +7739,7 @@ public interface NetSDKLib extends Library {
         public int              dwSnapFlagMask;                       // 抓图标志(按位),具体见  NET_RESERVED_COMMON, 0位:"*",1位:"Timing",2位:"Manual",3位:"Marked",4位:"Event",5位:"Mosaic",6位:"Cutout"
         public NET_RESOLUTION_INFO stuResolution;                     // 对应图片的分辨率
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[964-2*POINTERSIZE]; // 保留字节
@@ -7835,7 +7835,7 @@ public interface NetSDKLib extends Library {
         public byte[]           bReserved = new byte[1016-POINTERSIZE]; // 保留字节,留待扩展.
         public DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO stTrafficCar;        // 交通车辆信息
         public EVENT_COMM_INFO  stCommInfo;                           // 公共信息
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     //事件类型 EVENT_IVS_TRAFFIC_VEHICLEINROUTE(有车占道事件)对应的数据块描述信息
@@ -7863,7 +7863,7 @@ public interface NetSDKLib extends Library {
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           byReserved = new byte[884-POINTERSIZE];
         public EVENT_COMM_INFO  stCommInfo;                           // 公共信息
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     //事件类型EVENT_IVS_TRAFFIC_CROSSLANE(交通违章-违章变道)对应的数据块描述信息
@@ -7891,7 +7891,7 @@ public interface NetSDKLib extends Library {
         public byte[]           bReserved = new byte[836-POINTERSIZE]; // 保留字节,留待扩展.留待扩展.
         public DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO stuTrafficCar = new DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO(); //交通车辆信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO}
         public EVENT_COMM_INFO  stCommInfo = new EVENT_COMM_INFO();   //公共信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.EVENT_COMM_INFO}
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //事件公共扩展字段结构体,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //事件公共扩展字段结构体,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     // 事件类型EVENT_IVS_TRAFFIC_NOPASSING(交通违章-禁止通行事件)对应的数据块描述信息
@@ -7947,7 +7947,7 @@ public interface NetSDKLib extends Library {
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[984-POINTERSIZE]; // 保留字节,留待扩展.
         public EVENT_COMM_INFO  stCommInfo;                           // 公共信息
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     //事件类型 EVENT_IVS_TRAFFIC_VEHICLEINBUSROUTE(占用公交车道事件)对应的数据块描述信息
@@ -7975,7 +7975,7 @@ public interface NetSDKLib extends Library {
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           bReserved = new byte[980-POINTERSIZE]; // 保留字节,留待扩展.
         public EVENT_COMM_INFO  stCommInfo;                           // 公共信息
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     //事件类型 EVENT_IVS_TRAFFIC_BACKING(违章倒车事件)对应的数据块描述信息
@@ -8096,7 +8096,7 @@ public interface NetSDKLib extends Library {
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
         public byte[]           bReserved = new byte[984-POINTERSIZE]; // 保留字节
         public EVENT_COMM_INFO  stCommInfo;                           // 公共信息
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     // 事件类型EVENT_IVS_TRAFFIC_WITHOUT_SAFEBELT(交通未系安全带事件事件)对应的数据块描述信息
@@ -8126,7 +8126,7 @@ public interface NetSDKLib extends Library {
         public int              dwSnapFlagMask;                       // 抓图标志(按位),具体见NET_RESERVED_COMMON , 0位:"*",1位:"Timing",2位:"Manual",3位:"Marked",4位:"Event",5位:"Mosaic",6位:"Cutout"
         public NET_RESOLUTION_INFO stuResolution;                     // 对应图片的分辨率
         public NET_GPS_INFO     stuGPSInfo;                           // GPS信息
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图图片信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           byReserved = new byte[724-POINTERSIZE*2]; // 保留字节
@@ -8370,7 +8370,7 @@ public interface NetSDKLib extends Library {
         public NET_RECT         stuOriginalBoundingBox;               // 包围盒,绝对坐标
         public long             nQueueDuration;                       //排队时长
         public Pointer          pstuHumanAttributes;                  //人体属性信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.HUMAN_ATTRIBUTES_INFO}
-        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.netsdk.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
+        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
         public Pointer          pstuFaceAttributes;                   //人脸属性,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_FACE_ATTRIBUTE}
         public byte[]           byReserved = new byte[120-3*POINTERSIZE]; // 预留字节
     }
@@ -8406,7 +8406,7 @@ public interface NetSDKLib extends Library {
         public int              nCurChannelHFOV;                      // 当前报警通道的横向视场角，单位度，实际角度乘以100
         public int              nCurChannelVFOV;                      // 当前报警通道的纵向视场角，单位度，实际角度乘以100
         public byte[]           szRealEventType = new byte[32];       // 采用该字段区分是区域入侵还是事件，该字段不携带则是通用的区域入侵事件，携带则根据内容区分实际的事件类型，目前只有IllegalDumping（垃圾违规投放）
-        public Pointer          pstuBoatObjectEx;                     //船只物品信息扩展，数量为nObjectBoatNum,参见结构体定义 {@link com.netsdk.lib.structure.NET_BOAT_OBJECT_EXTERN}
+        public Pointer          pstuBoatObjectEx;                     //船只物品信息扩展，数量为nObjectBoatNum,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_BOAT_OBJECT_EXTERN}
         public int              nEventType;                           //0:未知 1：船舶事件 2：船名事件 3：AIS事件 4: 表示船舶事件(船名事件，AIS事件合并后的事件)
         public byte[]           szLinkTargetUUID = new byte[128];     //雷达前端事件中的LinkTargetUUID字段信息
         public int              nReviewMode;                          //0:未知 1：TrackingMode跟踪复核模式 2：VideoMode视频模式
@@ -8443,10 +8443,10 @@ public interface NetSDKLib extends Library {
         public int              nHFovValue;                           // 对应倍率水平视场角, 	单位0.01度, 扩大100倍表示
         public double           dbFocusPosition;                      // 聚焦位置
         public int              nObjectBoatNum;                       //船只物体个数
-        public NET_BOAT_OBJECT[] stuBoatObject = new NET_BOAT_OBJECT[100]; //船只物品信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_BOAT_OBJECT}
+        public NET_BOAT_OBJECT[] stuBoatObject = new NET_BOAT_OBJECT[100]; //船只物品信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_BOAT_OBJECT}
         public int              nImageNum;                            //图片信息个数
-        public Pointer          pImageArray;                          //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX2}
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //事件公共扩展字段结构体,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public Pointer          pImageArray;                          //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX2}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //事件公共扩展字段结构体,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
         public Pointer          pstuObjectEx2;                        //检测到的物体扩展,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT_EX2}
         public Pointer          pstuObjectIDsEx2;                     //检测到的物体扩展,数量为nObjectNum,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT_EX2}
         public Pointer          pstuVehicleEx2;                       //车身信息扩展,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_MSG_OBJECT_EX2}
@@ -8595,7 +8595,7 @@ public interface NetSDKLib extends Library {
         public int              nIndexInDataInFaceImage;              //人脸图片序号
         public int              nIndexInDataInFaceSceneImage;         //人脸全景图片序号
         public Pointer          pstuHumanAttributes;                  //人体属性信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.HUMAN_ATTRIBUTES_INFO}
-        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.netsdk.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
+        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
         public Pointer          pstuFaceAttributes;                   //人脸属性,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_FACE_ATTRIBUTE}
         public byte[]           bReserved = new byte[228-3*POINTERSIZE]; // 保留字节,留待扩展.
     }
@@ -8795,7 +8795,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szMac = new byte[20];                 // MAC地址
         public int              nHttpsPort;                           //HttpsPort
         public byte[]           byReserved = new byte[4];             //保留字段
-        public Pointer          pstuRemoteDevEx;                      //用于DH_REMOTE_DEVICE新增字段扩展,由用户申请内存，大小为sizeof(NET_REMOTE_DEVICE_EX),参见结构体定义 {@link com.netsdk.lib.structure.NET_REMOTE_DEVICE_EX}
+        public Pointer          pstuRemoteDevEx;                      //用于DH_REMOTE_DEVICE新增字段扩展,由用户申请内存，大小为sizeof(NET_REMOTE_DEVICE_EX),参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_REMOTE_DEVICE_EX}
 
         public NET_REMOTE_DEVICE() {
             this.dwSize = this.size();
@@ -9266,7 +9266,7 @@ public interface NetSDKLib extends Library {
         public int              bProtectEnable;                       // 雨刷保护使能: true 保护开启, false 保护关闭
         public int              nProtectTime;                         // 保护时间, 单位: 秒
         public CFG_RAINBRUSH_TOUR_INFO stuRainBrushTour = new CFG_RAINBRUSH_TOUR_INFO(); // 雨刷巡航模式配置，当CFG_RAINBRUSHMODE_INFO中EM_CFG_RAINBRUSHMODE_MODE为EM_CFG_RAINBRUSHMODE_MODE_TOUR时有效
-        public CFG_RAINBRUSH_CYCLE stuRainBrushCycle = new CFG_RAINBRUSH_CYCLE(); //周期模式配置，当CFG_RAINBRUSHMODE_INFO中EM_CFG_RAINBRUSHMODE_MODE为EM_CFG_RAINBRUSHMODE_MODE_CYCLE时有效,参见结构体定义 {@link com.netsdk.lib.structure.CFG_RAINBRUSH_CYCLE}
+        public CFG_RAINBRUSH_CYCLE stuRainBrushCycle = new CFG_RAINBRUSH_CYCLE(); //周期模式配置，当CFG_RAINBRUSHMODE_INFO中EM_CFG_RAINBRUSHMODE_MODE为EM_CFG_RAINBRUSHMODE_MODE_CYCLE时有效,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_RAINBRUSH_CYCLE}
         public int              nSelfCleanRunTime;                    //手动模式下，一次自清洗操作雨刷运行的时长，单位：秒
         public byte[]           szReserved = new byte[1024];          //保留字节
     }
@@ -9978,20 +9978,20 @@ public interface NetSDKLib extends Library {
         public byte[]           szInductiveVehicleType = new byte[32]; //在Category类型基础上对车辆类型归纳后的类型
         public byte[]           szTextDirection = new byte[32];       //移动方向(比如钢包运动检测方向)LeftToRight,从左到右,RightToLeft,从右到左,TopToBottom，从上到下,BottomToTop，从下到上
         public byte[]           szQRCode = new byte[64];              //车辆上的二维码识别结果
-        public NET_MSG_OBJECT_OBJECTUUID_INFO stuObjectUUID = new NET_MSG_OBJECT_OBJECTUUID_INFO(); //智能物体全局唯一物体标识,参见结构体定义 {@link com.netsdk.lib.structure.NET_MSG_OBJECT_OBJECTUUID_INFO}
+        public NET_MSG_OBJECT_OBJECTUUID_INFO stuObjectUUID = new NET_MSG_OBJECT_OBJECTUUID_INFO(); //智能物体全局唯一物体标识,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_MSG_OBJECT_OBJECTUUID_INFO}
         public int              nTextRegionID;                        //Text文本内容对应的区域编号
         public int              nCloseDistance;                       //和相邻检测目标的距离，目前指的是工程车，单位：cm
         public int              nSpeed;                               //物体速度,单位为km/h
         public byte[]           szVehicleIDNumber = new byte[128];    //车架号
         public int              nCarTripLineDirection;                //车辆绊线方向 0:未知，1:A到B，2:B到A
-        public NET_VAO_EXTRA_VEHICLE_INFO stuVehicleExtra = new NET_VAO_EXTRA_VEHICLE_INFO(); //车辆扩展信息，ObjectType为Vehicle时有效,参见结构体定义 {@link com.netsdk.lib.structure.NET_VAO_EXTRA_VEHICLE_INFO}
+        public NET_VAO_EXTRA_VEHICLE_INFO stuVehicleExtra = new NET_VAO_EXTRA_VEHICLE_INFO(); //车辆扩展信息，ObjectType为Vehicle时有效,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_VAO_EXTRA_VEHICLE_INFO}
         public byte[]           szTrafficUUID = new byte[33];         //交通违章UUID
         public byte[]           szReserved2 = new byte[3];            //字节对齐
         public double           dbLongitude;                          //经度，单位：度,正为东经，负为西经，取值范围[-180,180]
         public double           dbLatitude;                           //纬度，单位：度,正为北纬，负为南纬，取值范围[-90,90]
         public int              nElevation;                           //高程信息，单位：米, 车牌扩展信息
         public int              nPlateEvaluation;                     //车牌评分，根据置信度车牌大小以及抓拍位置对车牌进行评分,分为'A' 'B' 'C' 'D'，评分规则：, 条件1：车牌大小在[minWidth, maxWidth]范围内，最值有webcaps，默认是100-300，宽高比在 1:1 到 5:1 之间，这两个都满足（1分） , 条件2：置信度>80，即confidence > 80（1分） , 条件3：抓拍位置在中间区域，位置最值有webcaps，默认为图像高度的 1/2 到 4/5（1分） , 3分是'A'，2分是'B'，1分是'C'，0分是'D'
-        public Pointer          pstuFusionInfo;                       //雷达融合目标信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_VAO_EXTRA_FUSION_INFO}
+        public Pointer          pstuFusionInfo;                       //雷达融合目标信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_VAO_EXTRA_FUSION_INFO}
         public byte[]           byReserved = new byte[408-POINTERSIZE]; //扩展字节
 
         public NET_MSG_OBJECT_EX2()
@@ -11044,10 +11044,10 @@ public interface NetSDKLib extends Library {
         public int              nInsideTodayPig;                      // 当天的猪只数
         public byte[]           szReserved = new byte[4];             //字节对齐
         public NET_PASSED_SUBTOTAL_INFO stuPassedSubtotal = new NET_PASSED_SUBTOTAL_INFO(); // 经过小计
-        public NET_ENTERED_NO_DUP_SUBTOTAL_INFO stuEnteredNoDupSubtotal = new NET_ENTERED_NO_DUP_SUBTOTAL_INFO(); //去重后的进入人数小计,参见结构体定义 {@link com.netsdk.lib.structure.NET_ENTERED_NO_DUP_SUBTOTAL_INFO}
-        public NET_EXITED_NO_DUP_SUBTOTAL_INFO stuExitedNoDupSubtotal = new NET_EXITED_NO_DUP_SUBTOTAL_INFO(); //去重后的出去人数小计,参见结构体定义 {@link com.netsdk.lib.structure.NET_EXITED_NO_DUP_SUBTOTAL_INFO}
-        public NET_ENTERED_DUP_SUBTOTAL_INFO stuEnteredDupSubtotal = new NET_ENTERED_DUP_SUBTOTAL_INFO(); //进入重复小计,参见结构体定义 {@link com.netsdk.lib.structure.NET_ENTERED_DUP_SUBTOTAL_INFO}
-        public NET_EXITED_DUP_SUBTOTAL_INFO stuExitedDupSubtotal = new NET_EXITED_DUP_SUBTOTAL_INFO(); //出去重复小计,参见结构体定义 {@link com.netsdk.lib.structure.NET_EXITED_DUP_SUBTOTAL_INFO}
+        public NET_ENTERED_NO_DUP_SUBTOTAL_INFO stuEnteredNoDupSubtotal = new NET_ENTERED_NO_DUP_SUBTOTAL_INFO(); //去重后的进入人数小计,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ENTERED_NO_DUP_SUBTOTAL_INFO}
+        public NET_EXITED_NO_DUP_SUBTOTAL_INFO stuExitedNoDupSubtotal = new NET_EXITED_NO_DUP_SUBTOTAL_INFO(); //去重后的出去人数小计,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EXITED_NO_DUP_SUBTOTAL_INFO}
+        public NET_ENTERED_DUP_SUBTOTAL_INFO stuEnteredDupSubtotal = new NET_ENTERED_DUP_SUBTOTAL_INFO(); //进入重复小计,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ENTERED_DUP_SUBTOTAL_INFO}
+        public NET_EXITED_DUP_SUBTOTAL_INFO stuExitedDupSubtotal = new NET_EXITED_DUP_SUBTOTAL_INFO(); //出去重复小计,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EXITED_DUP_SUBTOTAL_INFO}
         public byte[]           szRuleClass = new byte[32];           //业务大类 ,"CustomerFlow" ：精准客流
         public byte[]           reserved = new byte[500];             //保留字节
 
@@ -11643,7 +11643,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szOrderIP = new byte[NET_MAX_IPADDR_EX_LEN]; // 负责命令开闸的平台IP
         public int              emCtrlTypeOnDisconnect;               // 平台IP与设备断开连接后，设备采用的开闸方式, 详见NET_EM_CFG_TRAFFICSTROBE_CTRTYPE
         public NET_CFG_STATIONARY_OPEN stuStationaryOpen;             // 道闸常开配置
-        public NET_CFG_FORBID_OPEN stuForbidOpen = new NET_CFG_FORBID_OPEN(); //道闸禁开配置,参见结构体定义 {@link com.netsdk.lib.structure.NET_CFG_FORBID_OPEN}
+        public NET_CFG_FORBID_OPEN stuForbidOpen = new NET_CFG_FORBID_OPEN(); //道闸禁开配置,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CFG_FORBID_OPEN}
 
         public NET_CFG_TRAFFICSTROBE_INFO() {
             this.dwSize = this.size();
@@ -12207,7 +12207,7 @@ public interface NetSDKLib extends Library {
         public int              nVideoCount;                          //待上传的视频的数量
         public int              nPictureCount;                        //待上传的图片的数量
         public int              nAreaInfoNum;                         //所属区域信息个数
-        public Pointer          pstuAreaInfo;                         //所属区域信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_AREAR_INFO}
+        public Pointer          pstuAreaInfo;                         //所属区域信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_AREAR_INFO}
     	/**
     	 * 保留字节
     	 */
@@ -14646,8 +14646,8 @@ public interface NetSDKLib extends Library {
         public byte[]           szCheckOutType = new byte[32];        //签出类型
         public byte[]           szCheckOutCause = new byte[512];      //签出原因
         public int              nTargetCheck;                         //刷卡开门时，门禁后台目标校验是否为同一人，, 0：该人员无目标数据, 1：刷卡和目标人员一致, 2：刷卡和目标人员不一致
-        public NET_ACCESS_CTL_OBJECT_PROPERTIES stuObjectProperties = new NET_ACCESS_CTL_OBJECT_PROPERTIES(); //动态识别的结构化信息对象,参见结构体定义 {@link com.netsdk.lib.structure.NET_ACCESS_CTL_OBJECT_PROPERTIES}
-        public NET_BUTTON_CONTROL_INFO stuButtonControlInfo = new NET_BUTTON_CONTROL_INFO(); //按钮控制鉴权信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_BUTTON_CONTROL_INFO}
+        public NET_ACCESS_CTL_OBJECT_PROPERTIES stuObjectProperties = new NET_ACCESS_CTL_OBJECT_PROPERTIES(); //动态识别的结构化信息对象,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ACCESS_CTL_OBJECT_PROPERTIES}
+        public NET_BUTTON_CONTROL_INFO stuButtonControlInfo = new NET_BUTTON_CONTROL_INFO(); //按钮控制鉴权信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_BUTTON_CONTROL_INFO}
         public int              nSimilarity;                          //人脸目标识别相似度, 人脸开门时有效, 范围: 0~100
         public int              nPassResult;                          //通行结果，人员是否有同行 0-未知 1-人员进入 2-人员退出 3-人员未通行
         public int              nCustomerPWDType;                     //设备在不同的密码模式下上报的密码类型，0:未知 1,唤醒密码模式  2,陪同密码模式  3胁迫密码模式
@@ -14794,7 +14794,7 @@ public interface NetSDKLib extends Library {
         public TALKINGINVITE_REMOTEDEVICEINFO stuRemoteDeviceInfo;    // 远端设备信息
         public int              bRealUTC;                             // RealUTC 是否有效，bRealUTC 为 TRUE 时，用 RealUTC，否则用 stuTime 字段
         public NET_TIME_EX      RealUTC;                              // 事件发生的时间（标准UTC）
-        public TALKING_INVITE_CUSTOM_INFO stuCustomInfo = new TALKING_INVITE_CUSTOM_INFO(); //自定义信息,参见结构体定义 {@link com.netsdk.lib.structure.TALKING_INVITE_CUSTOM_INFO}
+        public TALKING_INVITE_CUSTOM_INFO stuCustomInfo = new TALKING_INVITE_CUSTOM_INFO(); //自定义信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.TALKING_INVITE_CUSTOM_INFO}
         public byte[]           szPackageID = new byte[128];          //包裹id
 
         public ALARM_TALKING_INVITE_INFO() {
@@ -14873,7 +14873,7 @@ public interface NetSDKLib extends Library {
         public byte             abLevel2;                             // 类型为bool, 表示nLevel2字段是否存在
         public int              nLevel2;                              // 第二级级联地址, 表示连接在第nLevel1个的仪表上的探测器序号, 从0开始
         public int              emPole;                               // 输出有效模式,EM_ALARMOUT_POLE
-        public NET_ALARMOUT_TIME_SCHEDULE_INFO stuTimeSchedule = new NET_ALARMOUT_TIME_SCHEDULE_INFO(); //报警输出时间段控制信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_ALARMOUT_TIME_SCHEDULE_INFO}
+        public NET_ALARMOUT_TIME_SCHEDULE_INFO stuTimeSchedule = new NET_ALARMOUT_TIME_SCHEDULE_INFO(); //报警输出时间段控制信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ALARMOUT_TIME_SCHEDULE_INFO}
         public byte[]           szReserved = new byte[1024];          //预留字节
     }
 
@@ -15045,7 +15045,7 @@ public interface NetSDKLib extends Library {
         public int              bCoilSpeedAdjustEnable;               // 线圈速度校正使能，TRUE：校正 FALSE：不校正
         public int              nSnapSigMinConfidence;                // 触发雷达信号抓拍值，范围【0~100】
         public int              emMixSnapSpeedSource;                 // 视频抓拍速度来源,EM_MIX_SNAP_SPEED_SOURCE
-        public CFG_ALARM_MSG_HANDLE_EX stuEventHandlerEx = new CFG_ALARM_MSG_HANDLE_EX(); //交通抓拍联动参数扩展,参见结构体定义 {@link com.netsdk.lib.structure.CFG_ALARM_MSG_HANDLE_EX}
+        public CFG_ALARM_MSG_HANDLE_EX stuEventHandlerEx = new CFG_ALARM_MSG_HANDLE_EX(); //交通抓拍联动参数扩展,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_ALARM_MSG_HANDLE_EX}
     }
 
     public static class COIL_MAP_INFO extends SdkStructure
@@ -15355,7 +15355,7 @@ public interface NetSDKLib extends Library {
         public int              emRentState;                          //对接第三方平台数据,参见枚举定义 {@link com.netsdk.lib.enumeration.EM_RENT_STATE}
         public int              nConsumptionTimeSectionsNum;          //用户消费时间段
         public BYTE_ARRAY_34[]  szConsumptionTimeSections = new BYTE_ARRAY_34[42]; //消费时间段.每天最多6个时间段，每6个元素对应一天。一共7天;, 每个时段格式为"星期 时:分:秒-时:分:秒 消费类型 可消费次数 可消费金额"
-        public NET_ACCESS_CONTROL_CARD_MULTI_TIMESECTION_INFO[] stuMultiTimeSections = new NET_ACCESS_CONTROL_CARD_MULTI_TIMESECTION_INFO[128]; //一人对单个门支持多时段和假日计划方案需求,参见结构体定义 {@link com.netsdk.lib.structure.NET_ACCESS_CONTROL_CARD_MULTI_TIMESECTION_INFO}
+        public NET_ACCESS_CONTROL_CARD_MULTI_TIMESECTION_INFO[] stuMultiTimeSections = new NET_ACCESS_CONTROL_CARD_MULTI_TIMESECTION_INFO[128]; //一人对单个门支持多时段和假日计划方案需求,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ACCESS_CONTROL_CARD_MULTI_TIMESECTION_INFO}
         public int              nMultiTimeSectionsNum;                //一人对单个门支持多时段和假日计划方案需求个数
         public byte[]           szResvered1 = new byte[4];            //字节对齐
 
@@ -19513,7 +19513,7 @@ public interface NetSDKLib extends Library {
          */
         public byte[]           szReserved = new byte[2];
         /**
-         *  图片信息数组  {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+         *  图片信息数组  {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
          */
         public  Pointer         pstuImageInfo;
         /**
@@ -19523,7 +19523,7 @@ public interface NetSDKLib extends Library {
         public int              nStaffType;                           //是否为特定人员类,算法上报, -1 非该类, 0 未知, 1 是特定人员类
         public byte[]           szRoomID = new byte[8];               //房间号
         public long             nUniqueID;                            //目标唯一ID
-        public Pointer          pstuPortraitGather;                   //对接人像聚档平台定制使用,参见结构体定义 {@link com.netsdk.lib.structure.NET_HUMANTRAIT_PORTRAIT_GATHER_INFO}
+        public Pointer          pstuPortraitGather;                   //对接人像聚档平台定制使用,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_HUMANTRAIT_PORTRAIT_GATHER_INFO}
         public int              nDirectionStatsResult;                //结构化统计方向检测结果: 0：未知，1：从左到右，2：从右到左
         public int              nObjectID;                            //物体ID
         public byte[]           szEventUUID = new byte[40];           //事件ID，由UUID生成，标识唯一事件
@@ -19762,7 +19762,7 @@ public interface NetSDKLib extends Library {
         public NET_POINT        stuFaceCenter = new NET_POINT();      //目标型心(不是包围盒中心), 0-8191相对坐标, 相对于大图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_POINT}
         public int              emGlass;                              //是否戴眼镜,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_FACEDETECT_GLASSES_TYPE}
         public int              nFaceDetectConf;                      //目标检测置信度，取值0~100
-        public NET_FACE_ORIGINAL_SIZE stuOriginalSize = new NET_FACE_ORIGINAL_SIZE(); //算法目标分析时的实际目标图片尺寸, 宽高为0时无效,参见结构体定义 {@link com.netsdk.lib.structure.NET_FACE_ORIGINAL_SIZE}
+        public NET_FACE_ORIGINAL_SIZE stuOriginalSize = new NET_FACE_ORIGINAL_SIZE(); //算法目标分析时的实际目标图片尺寸, 宽高为0时无效,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FACE_ORIGINAL_SIZE}
         public int[]            arrAngleStatus = new int[3];          //目标抓拍角度(Angle)状态
         public int              nIlluminationScore;                   //目标光照值,范围[0,255]
         public byte             nLeftEyeCoverConf;                    //目标左眼遮挡置信度,范围[0,100]
@@ -20676,7 +20676,7 @@ public interface NetSDKLib extends Library {
         // (通过FaceDetection能力中的FeatureSupport来确定该配置是否可以设置)
         public int              nFaceFeatureNum;                      // 需要检测的人脸属性个数
         public int[]            emFaceFeatureType = new int[MAX_FEATURE_LIST_SIZE]; // 需检测的人脸属性, 通过FaceDetection能力来获取支持哪些人脸属性, 参考  EM_FACEFEATURE_TYPE
-        public CFG_FACE_BEAUTIFICATION stuFaceBeautification = new CFG_FACE_BEAUTIFICATION(); //人Lian美化,参见结构体定义 {@link com.netsdk.lib.structure.CFG_FACE_BEAUTIFICATION}
+        public CFG_FACE_BEAUTIFICATION stuFaceBeautification = new CFG_FACE_BEAUTIFICATION(); //人Lian美化,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_FACE_BEAUTIFICATION}
         public byte[]           szReserved = new byte[1024];          //保留字段
     }
 
@@ -21814,7 +21814,7 @@ public interface NetSDKLib extends Library {
         public int              nSpecialDaysAuthenticationTime;       //门禁假日正常鉴权时间段,值为SpecialDaysSchedule索引.假日常开大于假日常闭大于假日鉴权大于普通常开大于普通常闭
         public int              bIsOpenDoorGroupTimeOutValid;         //多人组合验证超时时间是否有效
         public int              nOpenDoorGroupTimeOut;                //多人组合验证超时时间，配套多人组合开门使用，单位：秒[10-60]，默认20
-        public CFG_ACCESS_FIRSTENTER_INFO_EX stuFirstEnterInfoEx = new CFG_ACCESS_FIRSTENTER_INFO_EX(); //首卡开门信息(拓展)，与stuFirstEnterInfo搭配使用,参见结构体定义 {@link com.netsdk.lib.structure.CFG_ACCESS_FIRSTENTER_INFO_EX}
+        public CFG_ACCESS_FIRSTENTER_INFO_EX stuFirstEnterInfoEx = new CFG_ACCESS_FIRSTENTER_INFO_EX(); //首卡开门信息(拓展)，与stuFirstEnterInfo搭配使用,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_ACCESS_FIRSTENTER_INFO_EX}
         public int              bIsDoorNotClosedReaderAlarmTypeValid; //门未关超时报警联动读卡器蜂鸣类型是否有效
         public int              nDoorNotClosedReaderAlarmType;        //门未关超时报警联动读卡器蜂鸣类型 ,0 : 报警后读卡器按照设定时长蜂鸣，时间到停止蜂鸣,1 : 报警后读卡器一直蜂鸣，直到门关上为止
         public int              bAutoRemoteHolidayScheduleIDUnenable; //不下发远程验证假日计划字段，(仅下发有效)
@@ -22291,7 +22291,7 @@ public interface NetSDKLib extends Library {
         // 星期从0开始，表示周日，前6个时段前面都是0，表示周日的6个时段，剩下依次周一，周二... 一共42个时段。
         // 消费类型包括：0为定额消费，1为非定额消费；可消费次数最大上限200次；可消费金额最高999900，也就是9999元
         public int              bIsTimeExValid;                       //是否使用stuTimeEx,为TRUE时stuTime字段无效,仅下发时使用,获取时stuTime与stuTimeEx均有效
-        public CFG_TIME_SECTION_ARRAY_6[] stuTimeEx = new CFG_TIME_SECTION_ARRAY_6[7]; //刷卡时间段（拓展）,参见结构体定义 {@link com.netsdk.lib.structure.CFG_TIME_SECTION}
+        public CFG_TIME_SECTION_ARRAY_6[] stuTimeEx = new CFG_TIME_SECTION_ARRAY_6[7]; //刷卡时间段（拓展）,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_TIME_SECTION}
         public byte[]           szReserved = new byte[1024];          //预留字节
     }
 
@@ -22310,10 +22310,10 @@ public interface NetSDKLib extends Library {
         public int              nLockLoginTimes;                      // 登陆失败可尝试次数
         public int              nLoginFailLockTime;                   // 登陆失败锁定时间
         public int              bLockLoginEnable;                     // 登陆失败可尝试次数使能, 1-true; 0-false
-        public CFG_DATA_TIME    stuActivationTime = new CFG_DATA_TIME(); //启动时间,参见结构体定义 {@link com.netsdk.lib.structure.CFG_DATA_TIME}
+        public CFG_DATA_TIME    stuActivationTime = new CFG_DATA_TIME(); //启动时间,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_DATA_TIME}
         public int              nCheckDuration;                       //清零周期，如果规定时间内登陆次数未超过可尝试次数，尝试次数清零
         public int              bUseLocalPolicy;                      //是否使用本地GUI锁定策略
-        public CFG_LOCAL_POLICY_INFO stuLocalPolicy = new CFG_LOCAL_POLICY_INFO(); //本地GUI锁定策略,参见结构体定义 {@link com.netsdk.lib.structure.CFG_LOCAL_POLICY_INFO}
+        public CFG_LOCAL_POLICY_INFO stuLocalPolicy = new CFG_LOCAL_POLICY_INFO(); //本地GUI锁定策略,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_LOCAL_POLICY_INFO}
         public byte[]           szMachineName1 = new byte[256];       //机器名称或编号
         public byte[]           bReserved = new byte[508];            // 保留字节
     }
@@ -23968,7 +23968,7 @@ public interface NetSDKLib extends Library {
         public NET_INTELLIGENCE_IMAGE_INFO stuSceneImage;             // 球机变到最小倍下的抓图
         public int              bManual;                              //主动查询水位功能，用于区分是否为手动触发的上报事件
         public int              nImageInfoNum;                        //图片信息个数
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public byte[]           szChannelName = new byte[256];        //通道名称
         public int              nDetectMethod;                        //水位检测方式, 0:未知/不关心,默认值;1:雷达检测上报;2:智能检测
         public byte[]           byReserved = new byte[756-POINTERSIZE]; // 保留字节
@@ -24088,7 +24088,7 @@ public interface NetSDKLib extends Library {
         public int              emWorkClothColor;                     // 工作服颜色,参考EM_CLOTHES_COLOR
         public int              emWorkClothesLegalState;              // 工作服合法状态,参考EM_CLOTHES_LEGAL_STATE
         public int              nLinkGroupInfoNum;                    //联动报警的工装库信息个数
-        public Pointer          pstuLinkGroupInfo;                    //联动报警的工装库信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_LINK_GROUP_INFO}
+        public Pointer          pstuLinkGroupInfo;                    //联动报警的工装库信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_LINK_GROUP_INFO}
         public int              emTrousersColor;                      //工作服裤子颜色,参见枚举定义 {@link com.netsdk.lib.NetSDKLib.EM_CLOTHES_COLOR}
         public byte[]           szReserved1 = new byte[4];            //字节对齐
         public int              nCutoutPolicy;                        //优选方案, 0:未知,1:全身,2:上半身
@@ -24176,14 +24176,14 @@ public interface NetSDKLib extends Library {
         public Pointer          pstObjectInfo;                        // 物体信息数据  ,对应NET_MSG_OBJECT_EX2数组
         public int              nObjectNum;                           // 物体信息数
         public NET_GLASSES_RELATED_INFO stuGlassesInfo = new NET_GLASSES_RELATED_INFO(); // 眼镜相关属性状态信息
-        public NET_BREATHING_MASK_INFO stuBreathingMaskInfo = new NET_BREATHING_MASK_INFO(); //呼吸面罩相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_BREATHING_MASK_INFO}
-        public NET_PROTECTIVE_SUIT_INFO stuProtectiveSuitInfo = new NET_PROTECTIVE_SUIT_INFO(); //防护服相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_PROTECTIVE_SUIT_INFO}
-        public NET_UNIFORM_INFO stuUniformInfo = new NET_UNIFORM_INFO(); //制服相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_UNIFORM_INFO}
-        public NET_SAFETY_ROPE_INFO stuSafetyRopeInfo = new NET_SAFETY_ROPE_INFO(); //安全绳相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_SAFETY_ROPE_INFO}
-        public NET_SAFE_BELT_INFO stuSafeBeltInfo = new NET_SAFE_BELT_INFO(); //安全带相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_SAFE_BELT_INFO}
-        public NET_VEST_INFO    stuVestInfo = new NET_VEST_INFO();    //反光背心相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_VEST_INFO}
-        public NET_SAFETY_SHOES_INFO stuSafetyShoesInfo = new NET_SAFETY_SHOES_INFO(); //劳保鞋相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_SAFETY_SHOES_INFO}
-        public NET_WRIST_GUARD_INFO stuWristGuardInfo = new NET_WRIST_GUARD_INFO(); //防割护腕相关属性状态信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_WRIST_GUARD_INFO}
+        public NET_BREATHING_MASK_INFO stuBreathingMaskInfo = new NET_BREATHING_MASK_INFO(); //呼吸面罩相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_BREATHING_MASK_INFO}
+        public NET_PROTECTIVE_SUIT_INFO stuProtectiveSuitInfo = new NET_PROTECTIVE_SUIT_INFO(); //防护服相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PROTECTIVE_SUIT_INFO}
+        public NET_UNIFORM_INFO stuUniformInfo = new NET_UNIFORM_INFO(); //制服相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_UNIFORM_INFO}
+        public NET_SAFETY_ROPE_INFO stuSafetyRopeInfo = new NET_SAFETY_ROPE_INFO(); //安全绳相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_SAFETY_ROPE_INFO}
+        public NET_SAFE_BELT_INFO stuSafeBeltInfo = new NET_SAFE_BELT_INFO(); //安全带相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_SAFE_BELT_INFO}
+        public NET_VEST_INFO    stuVestInfo = new NET_VEST_INFO();    //反光背心相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_VEST_INFO}
+        public NET_SAFETY_SHOES_INFO stuSafetyShoesInfo = new NET_SAFETY_SHOES_INFO(); //劳保鞋相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_SAFETY_SHOES_INFO}
+        public NET_WRIST_GUARD_INFO stuWristGuardInfo = new NET_WRIST_GUARD_INFO(); //防割护腕相关属性状态信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_WRIST_GUARD_INFO}
         public int              nLegalAlarmType;                      //报警方式, 0:未知, 1:有不合规项即报警 2:所有合规才报警
         public byte             bHelmet;                              //是否上报了Helmet属性
         public byte             bClothes;                             //是否上报了Clothes属性
@@ -24209,7 +24209,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szResvered1 = new byte[3];            //字节对齐
         public int              nPresetID;                            //预置点ID,如果普通IPC则为0
         public byte[]           szPresetName = new byte[64];          //事件触发的预置点名称
-        public Pointer          pstuEmployeeClothes;                  //职员工装,参见结构体定义 {@link com.netsdk.lib.structure.NET_EMPLOYEE_CLOTHES_INFO}
+        public Pointer          pstuEmployeeClothes;                  //职员工装,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EMPLOYEE_CLOTHES_INFO}
         /**
          * 预留字节
          */
@@ -24495,7 +24495,7 @@ public interface NetSDKLib extends Library {
         /**
          信息更新时间,UTC时间
          */
-        public com.netsdk.lib.structure.NET_TIME stuUpdateTime = new com.netsdk.lib.structure.NET_TIME();
+        public com.hikvision.nvr.dahua.lib.structure.NET_TIME stuUpdateTime = new com.hikvision.nvr.dahua.lib.structure.NET_TIME();
         /**
          * 用户的门通道起始有效期,每个通道设置一个有效期,数组元素与门通道一一对应
          */
@@ -24538,11 +24538,11 @@ public interface NetSDKLib extends Library {
         /**
          * 允许签入的时间点
          */
-        public com.netsdk.lib.structure.NET_TIME_EX stuAllowCheckInTime = new com.netsdk.lib.structure.NET_TIME_EX();
+        public com.hikvision.nvr.dahua.lib.structure.NET_TIME_EX stuAllowCheckInTime = new com.hikvision.nvr.dahua.lib.structure.NET_TIME_EX();
         /**
          * 允许签出的时间点
          */
-        public com.netsdk.lib.structure.NET_TIME_EX stuAllowCheckOutTime = new com.netsdk.lib.structure.NET_TIME_EX();
+        public com.hikvision.nvr.dahua.lib.structure.NET_TIME_EX stuAllowCheckOutTime = new com.hikvision.nvr.dahua.lib.structure.NET_TIME_EX();
         /**
          * 扩展用户信息V2, refer to {@link NET_ACCESS_USER_INFO_EX2}
          */
@@ -24555,7 +24555,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szWorkPermitDate = new byte[24];      //工作证有效期
         public byte[]           szInductionExpireDate = new byte[24]; //培训有效期
         public byte[]           szMedicalExpireDate = new byte[24];   //健康有效期
-        public Pointer          pstuUserInfoEx3;                      //扩展用户信息V3,参见结构体定义 {@link com.netsdk.lib.structure.NET_ACCESS_USER_INFO_EX3}
+        public Pointer          pstuUserInfoEx3;                      //扩展用户信息V3,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ACCESS_USER_INFO_EX3}
         public int              bUserInfoEx3Valid;                    //是否使用用户信息结构体V3
         /**
          * 保留字段
@@ -24686,7 +24686,7 @@ public interface NetSDKLib extends Library {
         /**
          * / 信息更新时间,UTC时间
          */
-        public com.netsdk.lib.structure.NET_TIME stuUpdateTime = new com.netsdk.lib.structure.NET_TIME();
+        public com.hikvision.nvr.dahua.lib.structure.NET_TIME stuUpdateTime = new com.hikvision.nvr.dahua.lib.structure.NET_TIME();
         /**
          * / 用户ID扩展，当前只支持32位有效值下发
          */
@@ -24722,7 +24722,7 @@ public interface NetSDKLib extends Library {
         public int              dwSize;                               // 结构体大小
         public int              nMaxRetNum;                           // 最大返回的用户信息数量,不小于NET_IN_ACCESS_CARD_SERVICE_INSERT中nInfoNum
         public Pointer          pFailCode;                            // 对应  FAIL_CODE, 用户分配释放内存,插入失败时,对应插入的每一项的结果,返回个数同NET_IN_ACCESS_CARD_SERVICE_INSERT中nInfoNum
-        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.netsdk.lib.structure.NET_ERROR_DETAIL}
+        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ERROR_DETAIL}
 
         public NET_OUT_ACCESS_CARD_SERVICE_INSERT() {
             this.dwSize = this.size();
@@ -24777,7 +24777,7 @@ public interface NetSDKLib extends Library {
         public int              dwSize;                               // 结构体大小
         public int              nMaxRetNum;                           // 最大返回的用户信息数量,不小于NET_IN_ACCESS_CARD_SERVICE_UPDATE中nInfoNum
         public Pointer          pFailCode;                            // 对应 FAIL_CODE, 用户分配释放内存,插入失败时，对应插入的每一项的结果,返回个数同NET_IN_ACCESS_CARD_SERVICE_UPDATE中nInfoNum
-        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.netsdk.lib.structure.NET_ERROR_DETAIL}
+        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ERROR_DETAIL}
 
         public NET_OUT_ACCESS_CARD_SERVICE_UPDATE() {
             this.dwSize = this.size();
@@ -24929,9 +24929,9 @@ public interface NetSDKLib extends Library {
         public byte[]           szVersion = new byte[16];             //版本：用于判断使用多通道配置(MultiFovCalibration)还是老配置(FovCalibration)，V2代表使用MultiFovCalibration多通道配置。如果没有该能力，默认使用FovCalibration配置,V2代表使用MultiFovCalibration多通道配置。如果没有该能力，默认使用FovCalibration配置
         public int              bSupportRemoteVideoAnalyse;           //是否支持前智能接入能力
         public int              nVideoAnalyseSupportedSceneNum;       //支持的智能大类列表数量
-        public NET_PD_REMOTE_VIDEO_ANALYSE stuRemoteVideoAnalyse = new NET_PD_REMOTE_VIDEO_ANALYSE(); //前智能接入能力信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_PD_REMOTE_VIDEO_ANALYSE}
+        public NET_PD_REMOTE_VIDEO_ANALYSE stuRemoteVideoAnalyse = new NET_PD_REMOTE_VIDEO_ANALYSE(); //前智能接入能力信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PD_REMOTE_VIDEO_ANALYSE}
         public BYTE_ARRAY_16[]  szVideoAnalyseSupportedScene = new BYTE_ARRAY_16[32]; //智能分析支持的智能大类列表
-        public NET_PD_SUPPORTED_RULES_INFO stuVideoAnalyseSupportedRules = new NET_PD_SUPPORTED_RULES_INFO(); //智能分析支持大类业务内容,参见结构体定义 {@link com.netsdk.lib.structure.NET_PD_SUPPORTED_RULES_INFO}
+        public NET_PD_SUPPORTED_RULES_INFO stuVideoAnalyseSupportedRules = new NET_PD_SUPPORTED_RULES_INFO(); //智能分析支持大类业务内容,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PD_SUPPORTED_RULES_INFO}
         public int              bSupportSyncRemoteTrafficList;        //是否支持同步远程禁止/允许名单
         public int              bSupportMultiPeopleCombiMethod;       //支持多人开门设置组合验证方式
         public int              bSupportAttendanceOnly;               //门禁用户支持仅考勤模式
@@ -24940,7 +24940,7 @@ public interface NetSDKLib extends Library {
         public int              nSupportMoveAloneMultiCount;          //通道个数
         public int              nValidSupportMoveAloneMultiCount;     //返回的有效通道个数
         public int              nVSPsNum;                             //平台接入类型个数
-        public Pointer          pstuSupportMoveAloneMulti;            //是否支持多通道自定义标题支持单块拖动,由用户申请内存，大小为nSupportMoveAloneMultiCount*sizeof(NET_PD_SUPPORT_MOVE_ALONE_MULTI),参见结构体定义 {@link com.netsdk.lib.structure.NET_PD_SUPPORT_MOVE_ALONE_MULTI}
+        public Pointer          pstuSupportMoveAloneMulti;            //是否支持多通道自定义标题支持单块拖动,由用户申请内存，大小为nSupportMoveAloneMultiCount*sizeof(NET_PD_SUPPORT_MOVE_ALONE_MULTI),参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PD_SUPPORT_MOVE_ALONE_MULTI}
         public BYTE_ARRAY_32[]  szVSPs = new BYTE_ARRAY_32[128];      //平台接入类型, , "I1_ZY"对应NET_EM_CFG_VSP_I1配置, "I1_JXQJ"对应NET_EM_CFG_VSP_I1JXQJ配置, "I1ZJ"对应NET_EM_CFG_VSP_I1ZJ配置, "I1JS"对应NET_EM_CFG_VSP_I1JS配置, "NFDW"对应NET_EM_CFG_VSP_NFDW配置
         public BYTE_ARRAY_32[]  szLanguages = new BYTE_ARRAY_32[16];  //支持的语言列表
         public int              nLanguagesNum;                        //支持的语言列表个数
@@ -25074,7 +25074,7 @@ public interface NetSDKLib extends Library {
         public int              dwSize;                               // 结构体大小
         public int              nMaxRetNum;                           // 最大返回数量,不小于 NET_IN_ACCESS_FACE_SERVICE_INSERT 中的nFaceInfoNum
         public Pointer          pFailCode;                            // 对应FAIL_CODE, 用户分配内存,添加失败时,对应插入的每一项的结果,返回个数同NET_IN_ACCESS_FACE_SERVICE_INSERT中的nFaceInfoNum
-        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.netsdk.lib.structure.NET_ERROR_DETAIL}
+        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ERROR_DETAIL}
 
         public NET_OUT_ACCESS_FACE_SERVICE_INSERT() {
             this.dwSize = this.size();
@@ -25126,7 +25126,7 @@ public interface NetSDKLib extends Library {
         public int              dwSize;                               // 结构体大小
         public int              nMaxRetNum;                           // 最大返回数量,不小于 NET_IN_ACCESS_FACE_SERVICE_UPDATE中的nFaceInfoNum
         public Pointer          pFailCode;                            // 对应 FAIL_CODE, 用户分配内存.更新失败时,对应更新的每一项的结果,返回个数同NET_IN_ACCESS_FACE_SERVICE_UPDATE中的nFaceInfoNum
-        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.netsdk.lib.structure.NET_ERROR_DETAIL}
+        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ERROR_DETAIL}
 
         public NET_OUT_ACCESS_FACE_SERVICE_UPDATE() {
             this.dwSize = this.size();
@@ -25221,7 +25221,7 @@ public interface NetSDKLib extends Library {
         public int              dwSize;                               // 结构体大小
         public int              nMaxRetNum;                           // 返回信息数量,不小于NET_IN_ACCESS_FINGERPRINT_SERVICE_INSERT 中 nFpNum
         public Pointer          pFailCode;                            // 对应FAIL_CODE, 用户分配释放内存,插入失败时，对应插入的每一项的结果,返回个数同NET_IN_ACCESS_FINGERPRINT_SERVICE_INSERT 中nFpNum
-        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.netsdk.lib.structure.NET_ERROR_DETAIL}
+        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ERROR_DETAIL}
 
         public NET_OUT_ACCESS_FINGERPRINT_SERVICE_INSERT() {
             this.dwSize = this.size();
@@ -25246,7 +25246,7 @@ public interface NetSDKLib extends Library {
         public int              dwSize;                               // 结构体大小
         public int              nMaxRetNum;                           // 最大返回信息数量,不小于 NET_IN_ACCESS_FINGERPRINT_SERVICE_UPDATE中nFpNum
         public Pointer          pFailCode;                            // 对应 FAIL_CODE, 用户分配释放内存,插入失败时，对应插入的每一项的结果,返回个数同NET_IN_ACCESS_FINGERPRINT_SERVICE_UPDATE中nFpNum
-        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.netsdk.lib.structure.NET_ERROR_DETAIL}
+        public NET_ERROR_DETAIL stuDetail = new NET_ERROR_DETAIL();   //错误详情,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ERROR_DETAIL}
 
         public NET_OUT_ACCESS_FINGERPRINT_SERVICE_UPDATE() {
             this.dwSize = this.size();
@@ -25445,8 +25445,8 @@ public interface NetSDKLib extends Library {
         public NET_DATA_CALL_BACK_TIME stuTime;                       // 时间戳
         public int              emFramType;                           // 帧类型,EM_DATA_CALL_BACK_FRAM_TYPE
         public int              emFramSubType;                        // 帧子类型,EM_DATA_CALL_BACK_FRAM_SUB_TYPE
-        public NET_SC_VIDEO_INFO stuVideoInfo = new NET_SC_VIDEO_INFO(); //视频参数,参见结构体定义 {@link com.netsdk.lib.structure.NET_SC_VIDEO_INFO}
-        public NET_SC_AUDIO_INFO stuAudioInfo = new NET_SC_AUDIO_INFO(); //音频参数,参见结构体定义 {@link com.netsdk.lib.structure.NET_SC_AUDIO_INFO}
+        public NET_SC_VIDEO_INFO stuVideoInfo = new NET_SC_VIDEO_INFO(); //视频参数,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_SC_VIDEO_INFO}
+        public NET_SC_AUDIO_INFO stuAudioInfo = new NET_SC_AUDIO_INFO(); //音频参数,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_SC_AUDIO_INFO}
 
         public NET_DATA_CALL_BACK_INFO() {
             this.dwSize = this.size();
@@ -28853,7 +28853,7 @@ public interface NetSDKLib extends Library {
         public NET_CTRL_PLAYAUDIO_INFO[] stuAudioInfos = new NET_CTRL_PLAYAUDIO_INFO[NET_MAX_PLAYAUDIO_COUNT]; // 语音播报内容
         public int              nListRepeatTimes;                     // 语音播报内容重复次数, 描述所有播报单元
         public int              bClusterBroadcastFlag;                //是否使用集群对讲模式, 使用集群对讲模式时，不发送语音播报内容
-        public NET_CTRL_CLUSTER_BROADACST stuClusterBroadcast = new NET_CTRL_CLUSTER_BROADACST(); //集群对讲,参见结构体定义 {@link com.netsdk.lib.structure.NET_CTRL_CLUSTER_BROADACST}
+        public NET_CTRL_CLUSTER_BROADACST stuClusterBroadcast = new NET_CTRL_CLUSTER_BROADACST(); //集群对讲,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CTRL_CLUSTER_BROADACST}
 
         public NET_CTRL_START_PLAYAUDIOEX()
         {
@@ -29775,7 +29775,7 @@ public interface NetSDKLib extends Library {
         public int              nRelatingVideoInfoNum;                // 违章关联的多个视频信息个数
         public NET_RELATING_VIDEO_INFO[] stuRelatingVideoInfo = new NET_RELATING_VIDEO_INFO[16]; // 违章关联的多个视频信息数组，最多支持16个视频
         public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //事件公共扩展字段结构体
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           byReserved = new byte[948-2*POINTERSIZE]; // 保留字节
@@ -29811,7 +29811,7 @@ public interface NetSDKLib extends Library {
         public int              nRelatingVideoInfoNum;                // 违章关联的多个视频信息个数
         public NET_RELATING_VIDEO_INFO[] stuRelatingVideoInfo = new NET_RELATING_VIDEO_INFO[16]; // 违章关联的多个视频信息数组，最多支持16个视频
         public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //事件公共扩展字段结构体
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public int              nImageInfoNum;                        //图片信息个数
         public Pointer          pstuSceneImage;                       //全景图图片信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public byte[]           byReserved = new byte[948-POINTERSIZE*2]; // 保留字节
@@ -31692,7 +31692,7 @@ public interface NetSDKLib extends Library {
         /**
          * 事件发生的时间
          */
-        public com.netsdk.lib.structure.NET_TIME_EX UTC = new com.netsdk.lib.structure.NET_TIME_EX();
+        public com.hikvision.nvr.dahua.lib.structure.NET_TIME_EX UTC = new com.hikvision.nvr.dahua.lib.structure.NET_TIME_EX();
         /**
          * 事件ID
          */
@@ -31938,10 +31938,10 @@ public interface NetSDKLib extends Library {
         public Pointer          pstuSceneImage;                       //全景图,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.SCENE_IMAGE_INFO_EX}
         public int              nImageInfoNum;                        //图片信息个数
         public byte[]           szReserved1 = new byte[4];            //字节对齐
-        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.netsdk.lib.structure.NET_IMAGE_INFO_EX3}
+        public Pointer          pstuImageInfo;                        //图片信息数组,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IMAGE_INFO_EX3}
         public Pointer          pstuTrafficCar;                       //车辆信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.DEV_EVENT_TRAFFIC_TRAFFICCAR_INFO}
         public byte[]           byReserved = new byte[336-4*POINTERSIZE]; // 保留字节
-        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.netsdk.lib.structure.NET_EVENT_INFO_EXTEND}
+        public NET_EVENT_INFO_EXTEND stuEventInfoEx = new NET_EVENT_INFO_EXTEND(); //扩展协议字段,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EVENT_INFO_EXTEND}
     }
 
     // 多人多开门方式组合(对应 CFG_CMD_OPEN_DOOR_GROUP 命令),表示每个通道的组合信息，
@@ -32780,7 +32780,7 @@ public interface NetSDKLib extends Library {
         public byte[]           szRuleName = new byte[128];           //规则名称，不带预置点的设备规则名称不能重名，带预置点的设备，同一预置点内规则名称不能重名，不同预置点之间规则名称可以重名
         public int              IsUsingEnable;                        //是否使用Enable字段
         public int              bEnable;                              //规则使能
-        public Pointer          pstuEventHandler;                     //视频分析联动信息，内存由用户申请释放,参见结构体定义 {@link com.netsdk.lib.structure.NET_ANALYSE_RULE_EVENT_HANDLER_INFO}
+        public Pointer          pstuEventHandler;                     //视频分析联动信息，内存由用户申请释放,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ANALYSE_RULE_EVENT_HANDLER_INFO}
         public byte[]           byReserved = new byte[820-POINTERSIZE]; // 保留字节
     }
 
@@ -33025,7 +33025,7 @@ public interface NetSDKLib extends Library {
          */
         public			int            nChipId;
         public int              nFilesNum;                            //上传的文件列表有效个数，最大值为32
-        public Pointer          pstuFiles;                            //上传的文件列表, 内存由SDK申请释放,参见结构体定义 {@link com.netsdk.lib.structure.NET_EMERGENCY_FILE_INFO}
+        public Pointer          pstuFiles;                            //上传的文件列表, 内存由SDK申请释放,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_EMERGENCY_FILE_INFO}
         /**
          保留字节
          */
@@ -33065,7 +33065,7 @@ public interface NetSDKLib extends Library {
         public int              nPicNum;                              // 推送图片数量
         public int              nBinBufLen;                           // 数据缓冲区长度, 单位:字节
         public Pointer          pBinBuf;                              // 数据缓冲区, 由用户申请和释放
-        public NET_PUSH_PICTURE_INFO_EXTERN[] stuPushPicInfoExterns = new NET_PUSH_PICTURE_INFO_EXTERN[32]; //推图信息扩展字段，数量复用nPicNum,参见结构体定义 {@link com.netsdk.lib.structure.NET_PUSH_PICTURE_INFO_EXTERN}
+        public NET_PUSH_PICTURE_INFO_EXTERN[] stuPushPicInfoExterns = new NET_PUSH_PICTURE_INFO_EXTERN[32]; //推图信息扩展字段，数量复用nPicNum,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PUSH_PICTURE_INFO_EXTERN}
 
         public NET_IN_PUSH_ANALYSE_PICTURE_FILE()
         {
@@ -33539,7 +33539,7 @@ public interface NetSDKLib extends Library {
         public NET_VIRTUALCHANNEL_POLICY stuVirtualChnPolicy;         // 虚拟通道转码策略
         public NET_TRANSCODE_SNAP_FORMAT stuSnapFormat;               // 转码抓图格式参数
         public NET_TRANSCODE_WATER_MARK[] stuWaterMark = (NET_TRANSCODE_WATER_MARK[]) new NET_TRANSCODE_WATER_MARK().toArray(4); // 水印配置
-        public NET_TRANSCODE_IMAGE_WATER_MARK[] stuImageWaterMark = new NET_TRANSCODE_IMAGE_WATER_MARK[4]; //图片水印配置,参见结构体定义 {@link com.netsdk.lib.structure.NET_TRANSCODE_IMAGE_WATER_MARK}
+        public NET_TRANSCODE_IMAGE_WATER_MARK[] stuImageWaterMark = new NET_TRANSCODE_IMAGE_WATER_MARK[4]; //图片水印配置,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_TRANSCODE_IMAGE_WATER_MARK}
         public int              nImageWaterMarkNum;                   //图片水印配置数量
 
         public NET_IN_GET_VIRTUALCHANNEL_OF_TRANSCODE(){
@@ -33849,7 +33849,7 @@ public interface NetSDKLib extends Library {
         public Pointer          pstuHSJCInfo;                         // 核酸检测信息,NET_HSJC_INFO
         public Pointer          pstuVaccineInfo;                      // 新冠疫苗接种信息,NET_VACCINE_INFO
         public Pointer          pstuTravelInfo;                       // 行程码信息,NET_TRAVEL_INFO
-        public Pointer          pstuCustomVisitorInfo;                //访客信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_CUSTOM_VISITOR_INFO}
+        public Pointer          pstuCustomVisitorInfo;                //访客信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CUSTOM_VISITOR_INFO}
         public int              nRemoteQRCodeType;                    //远程二维码开门时的二维码类型 0-默认值，1-访客二维码，2-一卡通二维码
         public byte[]           byReserved = new byte[4];
     }
@@ -34784,8 +34784,8 @@ public interface NetSDKLib extends Library {
         public int              nSnapshotChannelNum;                  // 快照通道个数
         public int[]            nSnapshotChannels = new int[32];      // 快照通道号列表
         public int              bMailEnable;                          // 发送邮件，如果有图片，作为附件
-        public NET_PTZ_LINK[]   stuPtzLinkEx = new NET_PTZ_LINK[16];  //云台联动项,参见结构体定义 {@link com.netsdk.lib.structure.NET_PTZ_LINK}
-        public NET_FIREWARN_PTZ_LINK_ENABLE[] stuPtzLinkEnable = new NET_FIREWARN_PTZ_LINK_ENABLE[16]; //云台联动项各参数使能，若要使用NET_PTZ_LINK中的参数，需将NET_FIREWARN_PTZ_LINK_ENABLE对应字段置为TRUE,参见结构体定义 {@link com.netsdk.lib.structure.NET_FIREWARN_PTZ_LINK_ENABLE}
+        public NET_PTZ_LINK[]   stuPtzLinkEx = new NET_PTZ_LINK[16];  //云台联动项,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_PTZ_LINK}
+        public NET_FIREWARN_PTZ_LINK_ENABLE[] stuPtzLinkEnable = new NET_FIREWARN_PTZ_LINK_ENABLE[16]; //云台联动项各参数使能，若要使用NET_PTZ_LINK中的参数，需将NET_FIREWARN_PTZ_LINK_ENABLE对应字段置为TRUE,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FIREWARN_PTZ_LINK_ENABLE}
         public byte[]           byReserved = new byte[448];           // 保留字节
     }
 
@@ -34828,7 +34828,7 @@ public interface NetSDKLib extends Library {
         public int              nGlobalSensitivity;                   //全局灵敏度，表示火情检测全局阈值，范围0-100，默认90
         public int              nShieldRegionNum;                     //屏蔽区域内存申请个数，最大1024
         public int              nShieldRegionRetNum;                  //屏蔽区域实际返回个数，获取配置时使用
-        public Pointer          pstuShieldRegion;                     //火警屏蔽区域，需由用户申请内存，申请空间为sizeof(NET_FIREWARN_SHIELDREGION_INFO)*nShieldRegionNum,参见结构体定义 {@link com.netsdk.lib.structure.NET_FIREWARN_SHIELDREGION_INFO}
+        public Pointer          pstuShieldRegion;                     //火警屏蔽区域，需由用户申请内存，申请空间为sizeof(NET_FIREWARN_SHIELDREGION_INFO)*nShieldRegionNum,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FIREWARN_SHIELDREGION_INFO}
         public byte[]           byReserved = new byte[236];           // 保留字节
     }
 
@@ -34902,7 +34902,7 @@ public interface NetSDKLib extends Library {
         public DH_POINT[]       stuDetectRegion = (DH_POINT[])new DH_POINT().toArray(NET_MAX_DETECT_REGION_NUM); // 检测区域
         public int              nImageInfoNum;                        // 图片信息个数
         public Pointer          pstuImageInfo;                        // 图片信息数组, refer to {@link NET_IMAGE_INFO_EX3}
-        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.netsdk.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
+        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
         public HUMAN_ATTRIBUTES_INFO stuHumanAttributes = new HUMAN_ATTRIBUTES_INFO(); //人体属性信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.HUMAN_ATTRIBUTES_INFO}
         public HUMAN_IMAGE_INFO stuHumanImage = new HUMAN_IMAGE_INFO(); //人体图片信息,有人体信息时携带,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.HUMAN_IMAGE_INFO}
         public FACE_IMAGE_INFO  stuFaceImage = new FACE_IMAGE_INFO(); //人脸图片信息,有人脸信息时携带,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.FACE_IMAGE_INFO}
@@ -35026,7 +35026,7 @@ public interface NetSDKLib extends Library {
         public NET_PARKINGSPACELIGHT_INFO stuSpaceOverLineInfo;       // 车位压线状态灯色
         public NET_PARKINGSPACELIGHT_INFO stuSpaceOrderInfo;          // 车位预定状态灯色
         public NET_NETWORK_EXCEPTION_INFO stuNetWorkExceptionInfo;    // 网络异常状态灯色
-        public NET_ABNORMAL_ALARM_INFO stuAbnormalAlarmInfo = new NET_ABNORMAL_ALARM_INFO(); //设备异常报警状态灯色控制,参见结构体定义 {@link com.netsdk.lib.structure.NET_ABNORMAL_ALARM_INFO}
+        public NET_ABNORMAL_ALARM_INFO stuAbnormalAlarmInfo = new NET_ABNORMAL_ALARM_INFO(); //设备异常报警状态灯色控制,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_ABNORMAL_ALARM_INFO}
         public NET_PARKINGSPACELIGHT_INFO stuSpaceAlarmInfo = new NET_PARKINGSPACELIGHT_INFO(); //车位报警状态灯色,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_PARKINGSPACELIGHT_INFO}
 
         public NET_PARKINGSPACELIGHT_STATE_INFO(){
@@ -35377,7 +35377,7 @@ public interface NetSDKLib extends Library {
         public int[]            nAudioSrc = new int[32];              //合成通道的音频源
         public byte[]           szAudioType = new byte[16];           //音频源的编码类型
         public int              nWindowNum;                           //合成通道窗口个数
-        public CFG_COMPOSE_CHANNEL_WINDOW[] stuWindow = new CFG_COMPOSE_CHANNEL_WINDOW[16]; //合成通道各个窗口的信息,参见结构体定义 {@link com.netsdk.lib.structure.CFG_COMPOSE_CHANNEL_WINDOW}
+        public CFG_COMPOSE_CHANNEL_WINDOW[] stuWindow = new CFG_COMPOSE_CHANNEL_WINDOW[16]; //合成通道各个窗口的信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.CFG_COMPOSE_CHANNEL_WINDOW}
         public byte[]           szReserved = new byte[1024];          //预留字节
     }
 
@@ -35948,7 +35948,7 @@ public interface NetSDKLib extends Library {
         public int              bFeatureFilter;                       // 在人脸属性开启前提下，如果人脸图像质量太差，是否不上报属性
         // true-图像太差不上报属性 false-图像很差也上报属性(可能会非常不准，影响用户体验)
         public int              nMinQuality;                          // 人脸图片质量阈值,和bFeatureFilter一起使用 范围[1,100]
-        public NET_CFG_FACE_BEAUTIFICATION stuFaceBeautification = new NET_CFG_FACE_BEAUTIFICATION(); //人Lian美化,参见结构体定义 {@link com.netsdk.lib.structure.NET_CFG_FACE_BEAUTIFICATION}
+        public NET_CFG_FACE_BEAUTIFICATION stuFaceBeautification = new NET_CFG_FACE_BEAUTIFICATION(); //人Lian美化,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CFG_FACE_BEAUTIFICATION}
 
         public NET_FACEANALYSIS_RULE_INFO(){
             for(int i = 0; i < stuDetectRegion.length; i++ ){
@@ -36073,7 +36073,7 @@ public interface NetSDKLib extends Library {
         public int              nFeature;                             // 特征的数量
         public NET_FEATURE_ABSTRACT_VERSION[] szFeatureVersions = new NET_FEATURE_ABSTRACT_VERSION[10]; // 对图片进行特征向量提取时使用，需要对图片进行同一种特征向量多个版本进行提取,最大是10个版本
         public int              emAbstractType;                       // 进行特征提取的类型 EM_FEATURE_ABSTRACT_TYPE
-        public NET_FACE_QUALITY_CAPINFO[] stuFaceQualityCapInfo = new NET_FACE_QUALITY_CAPINFO[64]; //人脸评价算子信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_FACE_QUALITY_CAPINFO}
+        public NET_FACE_QUALITY_CAPINFO[] stuFaceQualityCapInfo = new NET_FACE_QUALITY_CAPINFO[64]; //人脸评价算子信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FACE_QUALITY_CAPINFO}
         public int              nFaceQualityCapInfoNum;               //stuFaceQualityCapInfo的个数
 
         public NET_FEATURE_ABSTRACT_RULE_INFO(){
@@ -36211,7 +36211,7 @@ public interface NetSDKLib extends Library {
         public byte             byRole;                               //传输产品中设备的主从角色
         public byte[]           szReserved = new byte[3];             //字节对齐
         public int              nBridgeNetCardsMacListNum;            //网卡内部网卡信息个数
-        public NET_BRIDGE_NET_CARDS_MAC_LIST[] stuBridgeNetCardsMacList = new NET_BRIDGE_NET_CARDS_MAC_LIST[64]; //网卡内部网卡信息,参见结构体定义 {@link com.netsdk.lib.structure.NET_BRIDGE_NET_CARDS_MAC_LIST}
+        public NET_BRIDGE_NET_CARDS_MAC_LIST[] stuBridgeNetCardsMacList = new NET_BRIDGE_NET_CARDS_MAC_LIST[64]; //网卡内部网卡信息,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_BRIDGE_NET_CARDS_MAC_LIST}
         public byte[]           cReserved = new byte[1992];           // 扩展字段
     }
 
@@ -36285,7 +36285,7 @@ public interface NetSDKLib extends Library {
         public int              nIndexInDataInFaceImage;              //人脸图片序号
         public int              nIndexInDataInFaceSceneImage;         //人脸全景图片序号
         public Pointer          pstuHumanAttributes;                  //人体属性信息,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.HUMAN_ATTRIBUTES_INFO}
-        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.netsdk.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
+        public Pointer          pstuHumanAttributesEx;                //人体属性信息扩展,参见结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.HUMAN_ATTRIBUTES_INFO_EX}
         public Pointer          pstuFaceAttributes;                   //人脸属性,参见结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_FACE_ATTRIBUTE}
         public byte[]           bReserved = new byte[822-3*POINTERSIZE]; // 保留字节
 
@@ -36299,8 +36299,8 @@ public interface NetSDKLib extends Library {
     /**
      * 设置二维码信息
      * @param lLoginID 登录句柄
-     * @param pInParam 入参,对应结构体{@link com.netsdk.lib.structure.NET_IN_SET_2DCODE}
-     * @param pOutParam 出参,对应结构体{@link com.netsdk.lib.structure.NET_OUT_SET_2DCODE}
+     * @param pInParam 入参,对应结构体{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_2DCODE}
+     * @param pOutParam 出参,对应结构体{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_2DCODE}
      * @param nWaitTime 超时时间
      * @return
      */
@@ -36309,9 +36309,9 @@ public interface NetSDKLib extends Library {
     /**
      * 订阅热度图数据,pInParam与pOutParam内存由用户申请释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参,对应结构体 {@link com.netsdk.lib.structure.NET_IN_ATTACH_VIDEOSTAT_HEATMAP}
-     * @Param pOutParam 出参,对应结构体{@link com.netsdk.lib.structure.NET_OUT_ATTACH_VIDEOSTAT_HEATMAP}
-     * 也可使用{@link com.netsdk.lib.structure.EmptyStructure}
+     * @param pInParam 入参,对应结构体 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_VIDEOSTAT_HEATMAP}
+     * @Param pOutParam 出参,对应结构体{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_VIDEOSTAT_HEATMAP}
+     * 也可使用{@link com.hikvision.nvr.dahua.lib.structure.EmptyStructure}
      * @param nWaitTime 超时时间
      * @return
      */
@@ -36320,8 +36320,8 @@ public interface NetSDKLib extends Library {
     /**
      * 获取热图数据,pInParam与pOutParam内存由用户申请释放
      * @param lAttachHandle 热度图订阅句柄
-     * @param pInParam 入参,对应结构体 {@link com.netsdk.lib.structure.NET_IN_GET_VIDEOSTAT_HEATMAP}
-     * @param pOutParam 出参,对应结构体{@link com.netsdk.lib.structure.NET_OUT_GET_VIDEOSTAT_HEATMAP}
+     * @param pInParam 入参,对应结构体 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_VIDEOSTAT_HEATMAP}
+     * @param pOutParam 出参,对应结构体{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_VIDEOSTAT_HEATMAP}
      * @param nWaitTime 超时时间
      * @return
      */
@@ -36346,8 +36346,8 @@ public interface NetSDKLib extends Library {
     /**
      * 计算两张人脸图片的相似度faceRecognitionServer.matchTwoFace,pstInParam与pstOutParam内存由用户申请释放
      * @param lLoginID 登录句柄
-     * @param pstInParam 入参 {@link com.netsdk.lib.structure.NET_MATCH_TWO_FACE_IN}
-     * @param pstOutParam 出参{@link com.netsdk.lib.structure.NET_MATCH_TWO_FACE_OUT}
+     * @param pstInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_MATCH_TWO_FACE_IN}
+     * @param pstOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_MATCH_TWO_FACE_OUT}
      * @param nWaitTime 接口超时时间,默认超时时间为3000
      * @return
      */
@@ -36356,8 +36356,8 @@ public interface NetSDKLib extends Library {
     /**
      * 设置相机参数, pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参 {@link com.netsdk.lib.structure.NET_IN_SET_CAMERA_CFG}
-     * @param pOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_SET_CAMERA_CFG}
+     * @param pInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_CAMERA_CFG}
+     * @param pOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_CAMERA_CFG}
      * @param nWaitTime
      * @return
      */
@@ -36366,8 +36366,8 @@ public interface NetSDKLib extends Library {
     /**
      * 获取相机参数, pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参 {@link com.netsdk.lib.structure.NET_IN_GET_CAMERA_CFG}
-     * @param pOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_GET_CAMERA_CFG}
+     * @param pInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CAMERA_CFG}
+     * @param pOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CAMERA_CFG}
      * @param nWaitTime
      * @return
      */
@@ -36376,8 +36376,8 @@ public interface NetSDKLib extends Library {
     /**
      * 设置通道参数, pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参 {@link com.netsdk.lib.structure.NET_IN_SET_CHANNEL_CFG}
-     * @param pOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_SET_CHANNEL_CFG}
+     * @param pInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_CHANNEL_CFG}
+     * @param pOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_CHANNEL_CFG}
      * @param nWaitTime
      * @return
      */
@@ -36386,8 +36386,8 @@ public interface NetSDKLib extends Library {
     /**
      * 获取通道参数, pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参 {@link com.netsdk.lib.structure.NET_IN_GET_CHANNEL_CFG}
-     * @param pOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_GET_CHANNEL_CFG}
+     * @param pInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CHANNEL_CFG}
+     * @param pOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CHANNEL_CFG}
      * @param nWaitTime
      * @return
      */
@@ -36415,8 +36415,8 @@ public interface NetSDKLib extends Library {
     /**
      * 交通灯信号检测-获取相机信息, pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参 {@link com.netsdk.lib.structure.NET_IN_GET_CAMERA_INFO}
-     * @param pOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_GET_CAMERA_INFO}
+     * @param pInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CAMERA_INFO}
+     * @param pOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CAMERA_INFO}
      * @param nWaitTime
      * @return
      */
@@ -36425,8 +36425,8 @@ public interface NetSDKLib extends Library {
     /**
      * 主动获取每个热成像点的像素温度
      * @param lLoginID 登录句柄
-     * @param pstInParam 入参 {@link com.netsdk.lib.structure.NET_IN_GET_HEATMAPS_INFO}
-     * @param pstOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_GET_HEATMAPS_INFO}
+     * @param pstInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_HEATMAPS_INFO}
+     * @param pstOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_HEATMAPS_INFO}
      * @param nWaitTime 接口超时时间,默认超时时间为 3000
      * @return
      */
@@ -36528,8 +36528,8 @@ public interface NetSDKLib extends Library {
      /**
       * 获取IPC设备的存储信息
       * @param lLoginID 登录句柄
-      * @param pstInParam 入参 {@link com.netsdk.lib.structure.NET_IN_GET_DEVICE_AII_INFO}
-      * @param pstOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_GET_DEVICE_AII_INFO}
+      * @param pstInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_DEVICE_AII_INFO}
+      * @param pstOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_DEVICE_AII_INFO}
       * @param nWaitTime
       * @return
       */
@@ -36543,8 +36543,8 @@ public interface NetSDKLib extends Library {
     /**
      * 订阅交通信号灯状态 , pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pInParam 入参 {@link com.netsdk.lib.structure.NET_IN_ATTACH_TRAFFICLIGHT_INFO}
-     * @param pOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_ATTACH_TRAFFICLIGHT_INFO}
+     * @param pInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_TRAFFICLIGHT_INFO}
+     * @param pOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_TRAFFICLIGHT_INFO}
      * @param nWaitTime
      * @return
      */
@@ -36560,8 +36560,8 @@ public interface NetSDKLib extends Library {
     /**
      * 订阅雷达的报警点信息 , pInParam 和pOutParam 资源由用户申请和释放
      * @param lLoginID 登录句柄
-     * @param pstInParam 入参 {@link com.netsdk.lib.structure.NET_IN_RADAR_ALARMPOINTINFO}
-     * @param pstOutParam 出参 {@link com.netsdk.lib.structure.NET_OUT_RADAR_ALARMPOINTINFO}
+     * @param pstInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RADAR_ALARMPOINTINFO}
+     * @param pstOutParam 出参 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RADAR_ALARMPOINTINFO}
      * @param nWaitTime
      * @return
      */
@@ -36582,7 +36582,7 @@ public interface NetSDKLib extends Library {
          *
          * @param lLoginId 登录句柄
          * @param lAttachHandle 订阅句柄
-         * @param pBuf {@link com.netsdk.lib.structure.NET_RADAR_NOTIFY_ALARMPOINTINFO}
+         * @param pBuf {@link com.hikvision.nvr.dahua.lib.structure.NET_RADAR_NOTIFY_ALARMPOINTINFO}
          * @param dwBufLen pBuf中结构体的长度
          * @param pReserved 保留数据
          * @param dwUser 用户自定义数据
@@ -36602,8 +36602,8 @@ public interface NetSDKLib extends Library {
     /**
      * 订阅云台元数据接口,pstuInPtzStatusProc与pstuOutPtzStatusProc内存由用户申请释放
      * @param lLoginID 登录句柄
-     * @param pstInParam 入参 {@link com.netsdk.lib.structure.NET_IN_PTZ_STATUS_PROC}
-     * @param pstOutParam 出参{@link com.netsdk.lib.structure.NET_OUT_PTZ_STATUS_PROC}
+     * @param pstInParam 入参 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_PTZ_STATUS_PROC}
+     * @param pstOutParam 出参{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_PTZ_STATUS_PROC}
      * @param nWaitTime
      * @return
      */
@@ -37607,7 +37607,7 @@ public interface NetSDKLib extends Library {
          *
          * @param lLoginId 登录句柄
          * @param lAttachHandle 订阅句柄
-         * @param pBuf {@link com.netsdk.lib.structure.NET_MINI_RADAR_NOTIFY_ALARMPOINTINFO}
+         * @param pBuf {@link com.hikvision.nvr.dahua.lib.structure.NET_MINI_RADAR_NOTIFY_ALARMPOINTINFO}
          * @param dwBufLen pBuf中结构体的长度
          * @param pReserved 保留数据
          * @param dwUser 用户自定义数据
@@ -38156,8 +38156,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * 获取电视墙预案,pInParam与pOutParam内存由用户申请释放
-     * param[in] pInParam 接口输入参数, 内存资源由用户申请和释放,{@link com.netsdk.lib.structure.optimized.NET_IN_WM_GET_COLLECTIONS_V1}
-     * param[out]pOutParam 接口输出参数, 内存资源由用户申请和释放 {@link com.netsdk.lib.structure.optimized.NET_OUT_WM_GET_COLLECTIONS_V1}
+     * param[in] pInParam 接口输入参数, 内存资源由用户申请和释放,{@link com.hikvision.nvr.dahua.lib.structure.optimized.NET_IN_WM_GET_COLLECTIONS_V1}
+     * param[out]pOutParam 接口输出参数, 内存资源由用户申请和释放 {@link com.hikvision.nvr.dahua.lib.structure.optimized.NET_OUT_WM_GET_COLLECTIONS_V1}
      * param[in] nWaitTime 接口超时时间, 单位毫秒
      */
     public boolean CLIENT_GetMonitorWallCollectionsV1(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
@@ -38513,15 +38513,15 @@ public interface NetSDKLib extends Library {
     }
 
     /**
-     * @param		pInParam:	参考{@link com.netsdk.lib.structure.NET_IN_RADIOMETRY_CURRENTHOTCOLDSPOT_INFO}
-     * @param		pOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_RADIOMETRY_CURRENTHOTCOLDSPOT_INFO}
+     * @param		pInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RADIOMETRY_CURRENTHOTCOLDSPOT_INFO}
+     * @param		pOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RADIOMETRY_CURRENTHOTCOLDSPOT_INFO}
      * @description  获取热成像当前冷（最低的温度）、热（最高的温度）点信息
      */
     public boolean CLIENT_RadiometryGetCurrentHotColdSpotInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
-     * @param		pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_SET_ZONE_ARMODE_INFO}
-     * @param		pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_SET_ZONE_ARMODE_INFO}
+     * @param		pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_ZONE_ARMODE_INFO}
+     * @param		pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_ZONE_ARMODE_INFO}
      * @description  设置单防区布撤防状态
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38532,8 +38532,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_SetZoneArmMode(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param		pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_GET_ZONE_ARMODE_INFO}
-     * @param		pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_GET_ZONE_ARMODE_INFO}
+     * @param		pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_ZONE_ARMODE_INFO}
+     * @param		pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_ZONE_ARMODE_INFO}
      * @description  获取单防区布撤防状态
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38553,15 +38553,15 @@ public interface NetSDKLib extends Library {
     public interface fVehicleInOutAnalyseProc extends Callback {
 /**
          * @param lAttachHandle
-         * @param pstuVehicleInOutAnalyseProc: 参考{@link com.netsdk.lib.structure.NET_VEHICLE_INOUT_ANALYSE_PROC}
+         * @param pstuVehicleInOutAnalyseProc: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_VEHICLE_INOUT_ANALYSE_PROC}
          * @param dwUser
          */
         public void invoke(LLong lAttachHandle,Pointer pstuVehicleInOutAnalyseProc,Pointer dwUser);
     }
 
     /**
-     * @param pstuInParam:  参考{@link com.netsdk.lib.structure.NET_IN_ATTACH_TRAFFIC_FLOW_STAT_REAL_FLOW}
-     * @param pstuOutParam: 参考{@link com.netsdk.lib.structure.NET_OUT_ATTACH_TRAFFIC_FLOW_STAT_REAL_FLOW}
+     * @param pstuInParam:  参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_TRAFFIC_FLOW_STAT_REAL_FLOW}
+     * @param pstuOutParam: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_TRAFFIC_FLOW_STAT_REAL_FLOW}
      * @description 订阅交通流量统计
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstInParam 接口输入参数
@@ -38579,8 +38579,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_DetachTrafficFlowStatRealFlow(LLong lAttachHandle);
 
     /**
-     * @param pstuInParam:  参考{@link com.netsdk.lib.structure.NET_IN_SET_BIND_MODE_INFO}
-     * @param pstuOutParam: 参考{@link com.netsdk.lib.structure.NET_OUT_SET_BIND_MODE_INFO}
+     * @param pstuInParam:  参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_BIND_MODE_INFO}
+     * @param pstuOutParam: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_BIND_MODE_INFO}
      * @description 设置绑定模式
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38591,8 +38591,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_SetBindMode(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param pstuInParam:  参考{@link com.netsdk.lib.structure.NET_IN_GET_BIND_MODE_INFO}
-     * @param pstuOutParam: 参考{@link com.netsdk.lib.structure.NET_OUT_GET_BIND_MODE_INFO}
+     * @param pstuInParam:  参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_BIND_MODE_INFO}
+     * @param pstuOutParam: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_BIND_MODE_INFO}
      * @description 获取绑定模式
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38603,8 +38603,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_GetBindMode(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param		pstInParam:	参考{@link com.netsdk.lib.structure.NET_IN_ATTACH_VIDEO_ANALYSE_TRACK_PROC}
-     * @param		pstOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_ATTACH_VIDEO_ANALYSE_TRACK_PROC}
+     * @param		pstInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_VIDEO_ANALYSE_TRACK_PROC}
+     * @param		pstOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_VIDEO_ANALYSE_TRACK_PROC}
      * @description  订阅外部轨迹
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstInParam 接口输入参数
@@ -38615,7 +38615,7 @@ public interface NetSDKLib extends Library {
     public LLong CLIENT_AttachVideoAnalyseTrackProc(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
-     * @param		pstuVideoAnalyseTrackProc:	参考{@link com.netsdk.lib.structure.NET_VIDEO_ANALYSE_TRACK_PROC}
+     * @param		pstuVideoAnalyseTrackProc:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_VIDEO_ANALYSE_TRACK_PROC}
      * @description  外部轨迹的回调函数
      */
     public interface fVideoAnalyseTrackProc extends Callback {
@@ -38630,8 +38630,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_DetachVideoAnalyseTrackProc(LLong lAttachHandle);
 
     /**
-     * @param        pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_GET_GPS_STATUS_INFO}
-     * @param        pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_GET_GPS_STATUS_INFO}
+     * @param        pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_GPS_STATUS_INFO}
+     * @param        pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_GPS_STATUS_INFO}
      * @description 获取GPS定位信息
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38642,8 +38642,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_GetGpsStatus(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param pstuInParam:  参考{@link com.netsdk.lib.structure.NET_IN_PTZ_SET_ZOOM_VALUE}
-     * @param pstuOutParam: 参考{@link com.netsdk.lib.structure.NET_OUT_PTZ_SET_ZOOM_VALUE}
+     * @param pstuInParam:  参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_PTZ_SET_ZOOM_VALUE}
+     * @param pstuOutParam: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_PTZ_SET_ZOOM_VALUE}
      * @description 设置云台变倍
      * @description param[in] lLoginID: 登录句柄
      * @description param[in] pstuInParam: 接口输入参数, 内存资源由用户申请和释放
@@ -38654,8 +38654,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_PTZSetZoomValue(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param pstuInParam:  参考{@link com.netsdk.lib.structure.NET_IN_SET_VTO_MANAGER_RELATION}
-     * @param pstuOutParam: 参考{@link com.netsdk.lib.structure.NET_OUT_SET_VTO_MANAGER_RELATION}
+     * @param pstuInParam:  参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_VTO_MANAGER_RELATION}
+     * @param pstuOutParam: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_VTO_MANAGER_RELATION}
      * @description 设置组织节点表
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38666,8 +38666,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_SetVTOManagerRelation(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param pstuInParam:  参考{@link com.netsdk.lib.structure.NET_IN_GET_VTO_MANAGER_RELATION}
-     * @param pstuOutParam: 参考{@link com.netsdk.lib.structure.NET_OUT_GET_VTO_MANAGER_RELATION}
+     * @param pstuInParam:  参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_VTO_MANAGER_RELATION}
+     * @param pstuOutParam: 参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_VTO_MANAGER_RELATION}
      * @description 获取组织树节点
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38678,8 +38678,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_GetVTOManagerRelation(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param        pstInParam:	参考{@link com.netsdk.lib.structure.NET_IN_ADD_SOFT_TOUR_POINT_INFO}
-     * @param        pstOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_ADD_SOFT_TOUR_POINT_INFO}
+     * @param        pstInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ADD_SOFT_TOUR_POINT_INFO}
+     * @param        pstOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ADD_SOFT_TOUR_POINT_INFO}
      * @description 增加软巡航预置点
      * @description param[in]   lLoginID 登录句柄
      * @description param[in]   pstInParam 接口输入参数
@@ -38690,8 +38690,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_AddSoftTourPoint(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
-     * @param        pstInParam:	参考{@link com.netsdk.lib.structure.NET_IN_REMOVE_SOFT_TOUR_POINT_INFO}
-     * @param        pstOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_REMOVE_SOFT_TOUR_POINT_INFO}
+     * @param        pstInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOVE_SOFT_TOUR_POINT_INFO}
+     * @param        pstOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOVE_SOFT_TOUR_POINT_INFO}
      * @description 清除软巡航预置点
      * @description param[in]   lLoginID 登录句柄
      * @description param[in]   pstInParam 接口输入参数
@@ -38702,8 +38702,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_RemoveTourPoint(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
-     * @param		pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_INSERT_MULTI_TALK_DEV}
-     * @param		pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_INSERT_MULTI_TALK_DEV}
+     * @param		pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_INSERT_MULTI_TALK_DEV}
+     * @param		pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_INSERT_MULTI_TALK_DEV}
      * @description  下发设备信息
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38714,8 +38714,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_InsertMultiTalkDev(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param		pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_UPDATE_MULTI_TALK_DEV}
-     * @param		pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_UPDATE_MULTI_TALK_DEV}
+     * @param		pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_UPDATE_MULTI_TALK_DEV}
+     * @param		pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_UPDATE_MULTI_TALK_DEV}
      * @description  批量更新设备信息接口
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstuInParam 接口入参
@@ -38726,8 +38726,8 @@ public interface NetSDKLib extends Library {
     public boolean CLIENT_UpdateMultiTalkDev(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
-     * @param		pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_DO_FIND_TALK_DEV}
-     * @param		pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_DO_FIND_TALK_DEV}
+     * @param		pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DO_FIND_TALK_DEV}
+     * @param		pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DO_FIND_TALK_DEV}
      * @description  执行信息查询, lFindID为CLIENT_StartFindTalkDev接口返回的查找ID
      * @description param[in] lFindID 查询句柄
      * @description param[in] pstuInParam 接口输入参数
@@ -38740,16 +38740,16 @@ public interface NetSDKLib extends Library {
     /** 
      * 录像下载--扩展Ex3接口，将所有参数整合在一个结构体，方便后续扩展
      * @param   lLoginID 登录句柄
-     * @param	pstuInParam:	参考{@link com.netsdk.lib.structure.NET_IN_DOWNLOAD}
-     * @param	pstuOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_DOWNLOAD}
+     * @param	pstuInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DOWNLOAD}
+     * @param	pstuOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DOWNLOAD}
      * @param   dwWaitTime 接口超时时间, 单位毫秒
      * @return 下载句柄
      */
     public LLong CLIENT_DownloadByRecordFileEx3(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
  /**
-     * @param		pstInParam:	参考{@link com.netsdk.lib.structure.NET_IN_ATTACH_HYGROTHERMOGRAPH}
-     * @param		pstOutParam:	参考{@link com.netsdk.lib.structure.NET_OUT_ATTACH_HYGROTHERMOGRAPH}
+     * @param		pstInParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_HYGROTHERMOGRAPH}
+     * @param		pstOutParam:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_HYGROTHERMOGRAPH}
      * @description  订阅温湿度实时检测数据
      * @description param[in] lLoginID 登录句柄
      * @description param[in] pstInParam 接口输入参数
@@ -38760,7 +38760,7 @@ public interface NetSDKLib extends Library {
     public LLong CLIENT_AttachHygrothermograph(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
-     * @param		pstuHygrothermographInfo:	参考{@link com.netsdk.lib.structure.NET_HYGROTHERMOGRAPH_INFO}
+     * @param		pstuHygrothermographInfo:	参考{@link com.hikvision.nvr.dahua.lib.structure.NET_HYGROTHERMOGRAPH_INFO}
      * @description  订阅温湿度实时检测数据回调函数原型, lHygrothermographHandle为CLIENT_AttachHygrothermograph接口的返回值
      * @description param[out] lHygrothermographHandle 订阅句柄
      * @description param[out] pstuHygrothermographInfo 订阅温湿度实时检测数据回调信息
@@ -38789,7 +38789,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 二次录像分析实时结果订阅函数原型
-     * @param pstAnalyseResultInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_ANALYSE_RESULT_INFO)
+     * @param pstAnalyseResultInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_ANALYSE_RESULT_INFO)
      */
     public interface fAnalyseResultCallBack extends Callback {
         public int invoke(LLong lAnalyseHandle,Pointer pstAnalyseResultInfo,Pointer pBuffer,int dwBufSize);
@@ -38797,7 +38797,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 测温温度数据状态回调函数
-     * @param pBuf ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_RADIOMETRY_TEMPER_DATA)
+     * @param pBuf ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_RADIOMETRY_TEMPER_DATA)
      */
     public interface fRadiometryAttachTemperCB extends Callback {
         public void invoke(LLong lAttachTemperHandle,Pointer pBuf,int nBufLen,Pointer dwUser);
@@ -38805,7 +38805,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅气象信息回调函数原型
-     * @param pBuf ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_WEATHER_INFO)
+     * @param pBuf ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_WEATHER_INFO)
      */
     public interface fWeatherInfoCallBack extends Callback {
         public void invoke(LLong lLoginID,LLong lAttachHandle,Pointer pBuf,int nBufLen,Pointer dwUser);
@@ -38813,7 +38813,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅电梯内实时数据接口回调函数原型, lAttachHandle 为 CLIENT_AttachElevatorFloorCounter 接口的返回值
-     * @param pstuElevatorFloorCounterInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_ELEVATOR_FLOOR_COUNTER_INFO)
+     * @param pstuElevatorFloorCounterInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_ELEVATOR_FLOOR_COUNTER_INFO)
      */
     public interface fNotifyElevatorFloorCounterdata extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuElevatorFloorCounterInfo,Pointer dwUser);
@@ -38821,7 +38821,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 事件详细信息回调
-     * @param pstuNotifyIVSEventDetailInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_IVSEVENT_DETAIL_INFO)
+     * @param pstuNotifyIVSEventDetailInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_IVSEVENT_DETAIL_INFO)
      */
     public interface fNotifyIVSEventDetail extends Callback {
         public void invoke(Pointer pstuNotifyIVSEventDetailInfo,Pointer dwUser);
@@ -38829,7 +38829,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 收到低功耗设备保活包回调函数原型
-     * @param pstLowPowerKeepAliveCallBackInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_LOW_POWER_KEEPALIVE_CALLBACK_INFO)
+     * @param pstLowPowerKeepAliveCallBackInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_LOW_POWER_KEEPALIVE_CALLBACK_INFO)
      */
     public interface fLowPowerKeepAliveCallBack extends Callback {
         public void invoke(LLong lLowPowerHandle,Pointer pstLowPowerKeepAliveCallBackInfo);
@@ -38837,7 +38837,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅历史库以图搜图回调函数原型, lAttachHandle为CLIENT_AttachResultOfFindHistoryByPic接口的返回值
-     * @param pstesult ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_RESULT_OF_FIND_HISTORY_BYPIC)
+     * @param pstesult ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_RESULT_OF_FIND_HISTORY_BYPIC)
      */
     public interface fResultOfFindHistory extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstesult,Pointer pBinBuf,int nBinBufLen,Pointer dwUser);
@@ -38845,7 +38845,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅485实时数据接口回调函数原型, lAttachHandle 为 CLIENT_AttachIotboxComm 接口的返回值
-     * @param pstuIotboxComm ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_IOTBOX_COMM)
+     * @param pstuIotboxComm ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_IOTBOX_COMM)
      */
     public interface fNotifyIotboxRealdata extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuIotboxComm,Pointer dwUser);
@@ -38853,7 +38853,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅485实时数据接口回调函数原型, lAttachHandle 为 CLIENT_AttachIotboxComm 接口的返回值
-     * @param pstuIotboxCommEx ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_IOTBOX_COMM_EX)
+     * @param pstuIotboxCommEx ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_IOTBOX_COMM_EX)
      */
     public interface fNotifyIotboxRealdataEx extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuIotboxCommEx,Pointer dwUser);
@@ -38861,7 +38861,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 区域流量数据的回调函数
-     * @param pstuNotifyAreaFlowInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_AREA_FLOW_INFO)
+     * @param pstuNotifyAreaFlowInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_AREA_FLOW_INFO)
      */
     public interface fNotifyAreaFlowInfo extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuNotifyAreaFlowInfo,Pointer dwUser);
@@ -38869,7 +38869,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 接口 CLIENT_AttachTalkState 的回调函数
-     * @param pstuState ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_TALK_STATE)
+     * @param pstuState ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_TALK_STATE)
      */
     public interface fNotifyTalkState extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuState,int nLen,Pointer dwUser);
@@ -38884,7 +38884,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief CLIENT_AttachStartStreamData的回调函数
-     * @param pstuStartStreamData ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_START_STREAM_DATA_INFO)
+     * @param pstuStartStreamData ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_START_STREAM_DATA_INFO)
      */
     public interface fStartStreamDataCallBack extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuStartStreamData,Pointer dwUser,Pointer pBuffer,int dwBufSize);
@@ -38906,7 +38906,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 智能分析结果的回调函数
-     * @param pstuVideoAnalyseTrackProcEx ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_VIDEO_ANALYSE_ANALYSE_PROC_EX)
+     * @param pstuVideoAnalyseTrackProcEx ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_VIDEO_ANALYSE_ANALYSE_PROC_EX)
      */
     public interface fVideoAnalyseAnalyseProcEx extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuVideoAnalyseTrackProcEx,Pointer dwUser);
@@ -38914,7 +38914,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief TTLV异步搜索设备回调(pDevNetInfo内存由SDK内部申请释放)
-     * @param pDevNetInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.DEVICE_NET_INFO_TTLV)
+     * @param pDevNetInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.DEVICE_NET_INFO_TTLV)
      */
     public interface fSearchDevicesCBTTLV extends Callback {
         public void invoke(LLong lSearchHandle,Pointer pDevNetInfo,Pointer pUserData);
@@ -38922,7 +38922,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 向客户端发送录像文件回调函数, lAttachHandle 为 CLIENT_AttachRecordManagerState 返回的结果
-     * @param pstuState ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_RECORDMANAGER_NOTIFY_INFO)
+     * @param pstuState ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_RECORDMANAGER_NOTIFY_INFO)
      */
     public interface fRecordManagerStateCallBack extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuState,int dwStateSize,Pointer dwUser);
@@ -38930,7 +38930,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief CLIENT_AttachNormalUsingJson的回调函数
-     * @param pstuAttachNormalInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_ATTACH_NORMAL_INFO)
+     * @param pstuAttachNormalInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_ATTACH_NORMAL_INFO)
      */
     public interface fAttachNormalCallBack extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuAttachNormalInfo,Pointer pBuffer,int dwBufSize,Pointer dwUser);
@@ -38938,7 +38938,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief CLIENT_PostLoginTask 登录结果回调
-     * @param pOutParam ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_POST_LOGIN_TASK)
+     * @param pOutParam ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_POST_LOGIN_TASK)
      */
     public interface fPostLoginTask extends Callback {
         public void invoke(int dwTaskID,Pointer pOutParam,Pointer dwUser);
@@ -38946,7 +38946,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 帧信息回调
-     * @param pInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_FRAME_INFO_CALLBACK_INFO)
+     * @param pInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_FRAME_INFO_CALLBACK_INFO)
      */
     public interface fFrameInfoCallBackEx extends Callback {
         public void invoke(LLong lHandle,Pointer pInfo,Pointer dwUser);
@@ -38954,7 +38954,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief CLIENT_AttachDockEvents 接口回调函数
-     * @param pUASDockEvents ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_UAS_DOCK_EVENTS)
+     * @param pUASDockEvents ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_UAS_DOCK_EVENTS)
      */
     public interface fUAVDockEvents extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pUASDockEvents,Pointer dwUser);
@@ -38962,7 +38962,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief CLIENT_AttachDockInfo 接口输入参数
-     * @param pUASDockInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_UAS_DOCK_INFO)
+     * @param pUASDockInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_UAS_DOCK_INFO)
      */
     public interface fUAVDockInfo extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pUASDockInfo,Pointer dwUser);
@@ -38970,7 +38970,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief CLIENT_AttachDockStatus 接口回调函数
-     * @param pUASDockInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_UAS_DOCK_STATUS)
+     * @param pUASDockInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_UAS_DOCK_STATUS)
      */
     public interface fUAVDockStatus extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pUASDockInfo,Pointer dwUser);
@@ -38978,7 +38978,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 开包检查结果回调函数
-     * @param pInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_XRARY_UNPACKING_INFO)
+     * @param pInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_XRARY_UNPACKING_INFO)
      */
     public interface fXRayUnpackingResult extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pInfo,Pointer dwUser);
@@ -38986,7 +38986,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 通知导出包裹, lAttachHandle 为 CLIENT_AttachXRayPackageManualExport 接口的返回值
-     * @param pstuNotifyInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_PACKAGE_MANUAL_EXPORT)
+     * @param pstuNotifyInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_PACKAGE_MANUAL_EXPORT)
      */
     public interface fNotifyPackageManualExport extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuNotifyInfo,Pointer dwUser);
@@ -38994,7 +38994,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 工作状态信息, lAttachHandle 为 CLIENT_AttachModuleStatus 接口的返回值
-     * @param pstuNotifyInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_MODULE_STATUS)
+     * @param pstuNotifyInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_MODULE_STATUS)
      */
     public interface fNotifyModuleStatus extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuNotifyInfo,Pointer dwUser);
@@ -39002,7 +39002,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅人体历史库以图搜图回调函数原型, lAttachHandle为CLIENT_AttachResultOfHumanHistoryByPic接口的返回值
-     * @param pstesult ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_RESULT_OF_HUMAN_HISTORY_BYPIC)
+     * @param pstesult ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_RESULT_OF_HUMAN_HISTORY_BYPIC)
      */
     public interface fResultOfHumanHistory extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstesult,Pointer pBinBuf,int nBinBufLen,Pointer dwUser);
@@ -39010,7 +39010,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅车辆历史库以图搜图回调函数原型, lAttachHandle为CLIENT_AttachResultOfVehicleHistoryByPic接口的返回值
-     * @param pstuResult ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_RESULT_OF_VEHICLE_HISTORY_BYPIC)
+     * @param pstuResult ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_RESULT_OF_VEHICLE_HISTORY_BYPIC)
      */
     public interface fResultOfVehicleHistory extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuResult,Pointer pBinBuf,int nBinBufLen,Pointer dwUser);
@@ -39018,7 +39018,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅内容检索查询状态
-     * @param pstuNotifyLargeModeFindResultInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_LARGE_MODE_SERVER_FIND_RESULT_INFO)
+     * @param pstuNotifyLargeModeFindResultInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_LARGE_MODE_SERVER_FIND_RESULT_INFO)
      */
     public interface fNotifyLargeModeFindResult extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuNotifyLargeModeFindResultInfo,Pointer dwUser);
@@ -39026,7 +39026,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅人体历史库以图搜图回调函数原型, lAttachHandle为CLIENT_AttachResultOfHumanHistoryByPic接口的返回值
-     * @param pstuResult ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_CB_RESULT_OF_HUMAN_HISTORY_BYPIC_EX)
+     * @param pstuResult ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_CB_RESULT_OF_HUMAN_HISTORY_BYPIC_EX)
      */
     public interface fResultOfHumanHistoryEx extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuResult,Pointer pBinBuf,int nBinBufLen,Pointer dwUser);
@@ -39042,7 +39042,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 雷达AIS信息回调函数指针
-     * @param pBuf ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_RADAR_NOTIFY_AIS_INFO)
+     * @param pBuf ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_RADAR_NOTIFY_AIS_INFO)
      */
     public interface fRadarAISInfoCallBack extends Callback {
         public void invoke(LLong lLoginId,LLong lAttachHandle,Pointer pBuf,int dwBufLen,Pointer pReserved,Pointer dwUser);
@@ -39050,7 +39050,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 
-     * @param pDevNetInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.DEVICE_NET_INFO_TTLV)
+     * @param pDevNetInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.DEVICE_NET_INFO_TTLV)
      */
     public interface fSearchDevicesCB4th extends Callback {
         public void invoke(LLong lSearchHandle,Pointer pDevNetInfo,Pointer pUserData);
@@ -39058,7 +39058,7 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief AIS订阅上报回调
-     * @param pstuNotifyInfo ， 参考结构体定义 {@link com.netsdk.lib.structure.NET_NOTIFY_AIS_PROC_MSG)
+     * @param pstuNotifyInfo ， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_NOTIFY_AIS_PROC_MSG)
      */
     public interface fNotifyAISProc extends Callback {
         public void invoke(LLong lAttachHandle,Pointer pstuNotifyInfo,Pointer dwUser);
@@ -39087,78 +39087,78 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 设备导出文件接口
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECURITY_EXPORT_DATA_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECURITY_EXPORT_DATA_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECURITY_EXPORT_DATA_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECURITY_EXPORT_DATA_INFO}
      */
     public boolean CLIENT_SecurityExportDataEx(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 设备导入文件接口
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECURITY_IMPORT_DATA_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECURITY_IMPORT_DATA_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECURITY_IMPORT_DATA_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECURITY_IMPORT_DATA_INFO}
      */
     public boolean CLIENT_SecurityImportDataEx(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 准备生成导出文件接口
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECURITY_PREPARE_EXPORT_DATA_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECURITY_PREPARE_EXPORT_DATA_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECURITY_PREPARE_EXPORT_DATA_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECURITY_PREPARE_EXPORT_DATA_INFO}
      */
     public boolean CLIENT_SecurityPrepareExportData(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 查询特定数据类型的任务状态接口
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECURITY_GETCAPS_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECURITY_GETCAPS_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECURITY_GETCAPS_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECURITY_GETCAPS_INFO}
      */
     public boolean CLIENT_SecurityGetCaps(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 查询当前支持的导入导出数据类型
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECURITY_GET_TASK_STATUS_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECURITY_GET_TASK_STATUS_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECURITY_GET_TASK_STATUS_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECURITY_GET_TASK_STATUS_INFO}
      */
     public boolean CLIENT_SecurityGetTaskStatus(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 添加添加本地分析任务 pstInParam与pstOutParam内存由用户申请释放
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ADD_LOCAL_ANALYSE_TASK}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ADD_LOCAL_ANALYSE_TASK}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ADD_LOCAL_ANALYSE_TASK}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ADD_LOCAL_ANALYSE_TASK}
      */
     public boolean CLIENT_RecordSecondaryAnalyseAddLocalAnalyseTask(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取设备点位信息
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SCADA_GET_ATTRIBUTE_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SCADA_GET_ATTRIBUTE_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SCADA_GET_ATTRIBUTE_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SCADA_GET_ATTRIBUTE_INFO}
      */
     public boolean CLIENT_SCADAGetAttributeInfo(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 订阅录像二次分析实时结果 pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_SECONDARY_ANALYSE_RESULT}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_SECONDARY_ANALYSE_RESULT}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_SECONDARY_ANALYSE_RESULT}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_SECONDARY_ANALYSE_RESULT}
      */
     public LLong CLIENT_AttachRecordSecondaryAnalyseResult(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 开始录像二次分析任务 pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECONDARY_ANALYSE_STARTTASK}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECONDARY_ANALYSE_STARTTASK}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECONDARY_ANALYSE_STARTTASK}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECONDARY_ANALYSE_STARTTASK}
      */
     public boolean CLIENT_RecordSecondaryAnalyseStartTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 设置日志加密密码
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_LOG_ENCRYPT_KEY_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_LOG_ENCRYPT_KEY_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_LOG_ENCRYPT_KEY_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_LOG_ENCRYPT_KEY_INFO}
      */
     public boolean CLIENT_SetLogEncryptKey(LLong lLogID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 订阅测温温度数据,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_RADIOMETRY_ATTACH_TEMPER}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_RADIOMETRY_ATTACH_TEMPER}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RADIOMETRY_ATTACH_TEMPER}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RADIOMETRY_ATTACH_TEMPER}
      */
     public LLong CLIENT_RadiometryAttachTemper(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
@@ -39169,57 +39169,57 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 删除录像二次分析任务 pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECONDARY_ANALYSE_REMOVETASK}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECONDARY_ANALYSE_REMOVETASK}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECONDARY_ANALYSE_REMOVETASK}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECONDARY_ANALYSE_REMOVETASK}
      */
     public boolean CLIENT_RecordSecondaryAnalyseRemoveTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 暂停录像二次分析任务 pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SECONDARY_ANALYSE_PAUSETASK}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SECONDARY_ANALYSE_PAUSETASK}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SECONDARY_ANALYSE_PAUSETASK}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SECONDARY_ANALYSE_PAUSETASK}
      */
     public boolean CLIENT_RecordSecondaryAnalysePauseTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 获取闸机状态
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ACCESS_GET_ASG_STATE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ACCESS_GET_ASG_STATE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ACCESS_GET_ASG_STATE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ACCESS_GET_ASG_STATE}
      */
     public boolean CLIENT_GetASGState(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 清除闸机的统计信息方法，pstInParam与pstOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ASGMANAGER_CLEAR_STATISTICS}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ASGMANAGER_CLEAR_STATISTICS}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ASGMANAGER_CLEAR_STATISTICS}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ASGMANAGER_CLEAR_STATISTICS}
      */
     public boolean CLIENT_ASGManagerClearStatistics(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 开始放音接口
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_REMOTE_SPEAK_PLAY}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_REMOTE_SPEAK_PLAY}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_REMOTE_SPEAK_PLAY}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_REMOTE_SPEAK_PLAY}
      */
     public boolean CLIENT_StartRemoteSpeakPlay(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 停止放音接口
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_STOP_REMOTE_SPEAK_PLAY}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_STOP_REMOTE_SPEAK_PLAY}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_STOP_REMOTE_SPEAK_PLAY}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_STOP_REMOTE_SPEAK_PLAY}
      */
     public boolean CLIENT_StopRemoteSpeakPlay(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 单条测温规则设置更新
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_RADIOMETRY_RULE_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_RADIOMETRY_RULE_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_RADIOMETRY_RULE_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_RADIOMETRY_RULE_INFO}
      */
     public boolean CLIENT_SetRadiometryRule(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 订阅气象信息,pstuInParam与pstuOutParam内存由用户申请释放
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_WEATHER_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_WEATHER_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_WEATHER_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_WEATHER_INFO}
      */
     public LLong CLIENT_AttachWeatherInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39230,36 +39230,36 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取气象信息,pInBuf与pOutBuf内存由用户申请释放
-     * @param pInBuf 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_ATOMSPHDATA}
-     * @param pOutBuf 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_ATOMSPHDATA}
+     * @param pInBuf 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_ATOMSPHDATA}
+     * @param pOutBuf 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_ATOMSPHDATA}
      */
     public boolean CLIENT_GetAtomsphData(LLong lLoginID,Pointer pInBuf,Pointer pOutBuf,int nWaitTime);
 
     /**
      * @brief 获取测温区域的参数值, pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_RADIOMETRY_RANDOM_REGION_TEMPER}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_RADIOMETRY_RANDOM_REGION_TEMPER}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RADIOMETRY_RANDOM_REGION_TEMPER}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RADIOMETRY_RANDOM_REGION_TEMPER}
      */
     public boolean CLIENT_RadiometryGetRandomRegionTemper(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 分组人员统计--获取摘要信息
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_NUMBERSTATGROUPSUMMARY_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_NUMBERSTATGROUPSUMMARY_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_NUMBERSTATGROUPSUMMARY_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_NUMBERSTATGROUPSUMMARY_INFO}
      */
     public boolean CLIENT_GetNumberStatGroupSummary(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int waittime);
 
     /**
      * @brief 订阅电梯内实时数据
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_ELEVATOR_FLOOR_COUNTER_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_ELEVATOR_FLOOR_COUNTER_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_ELEVATOR_FLOOR_COUNTER_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_ELEVATOR_FLOOR_COUNTER_INFO}
      */
     public LLong CLIENT_AttachElevatorFloorCounter(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取临时token
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_TEMPORARY_TOKEN}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_TEMPORARY_TOKEN}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_TEMPORARY_TOKEN}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_TEMPORARY_TOKEN}
      */
     public boolean CLIENT_GetTemporaryToken(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39270,29 +39270,29 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取事件详细信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_IVSEVENT_DETAIL_INFO}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_IVSEVENT_DETAIL_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_IVSEVENT_DETAIL_INFO}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_IVSEVENT_DETAIL_INFO}
      */
     public boolean CLIENT_GetIVSEventDetail(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 得到远程指定目录下文件信息（含文件/子目录）pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOTE_LIST}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOTE_LIST}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOTE_LIST}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOTE_LIST}
      */
     public boolean CLIENT_RemoteList(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 唤醒设备
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_WAKE_UP_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_WAKE_UP_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_WAKE_UP_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_WAKE_UP_INFO}
      */
     public boolean CLIENT_DoWakeUpLowPowerDevcie(LLong lChannelHandle,Pointer pInParam,Pointer pOutParam);
 
     /**
      * @brief 创建低功耗通道
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_CREATE_LOW_POWER_CHANNEL}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_CREATE_LOW_POWER_CHANNEL}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_CREATE_LOW_POWER_CHANNEL}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_CREATE_LOW_POWER_CHANNEL}
      */
     public LLong CLIENT_CreateLowPowerChannel(LLong lSubBizHandle,Pointer pInParam,Pointer pOutParam);
 
@@ -39303,64 +39303,64 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 拒绝休眠
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REFUSE_SLEEP_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REFUSE_SLEEP_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REFUSE_SLEEP_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REFUSE_SLEEP_INFO}
      */
     public boolean CLIENT_RefuseLowPowerDevSleep(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取X射线源能力
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_XRAY_SOURCE_CAPS_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_XRAY_SOURCE_CAPS_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_XRAY_SOURCE_CAPS_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_XRAY_SOURCE_CAPS_INFO}
      */
     public boolean CLIENT_GetXRaySourceCaps(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取X射线源累积出束时间
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_XRAY_SOURCE_CUMULATE_TIME_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_XRAY_SOURCE_CUMULATE_TIME_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_XRAY_SOURCE_CUMULATE_TIME_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_XRAY_SOURCE_CUMULATE_TIME_INFO}
      */
     public boolean CLIENT_GetXRaySourceCumulateTime(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 查找记录:nFilecount:需要查询的条数, 一般情况出参中nRetRecordNum<nFilecount则相应时间段内的文件查询完毕,但部分设备性能限制,nRetRecordNum<nFilecount不代表查询完毕,建议和CLIENT_QueryRecordCount配套使用,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FIND_SEEK_NEXT_RECORD_PARAM}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FIND_SEEK_NEXT_RECORD_PARAM}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FIND_SEEK_NEXT_RECORD_PARAM}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FIND_SEEK_NEXT_RECORD_PARAM}
      */
     public boolean CLIENT_FindSeekNextRecord(Pointer pInParam,Pointer pOutParam,int waittime);
 
     /**
      * @brief 查询人脸库总空间大小、剩余空间大小、人脸库可导入总条数和剩余可导入条数
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_FACE_RECOGNITION_GROUP_SPACE_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_FACE_RECOGNITION_GROUP_SPACE_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_FACE_RECOGNITION_GROUP_SPACE_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_FACE_RECOGNITION_GROUP_SPACE_INFO}
      */
     public boolean CLIENT_GetFaceRecognitionGroupSpaceInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 人员重新建模, pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FACE_RECOGNITION_REABSTRACT_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FACE_RECOGNITION_REABSTRACT_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FACE_RECOGNITION_REABSTRACT_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FACE_RECOGNITION_REABSTRACT_INFO}
      */
     public boolean CLIENT_FaceRecognitionReAbstract(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 终止建模
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_STOP_FACE_RECOGNITION_REABSTRACT}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_STOP_FACE_RECOGNITION_REABSTRACT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_STOP_FACE_RECOGNITION_REABSTRACT}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_STOP_FACE_RECOGNITION_REABSTRACT}
      */
     public boolean CLIENT_StopFaceRecognitionReAbstract(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 目标组重新建模, pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FACE_RECOGNITION_GROUP_REABSTRACT_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FACE_RECOGNITION_GROUP_REABSTRACT_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FACE_RECOGNITION_GROUP_REABSTRACT_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FACE_RECOGNITION_GROUP_REABSTRACT_INFO}
      */
     public boolean CLIENT_FaceRecognitionGroupReAbstract(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 获取目标导入令牌
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_FACE_RECOGNITION_APPEND_TOKEN}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_FACE_RECOGNITION_APPEND_TOKEN}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_FACE_RECOGNITION_APPEND_TOKEN}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_FACE_RECOGNITION_APPEND_TOKEN}
      */
     public boolean CLIENT_GetFaceRecognitionAppendToken(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39386,8 +39386,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅历史库以图搜图查询结果, 配合CLIENT_StartFindFaceRecognition使用, pstInParam和pstOutParam由用户申请和释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_RESULT_FINDHISTORY_BYPIC}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_RESULT_FINDHISTORY_BYPIC}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_RESULT_FINDHISTORY_BYPIC}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_RESULT_FINDHISTORY_BYPIC}
      */
     public LLong CLIENT_AttachResultOfFindHistoryByPic(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
@@ -39398,22 +39398,22 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取智能套餐方案的基础信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_SCHEME_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_SCHEME_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_SCHEME_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_SCHEME_INFO}
      */
     public boolean CLIENT_GetSchemeInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 下发https服务器地址，用于公交线路、报站信息的上报,pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DISPATCH_BUS_HTTPS_SERVERS_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DISPATCH_BUS_HTTPS_SERVERS_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DISPATCH_BUS_HTTPS_SERVERS_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DISPATCH_BUS_HTTPS_SERVERS_INFO}
      */
     public boolean CLIENT_DispatchBusHttpsServers(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 订阅485实时数据
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_IOTBOX_COMM}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_IOTBOX_COMM}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_IOTBOX_COMM}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_IOTBOX_COMM}
      */
     public LLong CLIENT_AttachIotboxComm(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39424,8 +39424,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅485实时数据扩展
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_IOTBOX_COMM_EX}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_IOTBOX_COMM_EX}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_IOTBOX_COMM_EX}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_IOTBOX_COMM_EX}
      */
     public LLong CLIENT_AttachIotboxCommEx(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39436,15 +39436,15 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅区域流量数据
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_AREA_FLOW}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_AREA_FLOW}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_AREA_FLOW}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_AREA_FLOW}
      */
     public LLong CLIENT_AttachAreaFlow(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 订阅前端设备对讲状态,pstInParam与pstOutParam内存由用户申请释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_TALK_STATE}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_TALK_STATE}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_TALK_STATE}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_TALK_STATE}
      */
     public LLong CLIENT_AttachTalkState(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
@@ -39455,8 +39455,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取安检机录像文件
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_XRAY_DOWNLOAD_RECORD_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_XRAY_DOWNLOAD_RECORD_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_XRAY_DOWNLOAD_RECORD_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_XRAY_DOWNLOAD_RECORD_INFO}
      */
     public boolean CLIENT_GetXRayDownloadRecord(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39468,78 +39468,78 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 上传二进制地图图片
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_UPLOAD_MAP_PIC}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_UPLOAD_MAP_PIC}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_UPLOAD_MAP_PIC}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_UPLOAD_MAP_PIC}
      */
     public boolean CLIENT_UploadMapPic(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 加载地图图片
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_LOAD_MAP_PIC}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_LOAD_MAP_PIC}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_LOAD_MAP_PIC}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_LOAD_MAP_PIC}
      */
     public boolean CLIENT_LoadMapPic(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取地图已标记信息列表
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_PIC_MAP_MARK_LIST}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_PIC_MAP_MARK_LIST}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_PIC_MAP_MARK_LIST}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_PIC_MAP_MARK_LIST}
      */
     public boolean CLIENT_GetPicMapMarkList(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 地图上标记通道位置信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MARK_PIC_MAP_CHANNEL}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MARK_PIC_MAP_CHANNEL}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MARK_PIC_MAP_CHANNEL}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MARK_PIC_MAP_CHANNEL}
      */
     public boolean CLIENT_MarkPicMapChannel(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 取消通道的地图标记
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_UNMARK_PIC_MAP_CHANNEL}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_UNMARK_PIC_MAP_CHANNEL}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_UNMARK_PIC_MAP_CHANNEL}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_UNMARK_PIC_MAP_CHANNEL}
      */
     public boolean CLIENT_UnmarkPicMapChannel(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 重置清空地图（包括地图图片，标记信息）
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_RESET_PIC_MAP}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_RESET_PIC_MAP}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RESET_PIC_MAP}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RESET_PIC_MAP}
      */
     public boolean CLIENT_ResetPicMap(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 收藏目标事件记录
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
      */
     public boolean CLIENT_MarkObjectFavoritesLibraryObjectRecords(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 取消收藏目标事件记录
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_UNMARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_UNMARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_UNMARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_UNMARK_OBJECT_FAVORITES_LIBRARY_OBJECT_RECORDS}
      */
     public boolean CLIENT_UnmarkObjectFavoritesLibraryObjectRecords(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 检查目标事件记录的收藏状态
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_CHECK_OBJECT_FAVORITES_LIBRARY_MARK_STATUS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_CHECK_OBJECT_FAVORITES_LIBRARY_MARK_STATUS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_CHECK_OBJECT_FAVORITES_LIBRARY_MARK_STATUS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_CHECK_OBJECT_FAVORITES_LIBRARY_MARK_STATUS}
      */
     public boolean CLIENT_CheckObjectFavoritesLibraryMarkStatus(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 开始按条件，查找收藏夹内容数据
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_FIND_OBJECT_FAVORITES_LIBRARY}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_FIND_OBJECT_FAVORITES_LIBRARY}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_FIND_OBJECT_FAVORITES_LIBRARY}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_FIND_OBJECT_FAVORITES_LIBRARY}
      */
     public LLong CLIENT_StartFindObjectFavoritesLibrary(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取收藏夹内容数据, lFindID为CLIENT_StartFindObjectFavoritesLibrary接口返回的查找ID
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DO_FIND_OBJECT_FAVORITES_LIBRARY}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DO_FIND_OBJECT_FAVORITES_LIBRARY}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DO_FIND_OBJECT_FAVORITES_LIBRARY}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DO_FIND_OBJECT_FAVORITES_LIBRARY}
      */
     public boolean CLIENT_DoFindObjectFavoritesLibrary(LLong lFindID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -39550,127 +39550,127 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 根据目标轨迹过滤规则，开始查询
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_FIND_OBJECT_MEDIA_FIND}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_FIND_OBJECT_MEDIA_FIND}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_FIND_OBJECT_MEDIA_FIND}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_FIND_OBJECT_MEDIA_FIND}
      */
     public LLong CLIENT_StartFindObjectMediaFind(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取录像查询结果
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FIND_OBJECT_MEDIA_FIND_FILE}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FIND_OBJECT_MEDIA_FIND_FILE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FIND_OBJECT_MEDIA_FIND_FILE}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FIND_OBJECT_MEDIA_FIND_FILE}
      */
     public boolean CLIENT_FindObjectMediaFindFile(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取目标事件查询结果
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FIND_OBJECT_MEDIA_FIND_EVENT}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FIND_OBJECT_MEDIA_FIND_EVENT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FIND_OBJECT_MEDIA_FIND_EVENT}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FIND_OBJECT_MEDIA_FIND_EVENT}
      */
     public boolean CLIENT_FindObjectMediaFindEvent(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 停止查询
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_STOP_FIND_OBJECT_MEDIA_FIND}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_STOP_FIND_OBJECT_MEDIA_FIND}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_STOP_FIND_OBJECT_MEDIA_FIND}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_STOP_FIND_OBJECT_MEDIA_FIND}
      */
     public boolean CLIENT_StopFindObjectMediaFind(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取系统参数
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_BOOT_PARAMETER}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_BOOT_PARAMETER}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_BOOT_PARAMETER}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_BOOT_PARAMETER}
      */
     public boolean CLIENT_GetBootParameter(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 一键操作录播录像的开启/暂停/关闭
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MANUAL_CONTROL_COURSE_RECORD_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MANUAL_CONTROL_COURSE_RECORD_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MANUAL_CONTROL_COURSE_RECORD_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MANUAL_CONTROL_COURSE_RECORD_INFO}
      */
     public boolean CLIENT_ManualControlCourseRecord(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置车位检测器车灯亮灯计划,pNetDataIn与pNetDataOut由用户申请内存
-     * @param pNetDataIn 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_PARKING_SPACE_LIGHT_PLAN}
-     * @param pNetDataOut 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_PARKING_SPACE_LIGHT_PLAN}
+     * @param pNetDataIn 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_PARKING_SPACE_LIGHT_PLAN}
+     * @param pNetDataOut 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_PARKING_SPACE_LIGHT_PLAN}
      */
     public boolean CLIENT_SetParkingSpaceLightPlan(LLong lLoginID,Pointer pNetDataIn,Pointer pNetDataOut,int nWaitTime);
 
     /**
      * @brief 修改采集文件备注
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MODIFY_MEDIA_FILE_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MODIFY_MEDIA_FILE_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MODIFY_MEDIA_FILE_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MODIFY_MEDIA_FILE_INFO}
      */
     public boolean CLIENT_ModifyMediaFile(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 删除采集文件
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DELETE_MEDIA_FILE_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DELETE_MEDIA_FILE_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DELETE_MEDIA_FILE_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DELETE_MEDIA_FILE_INFO}
      */
     public boolean CLIENT_DeleteMediaFile(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 开始查询采集文件信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_QUERY_MEDIA_FILE_OPEN_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_QUERY_MEDIA_FILE_OPEN_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_QUERY_MEDIA_FILE_OPEN_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_QUERY_MEDIA_FILE_OPEN_INFO}
      */
     public boolean CLIENT_QueryMediaFileOpen(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 查询采集文件信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_QUERY_MEDIA_FILE_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_QUERY_MEDIA_FILE_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_QUERY_MEDIA_FILE_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_QUERY_MEDIA_FILE_INFO}
      */
     public boolean CLIENT_QueryMediaFile(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 关闭采集文件查询
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_QUERY_MEDIA_FILE_CLOSE_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_QUERY_MEDIA_FILE_CLOSE_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_QUERY_MEDIA_FILE_CLOSE_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_QUERY_MEDIA_FILE_CLOSE_INFO}
      */
     public boolean CLIENT_QueryMediaFileClose(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 云运维异步诊断接口
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ASYNC_CHECK_FAULT_CHECK}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ASYNC_CHECK_FAULT_CHECK}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ASYNC_CHECK_FAULT_CHECK}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ASYNC_CHECK_FAULT_CHECK}
      */
     public boolean CLIENT_AsyncCheckFaultCheck(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 四合一烟感平台下发整机重启
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REBOOT_DEVICE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REBOOT_DEVICE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REBOOT_DEVICE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REBOOT_DEVICE}
      */
     public boolean CLIENT_RebootDevice(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 重启系统,恢复出厂默认(包括清空配置和删除账户)并重启，实现硬复位功能
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_RESET_SYSTEM}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_RESET_SYSTEM}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RESET_SYSTEM}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RESET_SYSTEM}
      */
     public boolean CLIENT_ResetSystem(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 获取设备当前状态并绑定导出接口
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_START_STREAM_DATA}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_START_STREAM_DATA}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_START_STREAM_DATA}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_START_STREAM_DATA}
      */
     public LLong CLIENT_AttachStartStreamData(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 订阅抓包数据,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_SNIFFER}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_SNIFFER}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_SNIFFER}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_SNIFFER}
      */
     public LLong CLIENT_AttachSniffer(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 订阅调试日志回调
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_DBGINFO}
-     * @param pOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_DBGINFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_DBGINFO}
+     * @param pOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_DBGINFO}
      */
     public LLong CLIENT_AttachDebugInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
@@ -39691,29 +39691,29 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 添加Onvif用户， pstInParam、pstOutParam 内存由用户申请、释放
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ADD_ONVIF_USER_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ADD_ONVIF_USER_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ADD_ONVIF_USER_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ADD_ONVIF_USER_INFO}
      */
     public boolean CLIENT_AddOnvifUser(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取子模块信息
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_SUBMODULES_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_SUBMODULES_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_SUBMODULES_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_SUBMODULES_INFO}
      */
     public boolean CLIENT_GetSubModuleInfo(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 获取软件版本
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_SOFTWAREVERSION_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_SOFTWAREVERSION_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_SOFTWAREVERSION_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_SOFTWAREVERSION_INFO}
      */
     public boolean CLIENT_GetSoftwareVersion(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 开始抓包,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_SNIFFER}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_SNIFFER}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_SNIFFER}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_SNIFFER}
      */
     public LLong CLIENT_StartSniffer(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
@@ -39724,43 +39724,43 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取抓包状态,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_SNIFFER_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_SNIFFER_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_SNIFFER_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_SNIFFER_INFO}
      */
     public boolean CLIENT_GetSnifferInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取抓包能力,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_SNIFFER_CAP}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_SNIFFER_CAP}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_SNIFFER_CAP}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_SNIFFER_CAP}
      */
     public boolean CLIENT_GetSnifferCaps(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取从片版本信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_PERIPHERAL_CHIP_VERSION}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_PERIPHERAL_CHIP_VERSION}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_PERIPHERAL_CHIP_VERSION}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_PERIPHERAL_CHIP_VERSION}
      */
     public boolean CLIENT_GetPeripheralChipVersion(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 调节光圈
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_PTZ_ADJUST_IRIS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_PTZ_ADJUST_IRIS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_PTZ_ADJUST_IRIS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_PTZ_ADJUST_IRIS}
      */
     public boolean CLIENT_PTZAdjustIris(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取CPU温度
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_CPU_TEMPERATURE_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_CPU_TEMPERATURE_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CPU_TEMPERATURE_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CPU_TEMPERATURE_INFO}
      */
     public boolean CLIENT_GetCPUTemperature(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 订阅智能分析结果
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_VIDEO_ANALYSE_ANALYSE_PROC_EX}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_VIDEO_ANALYSE_ANALYSE_PROC_EX}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_VIDEO_ANALYSE_ANALYSE_PROC_EX}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_VIDEO_ANALYSE_ANALYSE_PROC_EX}
      */
     public LLong CLIENT_AttachVideoAnalyseAnalyseProcEx(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
@@ -39771,106 +39771,106 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 持续对焦
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FOCUS_PTZ_CONTINUOUSLY_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FOCUS_PTZ_CONTINUOUSLY_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FOCUS_PTZ_CONTINUOUSLY_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FOCUS_PTZ_CONTINUOUSLY_INFO}
      */
     public boolean CLIENT_FocusPTZContinuously(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置电视墙场景,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MONITORWALL_SET_SCENE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MONITORWALL_SET_SCENE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MONITORWALL_SET_SCENE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MONITORWALL_SET_SCENE}
      */
     public boolean CLIENT_MonitorWallSetScene(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取电视墙场景,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MONITORWALL_GET_SCENE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MONITORWALL_GET_SCENE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MONITORWALL_GET_SCENE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MONITORWALL_GET_SCENE}
      */
     public boolean CLIENT_MonitorWallGetScene(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 设置窗口场景信息
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SPLIT_SET_WINDOWS_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SPLIT_SET_WINDOWS_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SPLIT_SET_WINDOWS_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SPLIT_SET_WINDOWS_INFO}
      */
     public boolean CLIENT_SetSplitWindowsInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 根据执法人ID获取该执法人绑定的执法记录仪序列号列表
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_COLLECT_DEVICES_INFO_BY_TSFID_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_COLLECT_DEVICES_INFO_BY_TSFID_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_COLLECT_DEVICES_INFO_BY_TSFID_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_COLLECT_DEVICES_INFO_BY_TSFID_INFO}
      */
     public boolean CLIENT_GetCollectDevicesInfoByTsfId(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取所有 Onvif 用户信息，pstInParam、pstOutParam 内存由用户申请、释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GETONVIF_USERINFO_ALL_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GETONVIF_USERINFO_ALL_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GETONVIF_USERINFO_ALL_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GETONVIF_USERINFO_ALL_INFO}
      */
     public boolean CLIENT_GetOnvifUserInfoAll(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 获取蜂窝邻区信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_NEIGHBOUR_CELL_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_NEIGHBOUR_CELL_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_NEIGHBOUR_CELL_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_NEIGHBOUR_CELL_INFO}
      */
     public boolean CLIENT_GetNeighbourCellInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置窗口轮巡显示源(pInparam, pOutParam内存由用户申请释放)
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_TOUR_SOURCE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_TOUR_SOURCE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_TOUR_SOURCE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_TOUR_SOURCE}
      */
     public boolean CLIENT_SetTourSource(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取窗口轮巡显示源(pInparam, pOutParam内存由用户申请释放)
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_TOUR_SOURCE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_TOUR_SOURCE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_TOUR_SOURCE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_TOUR_SOURCE}
      */
     public boolean CLIENT_GetTourSource(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 楼层一键标定
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_AUTO_CALIBRATE}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_AUTO_CALIBRATE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_AUTO_CALIBRATE}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_AUTO_CALIBRATE}
      */
     public boolean CLIENT_AutoCalibrate(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 手动修改楼层高度并生成气压差信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MODIFY_FLOOR_HEIGHT}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MODIFY_FLOOR_HEIGHT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MODIFY_FLOOR_HEIGHT}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MODIFY_FLOOR_HEIGHT}
      */
     public boolean CLIENT_ModifyFloorHeight(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取ElevatorFloorCounter.autoCalibrate下发后的标定状态
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_CALIBRATE_STATUS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_CALIBRATE_STATUS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CALIBRATE_STATUS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CALIBRATE_STATUS}
      */
     public boolean CLIENT_GetCalibrateStatus(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 启动程序
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_APP}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_APP}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_APP}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_APP}
      */
     public boolean CLIENT_StartApp(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 停止程序运行
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_STOP_APP}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_STOP_APP}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_STOP_APP}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_STOP_APP}
      */
     public boolean CLIENT_StopApp(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 卸载程序
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOVE_APP}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOVE_APP}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOVE_APP}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOVE_APP}
      */
     public boolean CLIENT_RemoveApp(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
@@ -39882,84 +39882,84 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取安装的应用列表
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_INSTALLED_APP_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_INSTALLED_APP_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_INSTALLED_APP_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_INSTALLED_APP_INFO}
      */
     public boolean CLIENT_GetInstalledAppInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 通用RPC接口，支持Json传参
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_NORMAL_RPCCALL_USING_JSON}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_NORMAL_RPCCALL_USING_JSON}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_NORMAL_RPCCALL_USING_JSON}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_NORMAL_RPCCALL_USING_JSON}
      */
     public boolean CLIENT_NormalRpcCallUsingJson(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取存储端口信息
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_PORTINFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_PORTINFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_PORTINFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_PORTINFO}
      */
     public boolean CLIENT_GetStoragePortInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int waittime);
 
     /**
      * @brief 订阅录像状态变化,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_RECORDMANAGER_ATTACH_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_RECORDMANAGER_ATTACH_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RECORDMANAGER_ATTACH_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RECORDMANAGER_ATTACH_INFO}
      */
     public LLong CLIENT_AttachRecordManagerState(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取外部文件上传的文件名和路径
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_UPLOAD_PATH_INFO}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_UPLOAD_PATH_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_UPLOAD_PATH_INFO}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_UPLOAD_PATH_INFO}
      */
     public boolean CLIENT_GetUploadPath(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取指定盘组下的设备成员信息
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_WORK_GROUP_DEVICE_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_WORK_GROUP_DEVICE_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_WORK_GROUP_DEVICE_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_WORK_GROUP_DEVICE_INFO}
      */
     public boolean CLIENT_GetWorkGroupDeviceInfos(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief json通用订阅接口
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_NORMAL_USING_JSON}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_NORMAL_USING_JSON}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_NORMAL_USING_JSON}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_NORMAL_USING_JSON}
      */
     public LLong CLIENT_AttachNormalUsingJson(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief json通用订阅退订接口
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DETACH_NORMAL_USING_JSON}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DETACH_NORMAL_USING_JSON}
      */
     public boolean CLIENT_DetachNormalUsingJson(LLong lLoginID,Pointer pstuInParam);
 
     /**
      * @brief 开启音频录音并得到录音名
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_AUDIO_RECORD_MANAGER_CHANNEL}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_AUDIO_RECORD_MANAGER_CHANNEL}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_AUDIO_RECORD_MANAGER_CHANNEL}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_AUDIO_RECORD_MANAGER_CHANNEL}
      */
     public boolean CLIENT_StartAudioRecordManagerChannel(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 关闭即时录音
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_STOP_AUDIO_RECORD_MANAGER_CHANNEL}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_STOP_AUDIO_RECORD_MANAGER_CHANNEL}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_STOP_AUDIO_RECORD_MANAGER_CHANNEL}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_STOP_AUDIO_RECORD_MANAGER_CHANNEL}
      */
     public boolean CLIENT_StopAudioRecordManagerChannel(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 按组获取视频通道
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_CAMERA_ALL_BY_GROUP}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_CAMERA_ALL_BY_GROUP}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CAMERA_ALL_BY_GROUP}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CAMERA_ALL_BY_GROUP}
      */
     public boolean CLIENT_MatrixGetCameraAllByGroup(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 投递异步登录任务
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_POST_LOGIN_TASK}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_POST_LOGIN_TASK}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_POST_LOGIN_TASK}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_POST_LOGIN_TASK}
      */
     public int CLIENT_PostLoginTask(Pointer pInParam,Pointer pOutParam);
 
@@ -39976,22 +39976,22 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 查询部门信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_DEPARTMENT_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_DEPARTMENT_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_DEPARTMENT_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_DEPARTMENT_INFO}
      */
     public boolean CLIENT_GetTipStaffManagerDepartmentInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 查询执法人信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_TIP_STAFF_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_TIP_STAFF_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_TIP_STAFF_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_TIP_STAFF_INFO}
      */
     public boolean CLIENT_GetTipStaffManagerTipStaffInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取雷达检测目标数据
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_WATERRADAR_OBJECTINFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_WATERRADAR_OBJECTINFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_WATERRADAR_OBJECTINFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_WATERRADAR_OBJECTINFO}
      */
     public boolean CLIENT_GetWaterRadarObjectInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
@@ -40009,8 +40009,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 发送按键消息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SEND_XRAY_KEY_MANAGER_KEY_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SEND_XRAY_KEY_MANAGER_KEY_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SEND_XRAY_KEY_MANAGER_KEY_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SEND_XRAY_KEY_MANAGER_KEY_INFO}
      */
     public boolean CLIENT_SendXRayKeyManagerKey(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40021,15 +40021,15 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取车流统计摘要信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_FIND_VEHICLE_FLOW_STAT}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_FIND_VEHICLE_FLOW_STAT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_FIND_VEHICLE_FLOW_STAT}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_FIND_VEHICLE_FLOW_STAT}
      */
     public LLong CLIENT_StartFindVehicleFlowStat(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取车流量统计结果信息, lFindID为 CLIENT_StartFindVehicleFlowStat 接口返回的查询ID
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DO_FIND_VEHICLE_FLOW_STAT}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DO_FIND_VEHICLE_FLOW_STAT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DO_FIND_VEHICLE_FLOW_STAT}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DO_FIND_VEHICLE_FLOW_STAT}
      */
     public boolean CLIENT_DoFindVehicleFlowStat(LLong lFindID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40040,84 +40040,84 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 设置水平旋转组边界值
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_PAN_GROUP_LIMIT_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_PAN_GROUP_LIMIT_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_PAN_GROUP_LIMIT_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_PAN_GROUP_LIMIT_INFO}
      */
     public boolean CLIENT_PTZSetPanGroupLimit(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int dwWaitTime);
 
     /**
      * @brief 获取电视墙上屏幕窗口解码信息,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MW_GET_WINODW_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MW_GET_WINDOW_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MW_GET_WINODW_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MW_GET_WINDOW_INFO}
      */
     public boolean CLIENT_MonitorWallGetWindowInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取工作目录组名
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_WORKDIRECTORY_GETGROUP_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_WORKDIRECTORY_GETGROUP_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_WORKDIRECTORY_GETGROUP_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_WORKDIRECTORY_GETGROUP_INFO}
      */
     public boolean CLIENT_WorkDirectoryGetGroup(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 设置工作目录组名
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_WORKDIRECTORY_SETGROUP_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_WORKDIRECTORY_SETGROUP_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_WORKDIRECTORY_SETGROUP_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_WORKDIRECTORY_SETGROUP_INFO}
      */
     public boolean CLIENT_WorkDirectorySetGroup(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取存储设备信息,pDevice内存由用户申请释放
-     * @param pDevice 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_STORAGE_DEVICE}
+     * @param pDevice 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_STORAGE_DEVICE}
      */
     public boolean CLIENT_GetStorageDeviceInfo(LLong lLoginID,Pointer pszDevName,Pointer pDevice,int nWaitTime);
 
     /**
      * @brief 异步格式化设备,格式化进度通过CLIENT_AttachDevStorageDevFormat接口的回调获取  pszDevName与CLIENT_GetStorageDeviceInfo中的pszDevName保持一致
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DEVSTORAGE_FORMAT_PARTITION_ASYN}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DEVSTORAGE_FORMAT_PARTITION_ASYN}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DEVSTORAGE_FORMAT_PARTITION_ASYN}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DEVSTORAGE_FORMAT_PARTITION_ASYN}
      */
     public boolean CLIENT_DevStorageFormatPartitionAsyn(LLong lLoginID,Pointer pszDevName,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取所有盘组信息
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_STORAGE_ASSISTANT_GROUP_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_STORAGE_ASSISTANT_GROUP_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_STORAGE_ASSISTANT_GROUP_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_STORAGE_ASSISTANT_GROUP_INFO}
      */
     public boolean CLIENT_GetStorageAssistantGroupInfos(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 设置工作目录组名
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_WORK_DIRECTORY_GROUP}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_WORK_DIRECTORY_GROUP}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_WORK_DIRECTORY_GROUP}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_WORK_DIRECTORY_GROUP}
      */
     public boolean CLIENT_SetWorkDirectoryGoup(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取工作组内的工作目录名称列表
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_WORK_GROUP_DIRECTORIES}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_WORK_GROUP_DIRECTORIES}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_WORK_GROUP_DIRECTORIES}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_WORK_GROUP_DIRECTORIES}
      */
     public boolean CLIENT_GetWorkGroupDirectories(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 添加盘组
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ADD_STORAGE_ASSISTANT_WORK_GROUP}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ADD_STORAGE_ASSISTANT_WORK_GROUP}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ADD_STORAGE_ASSISTANT_WORK_GROUP}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ADD_STORAGE_ASSISTANT_WORK_GROUP}
      */
     public boolean CLIENT_AddStorageAssistantWorkGroup(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 删除盘组
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DELETE_STORAGE_ASSISTANT_WORK_GROUP}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DELETE_STORAGE_ASSISTANT_WORK_GROUP}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DELETE_STORAGE_ASSISTANT_WORK_GROUP}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DELETE_STORAGE_ASSISTANT_WORK_GROUP}
      */
     public boolean CLIENT_DeleteStorageAssistantWorkGroup(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_DOCK_EVENTS}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_DOCK_EVENTS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_DOCK_EVENTS}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_DOCK_EVENTS}
      */
     public LLong CLIENT_AttachDockEvents(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40128,8 +40128,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_DOCK_INFO}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_DOCK_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_DOCK_INFO}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_DOCK_INFO}
      */
     public LLong CLIENT_AttachDockInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40140,8 +40140,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_DOCK_STATUS}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_DOCK_STATUS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_DOCK_STATUS}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_DOCK_STATUS}
      */
     public LLong CLIENT_AttachDockStatus(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40152,64 +40152,64 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DOCK_EVENTS_REPLY}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DOCK_EVENTS_REPLY}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DOCK_EVENTS_REPLY}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DOCK_EVENTS_REPLY}
      */
     public boolean CLIENT_DockEventsReply(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DOCK_PROPERTY_SET}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DOCK_PROPERTY_SET}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DOCK_PROPERTY_SET}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DOCK_PROPERTY_SET}
      */
     public boolean CLIENT_DockPropertySet(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DOCK_STATUS_REPLY}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DOCK_STATUS_REPLY}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DOCK_STATUS_REPLY}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DOCK_STATUS_REPLY}
      */
     public boolean CLIENT_DockStatusReply(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FLIGHT_TASK_PREPARE}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FLIGHT_TASK_PREPARE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FLIGHT_TASK_PREPARE}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FLIGHT_TASK_PREPARE}
      */
     public boolean CLIENT_FlightTaskPrepare(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FLIGHT_TASK_EXECUTE}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FLIGHT_TASK_EXECUTE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FLIGHT_TASK_EXECUTE}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FLIGHT_TASK_EXECUTE}
      */
     public boolean CLIENT_FlightTaskExecute(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_RETURN_HOME}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_RETURN_HOME}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_RETURN_HOME}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_RETURN_HOME}
      */
     public boolean CLIENT_ReturnHome(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置运单信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_WAYBILL_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_WAYBILL_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_WAYBILL_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_WAYBILL_INFO}
      */
     public boolean CLIENT_SetWaybillInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置开包检查结果带图片
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_UNPACKING_RESULT_WITH_PACKET}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_UNPACKING_RESULT_WITH_PACKET}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_UNPACKING_RESULT_WITH_PACKET}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_UNPACKING_RESULT_WITH_PACKET}
      */
     public boolean CLIENT_SetUnpackingResultWithPacket(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief X光机集中判图时 订阅开包检查结果
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_XRAY_ATTACH_UNPACKING}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_XRAY_ATTACH_UNPACKING}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_XRAY_ATTACH_UNPACKING}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_XRAY_ATTACH_UNPACKING}
      */
     public LLong CLIENT_XRay_AttachUnpackingResult(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
@@ -40220,70 +40220,70 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 设置运单开始/结束状态
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_WAYBILL_STATUS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_WAYBILL_STATUS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_WAYBILL_STATUS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_WAYBILL_STATUS}
      */
     public boolean CLIENT_SetWaybillStatus(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取工作目录信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_STORAGE_INFO_BY_FILE_TYPE}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_STORAGE_INFO_BY_FILE_TYPE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_STORAGE_INFO_BY_FILE_TYPE}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_STORAGE_INFO_BY_FILE_TYPE}
      */
     public boolean CLIENT_GetStorageInfoByFileType(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief X光机集中判图时，开包台客户端设置开包检查结果
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_UNPACKING_RESULT}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_UNPACKING_RESULT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_UNPACKING_RESULT}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_UNPACKING_RESULT}
      */
     public boolean CLIENT_SetUnpackingResult(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 订阅包裹
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_XRAY_PACKAGE_MANUAL_EXPORT}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_XRAY_PACKAGE_MANUAL_EXPORT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_XRAY_PACKAGE_MANUAL_EXPORT}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_XRAY_PACKAGE_MANUAL_EXPORT}
      */
     public LLong CLIENT_AttachXRayPackageManualExport(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 托管备份任务
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_MANDATE_BACKUP_TASK_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_MANDATE_BACKUP_TASK_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_MANDATE_BACKUP_TASK_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_MANDATE_BACKUP_TASK_INFO}
      */
     public boolean CLIENT_MandateBackupTask(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置音频输出模式(pInparam, pOutParam内存由用户申请释放)
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_AUDIO_OUTPUT}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_AUDIO_OUTPUT}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_AUDIO_OUTPUT}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_AUDIO_OUTPUT}
      */
     public boolean CLIENT_SetSplitAudioOuput(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取音频输出模式(pInparam, pOutParam内存由用户申请释放)
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_AUDIO_OUTPUT}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_AUDIO_OUTPUT}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_AUDIO_OUTPUT}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_AUDIO_OUTPUT}
      */
     public boolean CLIENT_GetSplitAudioOuput(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 智能跟踪球控制接口
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_CONTROL_INTELLITRACKER}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_CONTROL_INTELLITRACKER}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_CONTROL_INTELLITRACKER}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_CONTROL_INTELLITRACKER}
      */
     public boolean CLIENT_ControlIntelliTracker(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam);
 
     /**
      * @brief 断油断电下发
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_FUEL_POWER_CUTOFF_COMMAND}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_FUEL_POWER_CUTOFF_COMMAND}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_FUEL_POWER_CUTOFF_COMMAND}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_FUEL_POWER_CUTOFF_COMMAND}
      */
     public boolean CLIENT_FuelPowerCutoffCommand(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取刻录状态扩展
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_BURN_GET_STATE_EX}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_BURN_GET_STATE_EX}
      * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.NetSDKLib.NET_OUT_BURN_GET_STATE}
      */
     public boolean CLIENT_BurnGetStateEx(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
@@ -40296,8 +40296,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅雷达模块是否正常工作
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_MODULE_STATUS}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_MODULE_STATUS}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_MODULE_STATUS}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_MODULE_STATUS}
      */
     public LLong CLIENT_AttachModuleStatus(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40308,29 +40308,29 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取智能卡的运行使用情况
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_CHIP_USAGE_INFO}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_CHIP_USAGE_INFO}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_CHIP_USAGE_INFO}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_CHIP_USAGE_INFO}
      */
     public boolean CLIENT_GetChipUsageInfo(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 订阅人体历史库以图搜图查询结果, 配合CLIENT_StartFindFaceRecognition使用, pstInParam和pstOutParam由用户申请和释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_RESULT_HUMAN_HISTORY_BYPIC}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_RESULT_HUMAN_HISTORY_BYPIC}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_RESULT_HUMAN_HISTORY_BYPIC}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_RESULT_HUMAN_HISTORY_BYPIC}
      */
     public LLong CLIENT_AttachResultOfHumanHistoryByPic(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 订阅车辆历史库以图搜图查询结果, 配合CLIENT_StartFindFaceRecognition使用, pstInParam和pstOutParam由用户申请和释放
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_RESULT_VEHICLE_HISTORY_BYPIC}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_RESULT_VEHICLE_HISTORY_BYPIC}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_RESULT_VEHICLE_HISTORY_BYPIC}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_RESULT_VEHICLE_HISTORY_BYPIC}
      */
     public LLong CLIENT_AttachResultOfVehicleHistoryByPic(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 大模型数据库内容检索
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_FIND_LARGE_MODE_SERVER}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_FIND_LARGE_MODE_SERVER}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_FIND_LARGE_MODE_SERVER}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_FIND_LARGE_MODE_SERVER}
      */
     public LLong CLIENT_StartFindLargeModeServer(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40341,8 +40341,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 订阅内容检索查询状态
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_LARGE_MODE_SERVER_FIND_RESULT}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_LARGE_MODE_SERVER_FIND_RESULT}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_LARGE_MODE_SERVER_FIND_RESULT}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_LARGE_MODE_SERVER_FIND_RESULT}
      */
     public LLong CLIENT_AttachLargeModeServerFindResult(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40353,112 +40353,112 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 主动查询最新比对结果
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DO_FIND_LARGE_MODE_SERVER}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DO_FIND_LARGE_MODE_SERVER}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DO_FIND_LARGE_MODE_SERVER}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DO_FIND_LARGE_MODE_SERVER}
      */
     public boolean CLIENT_DoFindLargeModeServer(LLong lFindID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 查询所有备份任务简要状态
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_BACKUP_MANAGER_GET_TASK_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_BACKUP_MANAGER_GET_TASK_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_BACKUP_MANAGER_GET_TASK_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_BACKUP_MANAGER_GET_TASK_INFO}
      */
     public boolean CLIENT_BackupManagerGetTaskInfo(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 解绑码解绑绑定的SIM卡
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_WIRELESS_UNBIND}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_WIRELESS_UNBIND}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_WIRELESS_UNBIND}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_WIRELESS_UNBIND}
      */
     public boolean CLIENT_WirelessUnbind(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置CLIENT_AttachResultOfHumanHistoryByPic接口新的回调函数, 用于解决java大结构体new对象慢导致的问题.该接口在CLIENT_AttachResultOfHumanHistoryByPic接口调用后调用
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_ATTACH_FIND_RESULT_HISTORY_CB_EX}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_ATTACH_FIND_RESULT_HISTORY_CB_EX}
      */
     public boolean CLIENT_SetAttachFindResultHistoryCBEx(Pointer pInParam);
 
     /**
      * @brief 控制外部报警设备电源状态
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_CONTROL_MISC_POWER_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_CONTROL_MISC_POWER_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_CONTROL_MISC_POWER_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_CONTROL_MISC_POWER_INFO}
      */
     public boolean CLIENT_ControlMiscPower(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 创建备份任务实例，和CLIENT_DestroyBackupTask成对使用
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_CREATE_BACKUP_TASK_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_CREATE_BACKUP_TASK_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_CREATE_BACKUP_TASK_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_CREATE_BACKUP_TASK_INFO}
      */
     public boolean CLIENT_CreateBackupTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 开始备份任务扩展，该接口内部不会调create和destroy
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_BACKUP_TASK_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_BACKUP_TASK_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_BACKUP_TASK_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_BACKUP_TASK_INFO}
      */
     public boolean CLIENT_StartBackupTaskEx(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 销毁备份任务实例
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DESTROY_BACKUP_TASK_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DESTROY_BACKUP_TASK_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DESTROY_BACKUP_TASK_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DESTROY_BACKUP_TASK_INFO}
      */
     public boolean CLIENT_DestroyBackupTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 锁定云台
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_LOCKPTZ_INFO}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_LOCKPTZ_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_LOCKPTZ_INFO}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_LOCKPTZ_INFO}
      */
     public boolean CLIENT_LockPtz(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 设置变倍映射值参数
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_SET_PTZ_MOVE_ZOOM_FOCUS_MAP_VALUE_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_SET_PTZ_MOVE_ZOOM_FOCUS_MAP_VALUE_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_SET_PTZ_MOVE_ZOOM_FOCUS_MAP_VALUE_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_SET_PTZ_MOVE_ZOOM_FOCUS_MAP_VALUE_INFO}
      */
     public boolean CLIENT_SetPtzMoveZoomFocusMapValue(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 开始异步通过存储设备上传文件到前端设备 pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOTE_UPLOAD_FILE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOTE_UPLOAD_FILE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOTE_UPLOAD_FILE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOTE_UPLOAD_FILE}
      */
     public LLong CLIENT_StartRemoteUploadFile(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 重命名远程文件 pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOTE_RENAME}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOTE_RENAME}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOTE_RENAME}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOTE_RENAME}
      */
     public boolean CLIENT_RemoteRename(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 删除多个远程文件或目录 pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOTE_REMOVE_FILES}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOTE_REMOVE_FILES}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOTE_REMOVE_FILES}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOTE_REMOVE_FILES}
      */
     public boolean CLIENT_RemoteRemoveFiles(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 通过存储设备远程预上传文件至前端设备,用于识别前端设备是否具备接收文件的条件,pInParam与pOutParam内存由用户申请释放
-     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOTE_PREUPLOAD_FILE}
-     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOTE_PREUPLOAD_FILE}
+     * @param pInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOTE_PREUPLOAD_FILE}
+     * @param pOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOTE_PREUPLOAD_FILE}
      */
     public boolean CLIENT_RemotePreUploadFile(LLong lLoginID,Pointer pInParam,Pointer pOutParam,int nWaitTime);
 
     /**
      * @brief 获取人数统计摘要信息
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_VIDEO_STAT_SERVER_SUMMARY_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_VIDEO_STAT_SERVER_SUMMARY_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_VIDEO_STAT_SERVER_SUMMARY_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_VIDEO_STAT_SERVER_SUMMARY_INFO}
      */
     public boolean CLIENT_GetVideoStatServerSummary(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 雷达订阅AIS信息
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_RADAR_AIS_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_RADAR_AIS_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_RADAR_AIS_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_RADAR_AIS_INFO}
      */
     public LLong CLIENT_AttachRadarAISInfo(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
@@ -40469,22 +40469,22 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 获取激光测距能力
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_LASER_DIST_MEASURE_CAPS_INFO}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_LASER_DIST_MEASURE_CAPS_INFO}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_LASER_DIST_MEASURE_CAPS_INFO}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_LASER_DIST_MEASURE_CAPS_INFO}
      */
     public boolean CLIENT_GetLaserDistMeasureCaps(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 开始查询统计信息
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_START_FIND_VIDEO_STATISTICS_SERVICE}
-     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_START_FIND_VIDEO_STATISTICS_SERVICE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_START_FIND_VIDEO_STATISTICS_SERVICE}
+     * @param pstuOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_START_FIND_VIDEO_STATISTICS_SERVICE}
      */
     public LLong CLIENT_StartFindVideoStatisticsService(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 开始查询统计信息, lFindID为 CLIENT_StartFindVideoStatisticsService 接口返回的查询ID
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_DO_FIND_VIDEO_STATISTICS_SERVICE}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_DO_FIND_VIDEO_STATISTICS_SERVICE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_DO_FIND_VIDEO_STATISTICS_SERVICE}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_DO_FIND_VIDEO_STATISTICS_SERVICE}
      */
     public boolean CLIENT_DoFindVideoStatisticsService(LLong lFindID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40495,8 +40495,8 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 设备接入AIS信号上报
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_ATTACH_AIS_PROC}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_ATTACH_AIS_PROC}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_ATTACH_AIS_PROC}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_ATTACH_AIS_PROC}
      */
     public LLong CLIENT_AttachAISProc(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
@@ -40507,29 +40507,29 @@ public interface NetSDKLib extends Library {
 
     /**
      * @brief 删除文件
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_REMOVE_MEDIA_FILE}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_REMOVE_MEDIA_FILE}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_REMOVE_MEDIA_FILE}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_REMOVE_MEDIA_FILE}
      */
     public boolean CLIENT_RemoveMediaFile(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 获取任务状态
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GETSTAT_BACKUP_TASK_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GETSTAT_BACKUP_TASK_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GETSTAT_BACKUP_TASK_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GETSTAT_BACKUP_TASK_INFO}
      */
     public boolean CLIENT_GetStateBackupTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 
     /**
      * @brief 获取拉流Token，rtsp拉流鉴权使用
-     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_GET_MEDIA_TOKEN}
-     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_GET_MEDIA_TOKEN}
+     * @param pstuInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_GET_MEDIA_TOKEN}
+     * @param pstuOutParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_GET_MEDIA_TOKEN}
      */
     public boolean CLIENT_GetMediaToken(LLong lLoginID,Pointer pstuInParam,Pointer pstuOutParam,int nWaitTime);
 
     /**
      * @brief 停止任务实例
-     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_IN_STOP_BACKUP_TASK_INFO}
-     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.netsdk.lib.structure.NET_OUT_STOP_BACKUP_TASK_INFO}
+     * @param pstInParam 接口输入参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_IN_STOP_BACKUP_TASK_INFO}
+     * @param pstOutParam 接口输出参数， 参考结构体定义 {@link com.hikvision.nvr.dahua.lib.structure.NET_OUT_STOP_BACKUP_TASK_INFO}
      */
     public boolean CLIENT_StopBackupTask(LLong lLoginID,Pointer pstInParam,Pointer pstOutParam,int nWaitTime);
 

@@ -7,8 +7,8 @@ package com.hikvision.nvr.dahua.lib.structure;/**
 
 import com.hikvision.nvr.dahua.lib.NetSDKLib;
 
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MASKTYPE_COUNT;
-// import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOSAICTYPE_COUNT;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MASKTYPE_COUNT;
+import static com.hikvision.nvr.dahua.lib.constant.SDKStructureFieldLenth.MAX_MOSAICTYPE_COUNT;
 
 /**
  * @author 47081
