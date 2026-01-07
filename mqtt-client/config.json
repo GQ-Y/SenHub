@@ -1,0 +1,15 @@
+{
+  "mqtt": {
+    "broker": "tcp://mqtt.yingzhu.net:1883",
+    "username": "demos1",
+    "password": "demos1",
+    "command_topic": "hikvision/command",
+    "response_topic": "hikvision/response",
+    "status_topic": "hikvision/status",
+    "qos": 1
+  },
+  "test": {
+    "default_device_id": "192.168.1.100:8000",
+    "response_timeout": 30
+  }
+}

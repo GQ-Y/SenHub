@@ -63,7 +63,19 @@ export const SystemSettings: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 relative">
+    <>
+      {/* 弹窗组件 */}
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={modal.closeModal}
+        title={modal.modalOptions?.title}
+        message={modal.modalOptions?.message || ''}
+        type={modal.modalOptions?.type || 'info'}
+        confirmText={modal.modalOptions?.confirmText}
+        onConfirm={modal.modalOptions?.onConfirm}
+      />
+      
+      <div className="space-y-6 relative">
       
       {/* Toast Notification */}
       {showToast && (
@@ -302,5 +314,6 @@ export const SystemSettings: React.FC = () => {
       </div>
       )}
     </div>
+    </>
   );
 };

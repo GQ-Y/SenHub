@@ -252,6 +252,11 @@ public class HikvisionSDK {
             // 输出常见错误码的含义
             if (errorCode == HCNetSDK.NET_DVR_PASSWORD_ERROR) {
                 logger.error("错误原因: 用户名或密码错误");
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_FAIL_CONNECT) {
+                logger.error("错误原因: 连接服务器失败 (错误码: 7)");
+                logger.error("可能原因: 1)设备不在线或网络不通 2)端口错误 3)防火墙阻止连接");
+                logger.error("         4)设备不是海康品牌，无法使用海康SDK连接 (如天地伟业、大华等品牌需要使用对应的SDK)");
+                logger.error("         5)设备不支持海康SDK的私有协议");
             } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_SEND_ERROR || errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_ERROR) {
                 logger.error("错误原因: 网络通信错误，请检查网络连接和端口");
             } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_TIMEOUT) {

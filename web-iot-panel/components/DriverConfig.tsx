@@ -120,7 +120,10 @@ export const DriverConfig: React.FC = () => {
       }));
       setDrivers(driverList);
     } catch (err: any) {
-      alert(err.message || '保存失败');
+      alertModal.showModal({
+        message: err.message || '保存失败',
+        type: 'error',
+      });
     } finally {
       setIsSaving(false);
     }

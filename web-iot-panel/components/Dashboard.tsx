@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Shield, Wifi, AlertTriangle, HardDrive } from 'lucide-react';
+import { Shield, Wifi, AlertTriangle, HardDrive, Loader2 } from 'lucide-react';
 import { CHART_DATA } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
-import { dashboardService } from '../src/api/services';
+import { dashboardService, systemService } from '../src/api/services';
 
 const StatCard = ({ icon: Icon, label, value, trend, colorClass, bgClass }: any) => (
   <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300">
@@ -22,6 +23,7 @@ const StatCard = ({ icon: Icon, label, value, trend, colorClass, bgClass }: any)
 
 export const Dashboard: React.FC = () => {
   const { t } = useAppContext();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     activeDevices: 0,
     onlineStatus: '0%',
@@ -30,6 +32,9 @@ export const Dashboard: React.FC = () => {
   });
   const [chartData, setChartData] = useState(CHART_DATA);
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
+  const [logModalOpen, setLogModalOpen] = useState(false);
+  const [logContent, setLogContent] = useState<string[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -55,6 +60,65 @@ export const Dashboard: React.FC = () => {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleHealthCheck = async () => {
+    setIsActionLoading('health');
+    try {
+      const response = await systemService.healthCheck();
+      const health = response.data;
+      
+      const statusText = health.status === 'healthy' ? '健康' : '警告';
+      const mqttStatus = health.mqtt.connected ? '已连接' : '未连接';
+      const diskUsage = health.disk.usagePercent;
+      
+      const message = `系统状态: ${statusText}\n\n` +
+        `MQTT: ${mqttStatus}\n` +
+        `数据库: ${health.database.status}\n` +
+        `SDK: ${health.sdk.status}\n` +
+        `磁盘使用: ${diskUsage}\n` +
+        `可用空间: ${health.disk.freeSpace}\n` +
+        `总空间: ${health.disk.totalSpace}`;
+      
+      alert(message);
+    } catch (err: any) {
+      alert('健康检查失败: ' + (err.message || '未知错误'));
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
+
+  const handleRestartMqtt = async () => {
+    if (!confirm('确定要重启MQTT连接吗？')) {
+      return;
+    }
+    
+    setIsActionLoading('mqtt');
+    try {
+      const response = await systemService.restartMqtt();
+      if (response.data.success) {
+        alert('MQTT重启成功');
+      } else {
+        alert('MQTT重启失败: ' + response.data.message);
+      }
+    } catch (err: any) {
+      alert('重启MQTT失败: ' + (err.message || '未知错误'));
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
+
+  const handleViewLogs = async () => {
+    setIsActionLoading('logs');
+    try {
+      const response = await systemService.getLogs(100);
+      setLogContent(response.data.content);
+      setLogModalOpen(true);
+    } catch (err: any) {
+      alert('获取日志失败: ' + (err.message || '未知错误'));
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -138,25 +202,92 @@ export const Dashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-800 mb-4">{t('quick_actions')}</h3>
           <div className="space-y-3">
-            <button className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors">
+            <button 
+              onClick={() => navigate('/devices')}
+              className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors"
+            >
               <span className="font-medium text-sm">{t('add_device')}</span>
               <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">+</span>
             </button>
-            <button className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors">
+            <button 
+              onClick={handleHealthCheck}
+              disabled={isActionLoading === 'health'}
+              className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <span className="font-medium text-sm">{t('health_check')}</span>
-              <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">Run</span>
+              {isActionLoading === 'health' ? (
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              ) : (
+                <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">Run</span>
+              )}
             </button>
-            <button className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors">
+            <button 
+              onClick={handleRestartMqtt}
+              disabled={isActionLoading === 'mqtt'}
+              className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <span className="font-medium text-sm">{t('restart_mqtt')}</span>
-              <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">Auto</span>
+              {isActionLoading === 'mqtt' ? (
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              ) : (
+                <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">Auto</span>
+              )}
             </button>
-            <button className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors">
+            <button 
+              onClick={handleViewLogs}
+              disabled={isActionLoading === 'logs'}
+              className="w-full py-3 px-4 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl flex items-center justify-between group transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <span className="font-medium text-sm">{t('view_logs')}</span>
-              <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">→</span>
+              {isActionLoading === 'logs' ? (
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              ) : (
+                <span className="bg-white p-1 rounded-md shadow-sm group-hover:bg-blue-200 transition-colors">→</span>
+              )}
             </button>
           </div>
         </div>
       </div>
+
+      {/* 日志查看Modal */}
+      {logModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setLogModalOpen(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">系统日志</h3>
+              <button
+                onClick={() => setLogModalOpen(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <span className="text-gray-500 text-xl">×</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-6">
+              <div className="max-h-96 overflow-auto bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs">
+                {logContent.length === 0 ? (
+                  <div className="text-gray-500">暂无日志内容</div>
+                ) : (
+                  logContent.map((line, index) => (
+                    <div key={index} className="mb-1">{line}</div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end p-6 border-t border-gray-200">
+              <button
+                onClick={() => setLogModalOpen(false)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

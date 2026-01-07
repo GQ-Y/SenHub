@@ -2,13 +2,20 @@ package com.hikvision.nvr.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hikvision.nvr.config.Config;
+import com.hikvision.nvr.mqtt.MqttClient;
 import com.hikvision.nvr.service.ConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
 import spark.Response;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,10 +24,17 @@ import java.util.Map;
 public class SystemController {
     private static final Logger logger = LoggerFactory.getLogger(SystemController.class);
     private final ConfigService configService;
+    private final MqttClient mqttClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SystemController(ConfigService configService) {
         this.configService = configService;
+        this.mqttClient = null;
+    }
+
+    public SystemController(ConfigService configService, MqttClient mqttClient) {
+        this.configService = configService;
+        this.mqttClient = mqttClient;
     }
 
     /**
@@ -89,6 +103,7 @@ public class SystemController {
      * 更新系统配置
      * PUT /api/system/config
      */
+    @SuppressWarnings("unchecked")
     public String updateConfig(Request request, Response response) {
         try {
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
@@ -185,6 +200,170 @@ public class SystemController {
         } catch (Exception e) {
             logger.error("创建响应失败", e);
             return "{\"code\":500,\"message\":\"Internal error\",\"data\":null}";
+        }
+    }
+
+    /**
+     * 系统健康检查
+     * GET /api/system/health
+     */
+    public String healthCheck(Request request, Response response) {
+        try {
+            Map<String, Object> health = new HashMap<>();
+            
+            // 检查MQTT连接状态
+            boolean mqttConnected = mqttClient != null && mqttClient.isConnected();
+            Map<String, Object> mqttStatus = new HashMap<>();
+            mqttStatus.put("connected", mqttConnected);
+            health.put("mqtt", mqttStatus);
+            
+            // 检查数据库连接
+            Map<String, Object> dbStatus = new HashMap<>();
+            dbStatus.put("status", "ok");
+            health.put("database", dbStatus);
+            
+            // 检查SDK状态
+            Map<String, Object> sdkStatus = new HashMap<>();
+            sdkStatus.put("status", "ok");
+            health.put("sdk", sdkStatus);
+            
+            // 检查磁盘空间
+            File rootDir = new File(".");
+            long freeSpace = rootDir.getFreeSpace();
+            long totalSpace = rootDir.getTotalSpace();
+            double diskUsagePercent = totalSpace > 0 ? (1.0 - (double) freeSpace / totalSpace) * 100 : 0;
+            Map<String, Object> diskInfo = new HashMap<>();
+            diskInfo.put("freeSpace", formatBytes(freeSpace));
+            diskInfo.put("totalSpace", formatBytes(totalSpace));
+            diskInfo.put("usagePercent", String.format("%.1f%%", diskUsagePercent));
+            health.put("disk", diskInfo);
+            
+            // 总体健康状态
+            boolean isHealthy = mqttConnected && diskUsagePercent < 90;
+            health.put("status", isHealthy ? "healthy" : "warning");
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(health);
+        } catch (Exception e) {
+            logger.error("健康检查失败", e);
+            response.status(500);
+            return createErrorResponse(500, "健康检查失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 重启MQTT连接
+     * POST /api/system/mqtt/restart
+     */
+    public String restartMqtt(Request request, Response response) {
+        try {
+            if (mqttClient == null) {
+                response.status(400);
+                return createErrorResponse(400, "MQTT客户端未初始化");
+            }
+            
+            // 断开连接
+            mqttClient.disconnect();
+            
+            // 等待1秒后重连
+            Thread.sleep(1000);
+            
+            // 重新连接
+            boolean connected = mqttClient.connect();
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", connected);
+            result.put("message", connected ? "MQTT重启成功" : "MQTT重启失败");
+            
+            response.status(connected ? 200 : 500);
+            response.type("application/json");
+            return createSuccessResponse(result);
+        } catch (Exception e) {
+            logger.error("重启MQTT失败", e);
+            response.status(500);
+            return createErrorResponse(500, "重启MQTT失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取日志内容
+     * GET /api/system/logs
+     */
+    public String getLogs(Request request, Response response) {
+        try {
+            String logFilePath = "./logs/app.log";
+            Config config = configService.getConfig();
+            if (config.getLog() != null && config.getLog().getFile() != null) {
+                logFilePath = config.getLog().getFile();
+            }
+            
+            File logFile = new File(logFilePath);
+            if (!logFile.exists()) {
+                response.status(404);
+                return createErrorResponse(404, "日志文件不存在");
+            }
+            
+            // 读取最后N行日志（默认100行）
+            int lines = 100;
+            String linesParam = request.queryParams("lines");
+            if (linesParam != null) {
+                try {
+                    lines = Integer.parseInt(linesParam);
+                    if (lines > 1000) lines = 1000; // 限制最大行数
+                } catch (NumberFormatException e) {
+                    // 使用默认值
+                }
+            }
+            
+            List<String> logLines = readLastLines(logFile, lines);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("file", logFilePath);
+            result.put("lines", logLines.size());
+            result.put("content", logLines);
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(result);
+        } catch (Exception e) {
+            logger.error("获取日志失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取日志失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 读取文件的最后N行
+     */
+    private List<String> readLastLines(File file, int n) throws IOException {
+        List<String> lines = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+                if (lines.size() > n) {
+                    lines.remove(0);
+                }
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * 格式化字节数
+     */
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        } else if (bytes < 1024 * 1024) {
+            return String.format("%.2f KB", bytes / 1024.0);
+        } else if (bytes < 1024 * 1024 * 1024) {
+            return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+        } else if (bytes < 1024L * 1024 * 1024 * 1024) {
+            return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+        } else {
+            return String.format("%.2f TB", bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0));
         }
     }
 

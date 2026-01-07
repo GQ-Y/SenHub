@@ -302,8 +302,8 @@ public class Main {
         DeviceController deviceController = new DeviceController(deviceManager, sdk, database, recorder);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
-        SystemController systemController = new SystemController(configService);
-        DashboardController dashboardController = new DashboardController(deviceManager);
+        SystemController systemController = new SystemController(configService, mqttClient);
+        DashboardController dashboardController = new DashboardController(deviceManager, database, config);
         
         // 注册路由
         // 认证路由
@@ -344,6 +344,9 @@ public class Main {
         // 系统配置路由
         Spark.get("/api/system/config", systemController::getConfig);
         Spark.put("/api/system/config", systemController::updateConfig);
+        Spark.get("/api/system/health", systemController::healthCheck);
+        Spark.post("/api/system/mqtt/restart", systemController::restartMqtt);
+        Spark.get("/api/system/logs", systemController::getLogs);
         
         // 仪表板路由
         Spark.get("/api/dashboard/stats", dashboardController::getStats);

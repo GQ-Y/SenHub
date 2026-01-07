@@ -5,7 +5,9 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SQLite数据库管理类
@@ -101,16 +103,37 @@ public class Database {
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
             ")";
 
+        String createDeviceHistoryTable = "CREATE TABLE IF NOT EXISTS device_history (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "device_id TEXT NOT NULL, " +
+            "status TEXT NOT NULL, " +
+            "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+            ")";
+
+        String createAlarmHistoryTable = "CREATE TABLE IF NOT EXISTS alarm_history (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "device_id TEXT, " +
+            "alarm_type TEXT NOT NULL, " +
+            "alarm_level TEXT DEFAULT 'warning', " +
+            "message TEXT, " +
+            "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+            ")";
+
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
             "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port); " +
             "CREATE INDEX IF NOT EXISTS idx_config_key ON configs(config_key); " +
-            "CREATE INDEX IF NOT EXISTS idx_driver_id ON drivers(driver_id);";
+            "CREATE INDEX IF NOT EXISTS idx_driver_id ON drivers(driver_id); " +
+            "CREATE INDEX IF NOT EXISTS idx_device_history_device_id ON device_history(device_id); " +
+            "CREATE INDEX IF NOT EXISTS idx_device_history_recorded_at ON device_history(recorded_at); " +
+            "CREATE INDEX IF NOT EXISTS idx_alarm_history_recorded_at ON alarm_history(recorded_at);";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
             stmt.execute(createUsersTable);
             stmt.execute(createConfigsTable);
             stmt.execute(createDriversTable);
+            stmt.execute(createDeviceHistoryTable);
+            stmt.execute(createAlarmHistoryTable);
             stmt.execute(createIndex);
             
             // 检查并添加channel列（如果表已存在但缺少该列）
@@ -223,6 +246,12 @@ public class Database {
             pstmt.setInt(2, userId);
             pstmt.setString(3, deviceId);
             int rows = pstmt.executeUpdate();
+            
+            // 记录设备状态历史
+            if (rows > 0) {
+                recordDeviceHistory(deviceId, status);
+            }
+            
             return rows > 0;
         } catch (SQLException e) {
             logger.error("更新设备状态失败: {}", deviceId, e);
@@ -567,6 +596,110 @@ public class Database {
         } catch (SQLException e) {
             logger.error("删除驱动配置失败: {}", driverId, e);
             return false;
+        }
+    }
+
+    // ==================== 历史数据管理方法 ====================
+
+    /**
+     * 记录设备状态历史
+     */
+    public boolean recordDeviceHistory(String deviceId, String status) {
+        String sql = "INSERT INTO device_history (device_id, status, recorded_at) VALUES (?, ?, CURRENT_TIMESTAMP)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, deviceId);
+            pstmt.setString(2, status);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            logger.error("记录设备状态历史失败: {}", deviceId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 记录告警历史
+     */
+    public boolean recordAlarm(String deviceId, String alarmType, String alarmLevel, String message) {
+        String sql = "INSERT INTO alarm_history (device_id, alarm_type, alarm_level, message, recorded_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, deviceId);
+            pstmt.setString(2, alarmType);
+            pstmt.setString(3, alarmLevel != null ? alarmLevel : "warning");
+            pstmt.setString(4, message);
+            pstmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            logger.error("记录告警历史失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 获取24小时内的设备连接趋势数据
+     */
+    public List<Map<String, Object>> getDeviceConnectivityTrend24h() {
+        List<Map<String, Object>> trendData = new ArrayList<>();
+        String sql = "SELECT " +
+            "strftime('%H', recorded_at) as hour, " +
+            "COUNT(DISTINCT CASE WHEN status = 'online' THEN device_id END) as online_count " +
+            "FROM device_history " +
+            "WHERE recorded_at >= datetime('now', '-24 hours') " +
+            "GROUP BY strftime('%H', recorded_at) " +
+            "ORDER BY hour";
+        
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            Map<String, Integer> hourData = new HashMap<>();
+            while (rs.next()) {
+                String hour = rs.getString("hour");
+                int onlineCount = rs.getInt("online_count");
+                hourData.put(hour, onlineCount);
+            }
+            
+            // 生成24小时数据点（每4小时一个点）
+            String[] timePoints = {"00", "04", "08", "12", "16", "20", "24"};
+            for (String time : timePoints) {
+                Map<String, Object> dataPoint = new HashMap<>();
+                dataPoint.put("name", time + ":00");
+                int online = hourData.getOrDefault(time, 0);
+                dataPoint.put("online", online);
+                trendData.add(dataPoint);
+            }
+        } catch (SQLException e) {
+            logger.error("获取设备连接趋势失败", e);
+        }
+        return trendData;
+    }
+
+    /**
+     * 获取24小时内的告警数量
+     */
+    public int getAlarmCount24h() {
+        String sql = "SELECT COUNT(*) as count FROM alarm_history WHERE recorded_at >= datetime('now', '-24 hours')";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+        } catch (SQLException e) {
+            logger.error("获取24小时告警数量失败", e);
+        }
+        return 0;
+    }
+
+    /**
+     * 清理旧的历史数据（保留30天）
+     */
+    public void cleanupOldHistory() {
+        try (Statement stmt = connection.createStatement()) {
+            int deleted1 = stmt.executeUpdate("DELETE FROM device_history WHERE recorded_at < datetime('now', '-30 days')");
+            int deleted2 = stmt.executeUpdate("DELETE FROM alarm_history WHERE recorded_at < datetime('now', '-30 days')");
+            if (deleted1 > 0 || deleted2 > 0) {
+                logger.info("清理旧历史数据完成: device_history={}, alarm_history={}", deleted1, deleted2);
+            }
+        } catch (SQLException e) {
+            logger.error("清理旧历史数据失败", e);
         }
     }
 

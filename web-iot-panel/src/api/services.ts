@@ -240,6 +240,36 @@ export const systemService = {
     const response = await put<SystemConfig>('/system/config', config);
     return response;
   },
+
+  /**
+   * 系统健康检查
+   */
+  async healthCheck() {
+    const response = await get<{
+      status: string;
+      mqtt: { connected: boolean };
+      database: { status: string };
+      sdk: { status: string };
+      disk: { freeSpace: string; totalSpace: string; usagePercent: string };
+    }>('/system/health');
+    return response;
+  },
+
+  /**
+   * 重启MQTT连接
+   */
+  async restartMqtt() {
+    const response = await post<{ success: boolean; message: string }>('/system/mqtt/restart');
+    return response;
+  },
+
+  /**
+   * 获取系统日志
+   */
+  async getLogs(lines?: number) {
+    const response = await get<{ file: string; lines: number; content: string[] }>('/system/logs', lines ? { lines: lines.toString() } : undefined);
+    return response;
+  },
 };
 
 // ==================== 仪表板服务 ====================
