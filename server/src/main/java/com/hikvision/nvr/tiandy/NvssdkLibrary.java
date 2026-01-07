@@ -1,8 +1,10 @@
 package com.hikvision.nvr.tiandy;
 
 import com.sun.jna.Library;
-import com.sun.jna.Native;
 import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.ptr.PointerByReference;
+import java.nio.ByteBuffer;
 
 /**
  * 天地伟业SDK JNA接口定义
@@ -28,6 +30,36 @@ public interface NvssdkLibrary extends Library {
     int RET_SYNCLOGON_PORT_ERROR = -7;
     int RET_SYNCLOGON_UNKNOW_ERROR = -8;
     
+    // 同步预览错误码
+    int RET_SYNCREALPLAY_TIMEOUT = -2;
+    
+    // 抓图类型
+    int CAPTURE_PICTURE_TYPE_YUV = 0;
+    int CAPTURE_PICTURE_TYPE_BMP = 1;
+    int CAPTURE_PICTURE_TYPE_JPG = 2;
+    int CAPTURE_PICTURE_TYPE_FEC_BMP = 3;
+    int CAPTURE_PICTURE_TYPE_FEC_JPG = 4;
+    
+    // 命令ID
+    int COMMAND_ID_TRANSPARENTCHANNELCONTROL_V5 = 0x1005;  // 云台控制命令
+    
+    // 查询命令
+    int CMD_NETFILE_QUERY_FILE = 0;  // 查询回放文件
+    
+    // 录制文件类型
+    int REC_FILE_TYPE_SDV = 0;
+    int REC_FILE_TYPE_AVI = 1;
+    int REC_FILE_TYPE_RAWAAC = 2;
+    int REC_FILE_TYPE_PS = 3;
+    int REC_FILE_TYPE_TS = 4;
+    
+    // 原始流通知类型
+    int RAW_NOTIFY_ALLOW_DECODE = 0;  // 允许解码
+    int RAW_NOTIFY_FORBID_DECODE = 1;  // 禁止解码
+    
+    // 帧类型
+    int AUDIO_FRAME = 5;
+    
     // SDK初始化
     int NetClient_Startup_V4(int iServerPort, int iClientPort, int iWnd);
     int NetClient_Cleanup();
@@ -38,6 +70,29 @@ public interface NvssdkLibrary extends Library {
     int NetClient_Logoff(int iLogonID);
     int NetClient_GetLogonStatus(int iLogonID);
     int NetClient_GetLastError();
+    
+    // 通道相关
+    int NetClient_GetChannelNum(int iLogonID, IntByReference piChanNum);
+    int NetClient_GetDigitalChannelNum(int iLogonID, IntByReference piDigitChannelNum);
+    
+    // 预览相关
+    int NetClient_SyncRealPlay(IntByReference puiRecvID, Pointer ptPara, int iParaSize);
+    int NetClient_StopRealPlay(int uiRecvID, int iParam);
+    
+    // 录制相关
+    int NetClient_StartCaptureFile(int ulConID, ByteBuffer cFileName, int iRecFileType);
+    int NetClient_StopCaptureFile(int ulConID);
+    
+    // 抓图相关
+    int NetClient_CapturePicture(int uiConID, int iPicType, ByteBuffer strFileName);
+    int NetClient_CapturePic(int uiConID, PointerByReference pucData);
+    
+    // 云台控制
+    int NetClient_SendCommand(int iLogonID, int iCommand, int iChannel, Pointer pvBuffer, int iBufSize);
+    
+    // 查询相关
+    int NetClient_SyncQuery(int iLogonID, int iChanNo, int iCmd, Pointer pvInPara, int iInLen, 
+                            Pointer pvOutPara, int iOutTotalLen, int iSingleLen);
     
     // 回调函数接口（简化版本，可以传null）
     int NetClient_SetNotifyFunction_V4(MAIN_NOTIFY_V4 mainNotify, 
@@ -65,5 +120,15 @@ public interface NvssdkLibrary extends Library {
     
     interface PROXY_NOTIFY extends com.sun.jna.Callback {
         void apply(int ulLogonID, int iCmdKey, Pointer cData, int iLen, Pointer iUser);
+    }
+    
+    // 原始流回调
+    interface RAWFRAME_NOTIFY extends com.sun.jna.Callback {
+        void apply(int uiID, Pointer pcData, int iLen, TiandySDKStructure.RAWFRAME_INFO ptRawFrameInfo, Pointer lpUserData);
+    }
+    
+    // 完整帧回调
+    interface FULLFRAME_NOTIFY_V4 extends com.sun.jna.Callback {
+        void apply(int iConnectID, int iStreamType, Pointer pcData, int iLen, Pointer pvHeader, Pointer pvUserData);
     }
 }

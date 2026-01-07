@@ -6,8 +6,16 @@ import com.hikvision.nvr.device.DeviceSDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.sun.jna.Native;
+import com.sun.jna.ptr.IntByReference;
 
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
 
 /**
  * 天地伟业SDK封装类
