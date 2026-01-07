@@ -122,19 +122,50 @@ public class TiandySDK implements DeviceSDK {
     
     @Override
     public int login(String ip, short port, String username, String password) {
+        // 天地伟业SDK支持大于32767的端口（如37777），但short类型会溢出
+        // 如果port是负数，说明发生了溢出（如37777会变成-27759）
+        // 需要恢复原始值：port & 0xFFFF 会将负数转换为无符号short值，但这不是我们想要的
+        // 实际上，如果port是负数，说明原始值大于32767，但无法从负数恢复原始值
+        // 因此，对于天地伟业SDK，应该直接使用loginWithIntPort方法，而不是通过这个接口
+        // 这里保留此方法以兼容接口，但实际应该使用loginWithIntPort
+        int intPort = port < 0 ? (port & 0xFFFF) : port;
+        // 如果port是负数，说明原始值在32768-65535之间，需要加上65536
+        if (port < 0) {
+            intPort = port & 0xFFFF; // 转换为无符号short值（0-65535）
+        } else {
+            intPort = port;
+        }
+        return loginWithIntPort(ip, intPort, username, password);
+    }
+    
+    /**
+     * 使用int类型端口登录（支持大于32767的端口，如37777）
+     * 这是天地伟业SDK的特殊需求，因为其默认端口37777超过了short的最大值
+     */
+    public int loginWithIntPort(String ip, int port, String username, String password) {
         if (!initialized || nvssdkLibrary == null) {
             logger.error("天地伟业SDK未初始化");
             return -1;
         }
         
         try {
+            // 按照天地伟业SDK示例代码的方式构造登录参数（参考Device.java第257-264行）
+            String strCharSet = "UTF-8";
+            
             TiandySDKStructure.tagLogonPara logonPara = new TiandySDKStructure.tagLogonPara();
             logonPara.iSize = logonPara.size();
-            System.arraycopy(ip.getBytes(), 0, logonPara.cNvsIP, 0, Math.min(ip.getBytes().length, logonPara.cNvsIP.length - 1));
+            
+            // 按照示例代码的方式，直接使用getBytes()赋值
+            // 示例代码：tNormal.cNvsIP = _strDevOrPublicIP.getBytes();
+            logonPara.cNvsIP = ip.getBytes();
             logonPara.iNvsPort = port;
-            System.arraycopy(username.getBytes(), 0, logonPara.cUserName, 0, Math.min(username.getBytes().length, logonPara.cUserName.length - 1));
-            System.arraycopy(password.getBytes(), 0, logonPara.cUserPwd, 0, Math.min(password.getBytes().length, logonPara.cUserPwd.length - 1));
-            System.arraycopy("UTF-8".getBytes(), 0, logonPara.cCharSet, 0, Math.min("UTF-8".getBytes().length, logonPara.cCharSet.length - 1));
+            logonPara.cUserName = username.getBytes();
+            logonPara.cUserPwd = password.getBytes();
+            logonPara.cCharSet = strCharSet.getBytes();
+            
+            // 其他字段保持默认值（null或0）
+            // cProxy, cNvsName, cProductID, cAccontName, cAccontPasswd, cNvsIPV6 使用默认值
+            
             logonPara.write();
             
             logger.info("开始登录天地伟业设备: {}:{}, 用户: {}", ip, port, username);

@@ -302,7 +302,7 @@ public class Main {
      * 启动HTTP服务器
      */
     private void startHttpServer() {
-        int port = 8080; // 默认端口，可以从配置中读取
+        int port = 8084; // 默认端口，可以从配置中读取
         
         Spark.port(port);
         

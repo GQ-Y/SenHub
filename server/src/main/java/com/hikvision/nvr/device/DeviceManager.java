@@ -5,6 +5,7 @@ import com.hikvision.nvr.config.Config;
 import com.hikvision.nvr.database.Database;
 import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.mqtt.MqttClient;
+import com.hikvision.nvr.tiandy.TiandySDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,27 +77,76 @@ public class DeviceManager {
                 return false;
             }
             logger.debug("使用指定品牌SDK登录: {} (品牌: {})", deviceId, brand);
-            userId = sdk.login(device.getIp(), (short)port, username, password);
+            // 天地伟业SDK需要使用int类型端口（支持所有端口，包括3000和37777）
+            // 因为其结构体中端口是int类型，而不是short类型
+            if ("tiandy".equals(brand)) {
+                TiandySDK tiandySDK = (TiandySDK) sdk;
+                userId = tiandySDK.loginWithIntPort(device.getIp(), port, username, password);
+            } else {
+                userId = sdk.login(device.getIp(), (short)port, username, password);
+            }
         } else {
             // 只有品牌为auto时才进行自动检测
             logger.debug("品牌为auto，开始自动检测设备品牌: {}", deviceId);
-            SDKFactory.BrandDetectionResult result = SDKFactory.detectBrand(
-                device.getIp(), (short)port, username, password);
-            if (result != null) {
-                sdk = result.getSdk();
-                userId = result.getUserId();
-                detectedBrand = result.getBrand();
-                // 保存检测到的品牌
-                device.setBrand(detectedBrand);
-                logger.info("自动检测到设备品牌: {} (品牌: {})", deviceId, detectedBrand);
-            } else {
-                // 所有SDK都失败
-                device.setBrand(DeviceInfo.BRAND_UNKNOWN);
-                device.setStatus("offline");
-                database.updateDeviceStatus(deviceId, "offline", -1);
-                logger.warn("设备登录失败: {} (所有SDK都失败)", deviceId);
-                logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
-                return false;
+            // 如果端口大于32767，优先尝试天地伟业SDK（因为天地伟业默认端口37777）
+            if (port > 32767) {
+                DeviceSDK tiandySDK = SDKFactory.getSDK("tiandy");
+                if (tiandySDK != null && tiandySDK instanceof TiandySDK) {
+                    logger.debug("端口大于32767，优先尝试天地伟业SDK");
+                    int tiandyUserId = ((TiandySDK) tiandySDK).loginWithIntPort(device.getIp(), port, username, password);
+                    if (tiandyUserId != -1) {
+                        sdk = tiandySDK;
+                        userId = tiandyUserId;
+                        detectedBrand = "tiandy";
+                        device.setBrand(detectedBrand);
+                        logger.info("自动检测到设备品牌: {} (品牌: tiandy, 端口: {})", deviceId, port);
+                    } else {
+                        // 天地伟业失败，继续尝试其他SDK
+                        logger.debug("天地伟业SDK登录失败，继续尝试其他SDK");
+                    }
+                }
+            }
+            
+            // 如果还没有成功，尝试标准检测流程
+            if (userId == -1) {
+                // 对于端口大于32767的情况，优先尝试天地伟业SDK
+                if (port > 32767) {
+                    DeviceSDK tiandySDK = SDKFactory.getSDK("tiandy");
+                    if (tiandySDK != null && tiandySDK instanceof TiandySDK) {
+                        int tiandyUserId = ((TiandySDK) tiandySDK).loginWithIntPort(device.getIp(), port, username, password);
+                        if (tiandyUserId != -1) {
+                            sdk = tiandySDK;
+                            userId = tiandyUserId;
+                            detectedBrand = "tiandy";
+                            device.setBrand(detectedBrand);
+                            logger.info("自动检测到设备品牌: {} (品牌: tiandy, 端口: {})", deviceId, port);
+                        }
+                    }
+                }
+                
+                // 如果还没有成功，尝试标准检测流程（使用short端口）
+                if (userId == -1 && port <= 32767) {
+                    SDKFactory.BrandDetectionResult result = SDKFactory.detectBrand(
+                        device.getIp(), (short)port, username, password);
+                    if (result != null) {
+                        sdk = result.getSdk();
+                        userId = result.getUserId();
+                        detectedBrand = result.getBrand();
+                        // 保存检测到的品牌
+                        device.setBrand(detectedBrand);
+                        logger.info("自动检测到设备品牌: {} (品牌: {})", deviceId, detectedBrand);
+                    }
+                }
+                
+                // 如果所有尝试都失败
+                if (userId == -1) {
+                    device.setBrand(DeviceInfo.BRAND_UNKNOWN);
+                    device.setStatus("offline");
+                    database.updateDeviceStatus(deviceId, "offline", -1);
+                    logger.warn("设备登录失败: {} (所有SDK都失败)", deviceId);
+                    logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
+                    return false;
+                }
             }
         }
         
