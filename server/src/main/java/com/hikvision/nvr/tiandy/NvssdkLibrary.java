@@ -43,6 +43,22 @@ public interface NvssdkLibrary extends Library {
     // 命令ID
     int COMMAND_ID_TRANSPARENTCHANNELCONTROL_V5 = 0x1005;  // 云台控制命令
     
+    // 云台控制码（参考NVSSDK.java和VideoCtrl.java示例）
+    // 协议模式控制码（用于DeviceCtrlEx）
+    int PROTOCOL_MOVE_UP = 1;        // 上
+    int PROTOCOL_MOVE_DOWN = 2;      // 下
+    int PROTOCOL_MOVE_LEFT = 3;      // 左
+    int PROTOCOL_MOVE_RIGHT = 4;     // 右
+    int PROTOCOL_MOVE_STOP = 9;      // 停止
+    int SET_HOR_AUTO_BEGIN = 23;     // 自动开始
+    int SET_HOR_AUTO_END = 24;       // 自动结束
+    
+    // 变倍控制码
+    int ZOOM_BIG = 31;               // 放大
+    int ZOOM_BIG_STOP = 32;          // 放大停止
+    int ZOOM_SMALL = 33;             // 缩小
+    int ZOOM_SMALL_STOP = 34;        // 缩小停止
+    
     // 查询命令
     int CMD_NETFILE_QUERY_FILE = 0;  // 查询回放文件
     
@@ -93,6 +109,9 @@ public interface NvssdkLibrary extends Library {
     // 查询相关
     int NetClient_SyncQuery(int iLogonID, int iChanNo, int iCmd, Pointer pvInPara, int iInLen, 
                             Pointer pvOutPara, int iOutTotalLen, int iSingleLen);
+    
+    // 设备控制相关
+    int NetClient_Reboot(int iLogonID);  // 重启设备
     
     // 回调函数接口（简化版本，可以传null）
     int NetClient_SetNotifyFunction_V4(MAIN_NOTIFY_V4 mainNotify, 

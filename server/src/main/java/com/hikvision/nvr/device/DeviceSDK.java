@@ -137,6 +137,15 @@ public interface DeviceSDK {
     }
     
     /**
+     * 重启设备
+     * @param userId 登录句柄
+     * @return 是否成功
+     */
+    default boolean rebootDevice(int userId) {
+        return false; // 默认不支持，子类可重写
+    }
+    
+    /**
      * 回放文件信息
      */
     class PlaybackFile {

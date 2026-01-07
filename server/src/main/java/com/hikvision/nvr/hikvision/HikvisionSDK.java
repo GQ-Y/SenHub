@@ -13,6 +13,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
 
 /**
  * 海康威视SDK封装类
@@ -372,6 +376,371 @@ public class HikvisionSDK implements DeviceSDK {
     public HCNetSDK getSDK() {
         return hCNetSDK;
     }
+    
+    // ========== 功能方法实现 ==========
+    
+    @Override
+    public int startRealPlay(int userId, int channel, int streamType) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return -1;
+        }
+        
+        try {
+            // 参考Recorder.java:260-278的实现
+            HCNetSDK.NET_DVR_PREVIEWINFO previewInfo = new HCNetSDK.NET_DVR_PREVIEWINFO();
+            previewInfo.lChannel = channel;
+            previewInfo.dwStreamType = streamType;  // 0=主码流, 1=子码流
+            previewInfo.dwLinkMode = 0;  // TCP方式
+            previewInfo.bBlocked = 1;  // 阻塞取流
+            previewInfo.byProtoType = 0;  // 私有协议
+            previewInfo.write();
+            
+            // 创建回调函数（可以为null）
+            HCNetSDK.FRealDataCallBack_V30 realDataCallback = null;
+            
+            // 启动预览
+            int realPlayHandle = hCNetSDK.NET_DVR_RealPlay_V40(userId, previewInfo, realDataCallback, null);
+            if (realPlayHandle == -1) {
+                logger.error("海康预览启动失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
+                return -1;
+            }
+            
+            logger.info("海康预览启动成功: userId={}, channel={}, streamType={}, handle={}", 
+                userId, channel, streamType, realPlayHandle);
+            return realPlayHandle;
+        } catch (Exception e) {
+            logger.error("海康预览启动异常: userId={}, channel={}", userId, channel, e);
+            return -1;
+        }
+    }
+    
+    @Override
+    public boolean stopRealPlay(int connectId) {
+        if (!initialized || hCNetSDK == null) {
+            return false;
+        }
+        
+        if (connectId < 0) {
+            return false;
+        }
+        
+        try {
+            boolean result = hCNetSDK.NET_DVR_StopRealPlay(connectId);
+            if (result) {
+                logger.info("海康预览停止成功: handle={}", connectId);
+                return true;
+            } else {
+                logger.error("海康预览停止失败: handle={}, 错误码={}", connectId, getLastError());
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("海康预览停止异常: handle={}", connectId, e);
+            return false;
+        }
+    }
+    
+    @Override
+    public boolean startRecording(int connectId, String filePath) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return false;
+        }
+        
+        if (connectId < 0) {
+            logger.error("无效的预览连接ID: {}", connectId);
+            return false;
+        }
+        
+        try {
+            // 参考Recorder.java:289的实现
+            // 使用NET_DVR_SaveRealData，直接传文件路径字符串
+            boolean saveResult = hCNetSDK.NET_DVR_SaveRealData(connectId, filePath);
+            if (saveResult) {
+                logger.info("海康录制启动成功: handle={}, filePath={}", connectId, filePath);
+                return true;
+            } else {
+                logger.error("海康录制启动失败: handle={}, filePath={}, 错误码={}", connectId, filePath, getLastError());
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("海康录制启动异常: handle={}, filePath={}", connectId, filePath, e);
+            return false;
+        }
+    }
+    
+    @Override
+    public boolean stopRecording(int connectId) {
+        if (!initialized || hCNetSDK == null) {
+            return false;
+        }
+        
+        if (connectId < 0) {
+            return false;
+        }
+        
+        try {
+            // 参考Recorder.java:309-320的实现
+            // 先停止保存数据，再停止预览
+            hCNetSDK.NET_DVR_StopSaveRealData(connectId);
+            Thread.sleep(500);  // 等待数据写入完成
+            boolean result = hCNetSDK.NET_DVR_StopRealPlay(connectId);
+            if (result) {
+                logger.info("海康录制停止成功: handle={}", connectId);
+                return true;
+            } else {
+                logger.error("海康录制停止失败: handle={}, 错误码={}", connectId, getLastError());
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("海康录制停止异常: handle={}", connectId, e);
+            return false;
+        }
+    }
+    
+    @Override
+    public boolean capturePicture(int connectId, int userId, int channel, String filePath, int pictureType) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return false;
+        }
+        
+        try {
+            // 参考DeviceController.java:448-518的实现
+            // 海康SDK的抓图使用NET_DVR_CaptureJPEGPicture，需要userId和channel，不需要connectId
+            HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
+            jpegPara.wPicSize = 0;  // 0=CIF, 使用当前分辨率
+            jpegPara.wPicQuality = 2;  // 图片质量：0-最好 1-较好 2-一般
+            jpegPara.write();
+            
+            byte[] fileNameBytes = filePath.getBytes("UTF-8");
+            byte[] fileNameArray = new byte[256];
+            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
+            
+            boolean result = hCNetSDK.NET_DVR_CaptureJPEGPicture(userId, channel, jpegPara, fileNameArray);
+            if (result) {
+                logger.info("海康抓图成功: userId={}, channel={}, filePath={}", userId, channel, filePath);
+                return true;
+            } else {
+                logger.error("海康抓图失败: userId={}, channel={}, filePath={}, 错误码={}", 
+                    userId, channel, filePath, getLastError());
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("海康抓图异常: userId={}, channel={}, filePath={}", userId, channel, filePath, e);
+            return false;
+        }
+    }
+    
+    @Override
+    public boolean ptzControl(int userId, int channel, String command, String action, int speed) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return false;
+        }
+        
+        try {
+            // 参考DeviceController.java:620-636的实现
+            int commandCode = getPtzCommandCode(command);
+            if (commandCode == -1) {
+                logger.error("未知的云台控制命令: {}", command);
+                return false;
+            }
+            
+            // action: start=0, stop=1
+            int stopFlag = "stop".equalsIgnoreCase(action) ? 1 : 0;
+            boolean result = hCNetSDK.NET_DVR_PTZControl_Other(userId, channel, commandCode, stopFlag);
+            
+            if (result) {
+                logger.info("海康云台控制成功: userId={}, channel={}, command={}, action={}, speed={}", 
+                    userId, channel, command, action, speed);
+                return true;
+            } else {
+                logger.error("海康云台控制失败: userId={}, channel={}, command={}, 错误码={}", 
+                    userId, channel, command, getLastError());
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("海康云台控制异常: userId={}, channel={}, command={}", userId, channel, command, e);
+            return false;
+        }
+    }
+    
+    /**
+     * 获取PTZ命令码
+     */
+    private int getPtzCommandCode(String command) {
+        switch (command.toLowerCase()) {
+            case "up":
+                return HCNetSDK.TILT_UP;
+            case "down":
+                return HCNetSDK.TILT_DOWN;
+            case "left":
+                return HCNetSDK.PAN_LEFT;
+            case "right":
+                return HCNetSDK.PAN_RIGHT;
+            case "zoom_in":
+                return HCNetSDK.ZOOM_IN;
+            case "zoom_out":
+                return HCNetSDK.ZOOM_OUT;
+            default:
+                return -1;
+        }
+    }
+    
+    @Override
+    public List<DeviceSDK.PlaybackFile> queryPlaybackFiles(int userId, int channel, Date startTime, Date endTime) {
+        List<DeviceSDK.PlaybackFile> files = new ArrayList<>();
+        
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return files;
+        }
+        
+        try {
+            // 参考VideoDemo.java:403-536的实现
+            // 使用NET_DVR_FindFile_V40查询文件列表
+            HCNetSDK.NET_DVR_FILECOND_V40 struFileCond = new HCNetSDK.NET_DVR_FILECOND_V40();
+            struFileCond.read();
+            struFileCond.lChannel = channel;  // 通道号
+            struFileCond.dwFileType = 0xFF;  // 所有文件类型
+            struFileCond.byFindType = 0;  // 0=定时录像
+            
+            // 设置开始时间
+            HCNetSDK.NET_DVR_TIME startTimeStruct = convertToDvrTime(startTime);
+            struFileCond.struStartTime.dwYear = startTimeStruct.dwYear;
+            struFileCond.struStartTime.dwMonth = startTimeStruct.dwMonth;
+            struFileCond.struStartTime.dwDay = startTimeStruct.dwDay;
+            struFileCond.struStartTime.dwHour = startTimeStruct.dwHour;
+            struFileCond.struStartTime.dwMinute = startTimeStruct.dwMinute;
+            struFileCond.struStartTime.dwSecond = startTimeStruct.dwSecond;
+            
+            // 设置结束时间
+            HCNetSDK.NET_DVR_TIME endTimeStruct = convertToDvrTime(endTime);
+            struFileCond.struStopTime.dwYear = endTimeStruct.dwYear;
+            struFileCond.struStopTime.dwMonth = endTimeStruct.dwMonth;
+            struFileCond.struStopTime.dwDay = endTimeStruct.dwDay;
+            struFileCond.struStopTime.dwHour = endTimeStruct.dwHour;
+            struFileCond.struStopTime.dwMinute = endTimeStruct.dwMinute;
+            struFileCond.struStopTime.dwSecond = endTimeStruct.dwSecond;
+            
+            struFileCond.write();
+            
+            // 建立查询
+            int findHandle = hCNetSDK.NET_DVR_FindFile_V40(userId, struFileCond);
+            if (findHandle <= -1) {
+                logger.error("海康回放查询建立失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
+                return files;
+            }
+            
+            // 循环查询文件
+            while (true) {
+                HCNetSDK.NET_DVR_FINDDATA_V40 struFindData = new HCNetSDK.NET_DVR_FINDDATA_V40();
+                long state = hCNetSDK.NET_DVR_FindNextFile_V40(findHandle, struFindData);
+                
+                if (state <= -1) {
+                    // 查询失败
+                    logger.error("海康回放查询失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
+                    break;
+                } else if (state == 1000) {
+                    // 获取文件信息成功
+                    struFindData.read();
+                    try {
+                        String fileName = new String(struFindData.sFileName, "UTF-8").trim();
+                        if (!fileName.isEmpty()) {
+                            // 转换文件时间
+                            Calendar fileStartCal = Calendar.getInstance();
+                            fileStartCal.set(struFindData.struStartTime.dwYear,
+                                struFindData.struStartTime.dwMonth - 1,
+                                struFindData.struStartTime.dwDay,
+                                struFindData.struStartTime.dwHour,
+                                struFindData.struStartTime.dwMinute,
+                                struFindData.struStartTime.dwSecond);
+                            Date fileStartTime = fileStartCal.getTime();
+                            
+                            Calendar fileEndCal = Calendar.getInstance();
+                            fileEndCal.set(struFindData.struStopTime.dwYear,
+                                struFindData.struStopTime.dwMonth - 1,
+                                struFindData.struStopTime.dwDay,
+                                struFindData.struStopTime.dwHour,
+                                struFindData.struStopTime.dwMinute,
+                                struFindData.struStopTime.dwSecond);
+                            Date fileEndTime = fileEndCal.getTime();
+                            
+                            DeviceSDK.PlaybackFile playbackFile = new DeviceSDK.PlaybackFile(
+                                fileName, fileStartTime, fileEndTime, 
+                                struFindData.dwFileSize, channel);
+                            files.add(playbackFile);
+                            
+                            logger.debug("找到回放文件: fileName={}, size={}, startTime={}, endTime={}", 
+                                fileName, struFindData.dwFileSize, fileStartTime, fileEndTime);
+                        }
+                    } catch (Exception e) {
+                        logger.warn("解析文件信息失败", e);
+                    }
+                } else if (state == 1001) {
+                    // 未查找到文件
+                    logger.debug("未查找到回放文件: userId={}, channel={}", userId, channel);
+                    break;
+                } else if (state == 1002) {
+                    // 正在查找，请等待
+                    try {
+                        Thread.sleep(100);  // 等待100ms后继续查询
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    continue;
+                } else if (state == 1003) {
+                    // 没有更多的文件，查找结束
+                    logger.debug("回放查询结束: userId={}, channel={}, 文件数={}", userId, channel, files.size());
+                    break;
+                } else if (state == 1004) {
+                    // 查找文件时异常
+                    logger.warn("回放查询异常: userId={}, channel={}", userId, channel);
+                    break;
+                } else if (state == 1005) {
+                    // 查找文件超时
+                    logger.warn("回放查询超时: userId={}, channel={}", userId, channel);
+                    break;
+                } else {
+                    // 未知状态
+                    logger.warn("回放查询未知状态: state={}, userId={}, channel={}", state, userId, channel);
+                    break;
+                }
+            }
+            
+            // 关闭查询
+            boolean closeResult = hCNetSDK.NET_DVR_FindClose_V30(findHandle);
+            if (!closeResult) {
+                logger.warn("关闭回放查询失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
+            }
+            
+            logger.info("海康回放查询成功: userId={}, channel={}, 文件数={}", userId, channel, files.size());
+            return files;
+        } catch (Exception e) {
+            logger.error("海康回放查询异常: userId={}, channel={}", userId, channel, e);
+            return files;
+        }
+    }
+    
+    /**
+     * 转换Date为NET_DVR_TIME结构体
+     */
+    private HCNetSDK.NET_DVR_TIME convertToDvrTime(Date date) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(date);
+        
+        HCNetSDK.NET_DVR_TIME dvrTime = new HCNetSDK.NET_DVR_TIME();
+        dvrTime.dwYear = cal.get(Calendar.YEAR);
+        dvrTime.dwMonth = cal.get(Calendar.MONTH) + 1;
+        dvrTime.dwDay = cal.get(Calendar.DAY_OF_MONTH);
+        dvrTime.dwHour = cal.get(Calendar.HOUR_OF_DAY);
+        dvrTime.dwMinute = cal.get(Calendar.MINUTE);
+        dvrTime.dwSecond = cal.get(Calendar.SECOND);
+        
+        return dvrTime;
+    }
 
     /**
      * 异常回调实现
@@ -433,6 +802,44 @@ public class HikvisionSDK implements DeviceSDK {
             } catch (Exception e) {
                 logger.error("处理设备离线事件失败: userId={}", userId, e);
             }
+        }
+    }
+    
+    @Override
+    public boolean rebootDevice(int userId) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return false;
+        }
+        
+        if (userId < 0) {
+            logger.error("无效的登录句柄: {}", userId);
+            return false;
+        }
+        
+        try {
+            // 参考DeviceController.java:302-310的实现
+            // 优先使用NET_DVR_RebootDVR，如果不可用则使用NET_DVR_RemoteControl
+            boolean result = false;
+            try {
+                result = hCNetSDK.NET_DVR_RebootDVR(userId);
+            } catch (Exception e) {
+                // 如果NET_DVR_RebootDVR不可用，尝试使用NET_DVR_RemoteControl
+                logger.debug("NET_DVR_RebootDVR不可用，尝试使用NET_DVR_RemoteControl: {}", e.getMessage());
+                result = hCNetSDK.NET_DVR_RemoteControl(userId, HCNetSDK.MINOR_REMOTE_REBOOT, null, 0);
+            }
+            
+            if (result) {
+                logger.info("海康设备重启命令已发送: userId={}", userId);
+                return true;
+            } else {
+                int errorCode = getLastError();
+                logger.error("海康设备重启失败: userId={}, 错误码={}", userId, errorCode);
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("海康设备重启异常: userId={}", userId, e);
+            return false;
         }
     }
 }

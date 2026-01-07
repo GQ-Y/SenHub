@@ -3,9 +3,13 @@ package com.hikvision.nvr.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hikvision.nvr.database.DeviceInfo;
 import com.hikvision.nvr.device.DeviceManager;
+import com.hikvision.nvr.device.DeviceSDK;
 import com.hikvision.nvr.hikvision.HCNetSDK;
 import com.hikvision.nvr.hikvision.HikvisionSDK;
 import com.hikvision.nvr.recorder.Recorder;
+import com.hikvision.nvr.service.CaptureService;
+import com.hikvision.nvr.service.PTZService;
+import com.hikvision.nvr.service.PlaybackService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -19,20 +23,29 @@ import java.util.*;
 
 /**
  * 设备管理控制器
+ * 使用功能服务类实现多品牌SDK支持
  */
 public class DeviceController {
     private static final Logger logger = LoggerFactory.getLogger(DeviceController.class);
     private final DeviceManager deviceManager;
-    private final HikvisionSDK sdk;
     private final com.hikvision.nvr.database.Database database;
     private final Recorder recorder;
+    private final CaptureService captureService;
+    private final PTZService ptzService;
+    private final PlaybackService playbackService;
+    private final HikvisionSDK sdk; // 保留用于重启等特殊功能（仅海康设备）
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public DeviceController(DeviceManager deviceManager, HikvisionSDK sdk, com.hikvision.nvr.database.Database database, Recorder recorder) {
+    public DeviceController(DeviceManager deviceManager, com.hikvision.nvr.database.Database database, 
+                          Recorder recorder, CaptureService captureService, PTZService ptzService, 
+                          PlaybackService playbackService, HikvisionSDK sdk) {
         this.deviceManager = deviceManager;
-        this.sdk = sdk;
         this.database = database;
         this.recorder = recorder;
+        this.captureService = captureService;
+        this.ptzService = ptzService;
+        this.playbackService = playbackService;
+        this.sdk = sdk; // 保留用于重启等特殊功能
     }
 
     /**
@@ -429,109 +442,22 @@ public class DeviceController {
             }
             
             // 确保设备已登录
-            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
-                if (!deviceManager.loginDevice(device)) {
-                    response.status(500);
-                    return createErrorResponse(500, "设备登录失败，无法抓图");
-                }
-            }
-            
-            int userId = deviceManager.getDeviceUserId(deviceId);
             int channel = device.getChannel() > 0 ? device.getChannel() : 1;
-            HCNetSDK hcNetSDK = sdk.getSDK();
             
-            if (hcNetSDK == null) {
+            // 使用CaptureService进行抓图
+            String picFilePath = captureService.captureSnapshot(deviceId, channel);
+            
+            if (picFilePath == null) {
                 response.status(500);
-                return createErrorResponse(500, "SDK未初始化");
-            }
-            
-            // 设置抓图参数
-            HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
-            jpegPara.wPicSize = 0; // 0=CIF, 使用当前分辨率
-            jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
-            jpegPara.write();
-            
-            // 创建临时文件保存图片（每个设备只保留一张最新图片）
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
-            String timestamp = sdf.format(new Date());
-            
-            // 使用绝对路径，确保路径正确
-            String picDir = "./captures";
-            java.io.File dir = new java.io.File(picDir);
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
-            
-            // 获取绝对路径，确保查找和删除时使用正确的路径
-            String absolutePicDir = dir.getAbsolutePath();
-            logger.info("抓图目录（绝对路径）: {}", absolutePicDir);
-            
-            // 删除该设备的所有旧图片（只保留最新一张）- 在抓图前先清理旧图
-            String deviceIdForFile = deviceId.replace(".", "_").replace(":", "_");
-            String prefix = "capture_" + deviceIdForFile + "_";
-            logger.info("开始清理旧抓图文件，设备ID: {}, 文件前缀: {}", deviceId, prefix);
-            
-            // 使用绝对路径的目录对象来查找文件
-            java.io.File absoluteDir = new java.io.File(absolutePicDir);
-            java.io.File[] oldFiles = absoluteDir.listFiles((d, name) -> {
-                boolean matches = name.startsWith(prefix) && name.endsWith(".jpg");
-                if (matches) {
-                    logger.info("匹配到旧文件: {}", name);
-                }
-                return matches;
-            });
-            
-            if (oldFiles != null && oldFiles.length > 0) {
-                logger.info("找到 {} 个旧抓图文件，准备删除（设备: {}）", oldFiles.length, deviceId);
-                int deletedCount = 0;
-                for (java.io.File oldFile : oldFiles) {
-                    String fileName = oldFile.getName();
-                    String filePath = oldFile.getAbsolutePath();
-                    if (oldFile.exists()) {
-                        if (oldFile.delete()) {
-                            deletedCount++;
-                            logger.info("已删除旧抓图文件: {} (路径: {})", fileName, filePath);
-                        } else {
-                            logger.warn("删除旧抓图文件失败: {} (路径: {})", fileName, filePath);
-                        }
-                    } else {
-                        logger.warn("旧抓图文件不存在: {} (路径: {})", fileName, filePath);
-                    }
-                }
-                logger.info("清理完成，已删除 {} 个旧抓图文件（设备: {}）", deletedCount, deviceId);
-            } else {
-                logger.info("未找到旧抓图文件（设备: {}, 前缀: {}）", deviceId, prefix);
-            }
-            
-            String picFileName = absolutePicDir + "/capture_" + deviceIdForFile + "_" + timestamp + ".jpg";
-            byte[] fileNameBytes = picFileName.getBytes("UTF-8");
-            byte[] fileNameArray = new byte[256];
-            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
-            
-            // 执行抓图
-            boolean captureResult = hcNetSDK.NET_DVR_CaptureJPEGPicture(userId, channel, jpegPara, fileNameArray);
-            
-            if (!captureResult) {
-                int errorCode = sdk.getLastError();
-                response.status(500);
-                return createErrorResponse(500, "抓图失败，错误码: " + errorCode);
-            }
-            
-            // 等待文件写入完成
-            Thread.sleep(1000);
-            
-            // 检查文件是否存在
-            java.io.File picFile = new java.io.File(picFileName);
-            if (!picFile.exists()) {
-                response.status(500);
-                return createErrorResponse(500, "抓图文件未生成");
+                return createErrorResponse(500, "抓图失败");
             }
             
             // 返回文件URL（相对路径，前端可以通过代理访问）
             Map<String, Object> data = new HashMap<>();
-            data.put("url", "/api/devices/" + deviceId + "/snapshot/file?path=" + java.net.URLEncoder.encode(picFileName, "UTF-8"));
-            data.put("filePath", picFileName);
-            data.put("timestamp", timestamp);
+            data.put("url", "/api/devices/" + deviceId + "/snapshot/file?path=" + java.net.URLEncoder.encode(picFilePath, "UTF-8"));
+            data.put("filePath", picFilePath);
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            data.put("timestamp", sdf.format(new Date()));
             
             response.status(200);
             response.type("application/json");
@@ -590,14 +516,6 @@ public class DeviceController {
                 return createErrorResponse(404, "设备不存在");
             }
             
-            // 确保设备已登录
-            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
-                if (!deviceManager.loginDevice(device)) {
-                    response.status(500);
-                    return createErrorResponse(500, "设备登录失败，无法控制PTZ");
-                }
-            }
-            
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
             String action = (String) body.get("action"); // start/stop
             String command = (String) body.get("command"); // up/down/left/right/zoom_in/zoom_out
@@ -608,31 +526,14 @@ public class DeviceController {
                 return createErrorResponse(400, "action和command参数不能为空");
             }
             
-            int userId = deviceManager.getDeviceUserId(deviceId);
             int channel = device.getChannel() > 0 ? device.getChannel() : 1;
-            HCNetSDK hcNetSDK = sdk.getSDK();
             
-            if (hcNetSDK == null) {
-                response.status(500);
-                return createErrorResponse(500, "SDK未初始化");
-            }
-            
-            // 获取PTZ命令码
-            int commandCode = getPtzCommandCode(command);
-            if (commandCode == -1) {
-                response.status(400);
-                return createErrorResponse(400, "未知的PTZ命令: " + command);
-            }
-            
-            // 执行PTZ控制
-            // action: start=0, stop=1
-            int stopFlag = "stop".equalsIgnoreCase(action) ? 1 : 0;
-            boolean result = hcNetSDK.NET_DVR_PTZControl_Other(userId, channel, commandCode, stopFlag);
+            // 使用PTZService进行云台控制
+            boolean result = ptzService.ptzControl(deviceId, channel, command, action, speed);
             
             if (!result) {
-                int errorCode = sdk.getLastError();
                 response.status(500);
-                return createErrorResponse(500, "PTZ控制失败，错误码: " + errorCode);
+                return createErrorResponse(500, "PTZ控制失败");
             }
             
             Map<String, Object> data = new HashMap<>();
@@ -648,28 +549,6 @@ public class DeviceController {
             logger.error("PTZ控制失败", e);
             response.status(500);
             return createErrorResponse(500, "PTZ控制失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 获取PTZ命令码
-     */
-    private int getPtzCommandCode(String command) {
-        switch (command.toLowerCase()) {
-            case "up":
-                return HCNetSDK.TILT_UP;
-            case "down":
-                return HCNetSDK.TILT_DOWN;
-            case "left":
-                return HCNetSDK.PAN_LEFT;
-            case "right":
-                return HCNetSDK.PAN_RIGHT;
-            case "zoom_in":
-                return HCNetSDK.ZOOM_IN;
-            case "zoom_out":
-                return HCNetSDK.ZOOM_OUT;
-            default:
-                return -1;
         }
     }
 
@@ -1117,14 +996,6 @@ public class DeviceController {
                 return createErrorResponse(404, "设备不存在");
             }
             
-            // 确保设备已登录
-            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
-                if (!deviceManager.loginDevice(device)) {
-                    response.status(500);
-                    return createErrorResponse(500, "设备登录失败，无法回放");
-                }
-            }
-            
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
             String startTimeStr = (String) body.get("startTime");
             String endTimeStr = (String) body.get("endTime");
@@ -1135,70 +1006,40 @@ public class DeviceController {
                 return createErrorResponse(400, "startTime和endTime参数不能为空");
             }
             
-            int userId = deviceManager.getDeviceUserId(deviceId);
-            HCNetSDK hcNetSDK = sdk.getSDK();
-            
-            if (hcNetSDK == null) {
-                response.status(500);
-                return createErrorResponse(500, "SDK未初始化");
-            }
-            
             // 解析时间
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             Date startTime = sdf.parse(startTimeStr);
             Date endTime = sdf.parse(endTimeStr);
             
-            // 设置回放条件
-            HCNetSDK.NET_DVR_TIME startTimeStruct = convertToDvrTime(startTime);
-            HCNetSDK.NET_DVR_TIME endTimeStruct = convertToDvrTime(endTime);
+            // 使用PlaybackService查询回放文件列表
+            List<DeviceSDK.PlaybackFile> files = playbackService.queryPlaybackFiles(deviceId, channel, startTime, endTime);
             
-            HCNetSDK.NET_DVR_PLAYCOND playCond = new HCNetSDK.NET_DVR_PLAYCOND();
-            playCond.dwChannel = channel;
-            playCond.struStartTime = startTimeStruct;
-            playCond.struStopTime = endTimeStruct;
-            playCond.write();
-            
-            // 生成下载文件名
-            SimpleDateFormat fileSdf = new SimpleDateFormat("yyyyMMddHHmmss");
-            String timestamp = fileSdf.format(startTime);
-            String downloadDir = "./downloads";
-            java.io.File dir = new java.io.File(downloadDir);
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
-            String fileName = downloadDir + "/playback_" + deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".mp4";
-            
-            // 开始下载
-            int downloadHandle = hcNetSDK.NET_DVR_GetFileByTime_V40(userId, fileName, playCond);
-            if (downloadHandle == -1) {
-                int errorCode = sdk.getLastError();
-                response.status(500);
-                return createErrorResponse(500, "开始下载录像失败，错误码: " + errorCode);
-            }
-            
-            // 启动下载
-            boolean playResult = hcNetSDK.NET_DVR_PlayBackControl(downloadHandle, HCNetSDK.NET_DVR_PLAYSTART, 0, null);
-            if (!playResult) {
-                int errorCode = sdk.getLastError();
-                response.status(500);
-                return createErrorResponse(500, "启动下载失败，错误码: " + errorCode);
+            // 转换为响应格式
+            List<Map<String, Object>> fileList = new ArrayList<>();
+            for (DeviceSDK.PlaybackFile file : files) {
+                Map<String, Object> fileInfo = new HashMap<>();
+                fileInfo.put("fileName", file.getFileName());
+                fileInfo.put("startTime", sdf.format(file.getStartTime()));
+                fileInfo.put("endTime", sdf.format(file.getEndTime()));
+                fileInfo.put("fileSize", file.getFileSize());
+                fileInfo.put("channel", file.getChannel());
+                fileList.add(fileInfo);
             }
             
             Map<String, Object> data = new HashMap<>();
-            data.put("downloadHandle", downloadHandle);
-            data.put("filePath", fileName);
+            data.put("files", fileList);
+            data.put("count", fileList.size());
             data.put("channel", channel);
             data.put("startTime", startTimeStr);
             data.put("endTime", endTimeStr);
-            data.put("message", "录像下载已启动，请使用downloadHandle查询下载进度");
             
             response.status(200);
             response.type("application/json");
             return createSuccessResponse(data);
         } catch (Exception e) {
-            logger.error("录像回放失败", e);
+            logger.error("查询回放文件失败", e);
             response.status(500);
-            return createErrorResponse(500, "录像回放失败: " + e.getMessage());
+            return createErrorResponse(500, "查询回放文件失败: " + e.getMessage());
         }
     }
 

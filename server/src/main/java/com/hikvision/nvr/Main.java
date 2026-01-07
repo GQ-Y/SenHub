@@ -17,6 +17,10 @@ import com.hikvision.nvr.mqtt.MqttClient;
 import com.hikvision.nvr.recorder.Recorder;
 import com.hikvision.nvr.scanner.DeviceScanner;
 import com.hikvision.nvr.service.ConfigService;
+import com.hikvision.nvr.service.RecorderService;
+import com.hikvision.nvr.service.CaptureService;
+import com.hikvision.nvr.service.PTZService;
+import com.hikvision.nvr.service.PlaybackService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Spark;
@@ -40,6 +44,10 @@ public class Main {
     private Keeper keeper;
     private Recorder recorder;
     private ConfigService configService;
+    private RecorderService recorderService;
+    private CaptureService captureService;
+    private PTZService ptzService;
+    private PlaybackService playbackService;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -98,13 +106,19 @@ public class Main {
             deviceManager = new DeviceManager(database, config.getDevice());
             logger.info("设备管理器初始化成功");
 
-            // 5. 初始化录制管理器（暂时使用海康SDK，后续可扩展为多品牌）
-            HikvisionSDK hikvisionSDK = (HikvisionSDK) SDKFactory.getSDK("hikvision");
-            recorder = new Recorder(hikvisionSDK, deviceManager, config.getRecorder());
+            // 5. 初始化功能服务类
+            recorderService = new RecorderService(deviceManager, config.getRecorder());
+            captureService = new CaptureService(deviceManager, "./captures");
+            ptzService = new PTZService(deviceManager);
+            playbackService = new PlaybackService(deviceManager);
+            logger.info("功能服务类初始化成功");
+
+            // 6. 初始化录制管理器（使用RecorderService）
+            recorder = new Recorder(recorderService, config.getRecorder());
             recorder.start();
             logger.info("录制管理器初始化成功");
 
-            // 6. 初始化MQTT客户端
+            // 7. 初始化MQTT客户端
             mqttClient = new MqttClient(config.getMqtt());
             setupMqttMessageHandler();
             if (!mqttClient.connect()) {
@@ -113,11 +127,12 @@ public class Main {
             }
             logger.info("MQTT客户端连接成功");
             
-            // 6.5. 设置DeviceManager的MQTT客户端（用于状态通知）
+            // 7.5. 设置DeviceManager的MQTT客户端（用于状态通知）
             deviceManager.setMqttClient(mqttClient);
             logger.info("DeviceManager已设置MQTT客户端");
             
-            // 6.6. 设置SDK状态回调（用于设备离线/在线监听）
+            // 7.6. 设置SDK状态回调（用于设备离线/在线监听）
+            HikvisionSDK hikvisionSDK = (HikvisionSDK) SDKFactory.getSDK("hikvision");
             if (hikvisionSDK != null) {
                 hikvisionSDK.setStatusCallbacks(deviceManager, mqttClient);
                 logger.info("海康SDK状态回调已设置");
@@ -129,27 +144,28 @@ public class Main {
                 logger.info("大华SDK状态回调已设置");
             }
 
-            // 7. 初始化命令处理器（暂时使用海康SDK，后续可扩展为多品牌）
-            commandHandler = new CommandHandler(deviceManager, hikvisionSDK, recorder);
+            // 8. 初始化命令处理器（使用功能服务类）
+            commandHandler = new CommandHandler(deviceManager, hikvisionSDK, recorder, 
+                captureService, ptzService, playbackService);
             logger.info("命令处理器初始化成功");
 
-            // 8. 启动设备扫描器（暂时使用海康SDK，后续可扩展为多品牌）
+            // 9. 启动设备扫描器（暂时使用海康SDK，后续可扩展为多品牌）
             scanner = new DeviceScanner(hikvisionSDK, database, config.getScanner(), config.getDevice());
             scanner.setDeviceFoundCallback(this::onDeviceFound);
             if (scanner.start()) {
                 logger.info("设备扫描器启动成功");
             }
 
-            // 9. 启动保活系统
+            // 10. 启动保活系统
             keeper = new Keeper(deviceManager, config.getKeeper(), recorder);
             keeper.start();
             logger.info("保活系统启动成功");
 
-            // 10. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
+            // 11. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
             logger.info("HTTP服务器启动成功");
 
-            // 10.5. 为所有已存在的设备启动录制（如果录制功能启用，异步执行避免阻塞）
+            // 11.5. 为所有已存在的设备启动录制（如果录制功能启用，异步执行避免阻塞）
             if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
                 // 在后台线程中执行，避免阻塞主线程
                 new Thread(() -> {
@@ -162,7 +178,7 @@ public class Main {
                 }, "DeviceRecordingStarter").start();
             }
 
-            // 11. 注册JVM关闭钩子
+            // 12. 注册JVM关闭钩子
             Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
             logger.info("========================================");
@@ -332,7 +348,8 @@ public class Main {
         // 初始化控制器
         AuthController authController = new AuthController(database);
         HikvisionSDK hikvisionSDKForController = (HikvisionSDK) SDKFactory.getSDK("hikvision");
-        DeviceController deviceController = new DeviceController(deviceManager, hikvisionSDKForController, database, recorder);
+        DeviceController deviceController = new DeviceController(deviceManager, database, recorder, 
+            captureService, ptzService, playbackService, hikvisionSDKForController);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);

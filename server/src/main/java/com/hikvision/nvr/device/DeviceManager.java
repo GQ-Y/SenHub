@@ -222,6 +222,13 @@ public class DeviceManager {
         Integer userId = deviceLoginMap.get(deviceId);
         return userId != null ? userId : -1;
     }
+    
+    /**
+     * 获取设备SDK实例
+     */
+    public DeviceSDK getDeviceSDK(String deviceId) {
+        return deviceSDKMap.get(deviceId);
+    }
 
     /**
      * 获取设备信息

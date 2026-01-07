@@ -2,3 +2,4 @@
 server/captures/*
 server/records/*
 sdk/*
+.DS_Store
