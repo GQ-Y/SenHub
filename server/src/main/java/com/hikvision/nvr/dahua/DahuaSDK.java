@@ -52,6 +52,7 @@ public class DahuaSDK implements DeviceSDK {
     @Override
     public boolean init(Config.SdkConfig config) {
         if (initialized) {
+            logger.debug("大华SDK已经初始化，跳过重复初始化");
             return true;
         }
         
@@ -60,7 +61,7 @@ public class DahuaSDK implements DeviceSDK {
         try {
             // 加载大华SDK库（使用绝对路径，避免静态初始化问题）
             if (!loadLibrary()) {
-                logger.error("加载大华SDK库失败");
+                logger.warn("大华SDK库加载失败（可能原因：库文件不存在或架构不匹配），跳过初始化");
                 return false;
             }
             
@@ -68,7 +69,7 @@ public class DahuaSDK implements DeviceSDK {
             boolean initResult = netsdk.CLIENT_Init(null, null);
             
             if (!initResult) {
-                logger.error("大华SDK初始化失败");
+                logger.error("大华SDK初始化失败（SDK库加载成功但SDK初始化失败）");
                 return false;
             }
             

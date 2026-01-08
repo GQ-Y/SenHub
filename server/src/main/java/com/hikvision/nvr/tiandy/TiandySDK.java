@@ -38,6 +38,7 @@ public class TiandySDK implements DeviceSDK {
     @Override
     public boolean init(Config.SdkConfig config) {
         if (initialized) {
+            logger.debug("天地伟业SDK已经初始化，跳过重复初始化");
             return true;
         }
         
@@ -46,14 +47,14 @@ public class TiandySDK implements DeviceSDK {
         try {
             // 加载SDK库
             if (!loadLibrary()) {
-                logger.error("加载天地伟业SDK库失败");
+                logger.warn("天地伟业SDK库加载失败（可能原因：库文件不存在或架构不匹配），跳过初始化");
                 return false;
             }
             
             // SDK初始化
             int ret = nvssdkLibrary.NetClient_Startup_V4(0, 0, 0);
             if (ret != NvssdkLibrary.RET_SUCCESS) {
-                logger.error("天地伟业SDK初始化失败，返回值: {}", ret);
+                logger.error("天地伟业SDK初始化失败，返回值: {}（SDK库加载成功但SDK初始化失败）", ret);
                 return false;
             }
             

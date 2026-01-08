@@ -53,6 +53,7 @@ public class HikvisionSDK implements DeviceSDK {
     @Override
     public boolean init(Config.SdkConfig config) {
         if (initialized) {
+            logger.debug("海康SDK已经初始化，跳过重复初始化");
             return true;
         }
 
@@ -61,7 +62,7 @@ public class HikvisionSDK implements DeviceSDK {
         try {
             // 加载SDK库
             if (!loadLibrary()) {
-                logger.error("加载SDK库失败");
+                logger.warn("海康SDK库加载失败（可能原因：库文件不存在或架构不匹配），跳过初始化");
                 return false;
             }
 
@@ -72,7 +73,7 @@ public class HikvisionSDK implements DeviceSDK {
 
             // SDK初始化
             if (!hCNetSDK.NET_DVR_Init()) {
-                logger.error("SDK初始化失败，错误码: {}", getLastError());
+                logger.error("海康SDK初始化失败，错误码: {}（SDK库加载成功但SDK初始化失败）", getLastError());
                 return false;
             }
 
@@ -92,11 +93,11 @@ public class HikvisionSDK implements DeviceSDK {
             }
 
             initialized = true;
-            logger.info("SDK初始化成功");
+            logger.info("海康SDK初始化成功");
             return true;
 
         } catch (Exception e) {
-            logger.error("SDK初始化异常", e);
+            logger.error("海康SDK初始化异常", e);
             return false;
         }
     }

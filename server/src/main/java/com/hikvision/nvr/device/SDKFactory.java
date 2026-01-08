@@ -22,6 +22,7 @@ public class SDKFactory {
     
     /**
      * 初始化所有SDK
+     * 不管是否有设备，只要库文件存在且架构匹配，就尝试初始化
      */
     public static void init(Config config) {
         if (initialized) {
@@ -29,6 +30,16 @@ public class SDKFactory {
         }
         
         try {
+            // 创建默认SDK配置（如果config.getSdk()为null）
+            Config.SdkConfig sdkConfig = config.getSdk();
+            if (sdkConfig == null) {
+                sdkConfig = new Config.SdkConfig();
+                sdkConfig.setLibPath("./lib/hikvision");
+                sdkConfig.setLogPath("./sdkLog");
+                sdkConfig.setLogLevel(3);
+                logger.info("使用默认SDK配置");
+            }
+            
             // 预先设置大华SDK库路径，避免NetSDKLib静态初始化时找不到库
             // 必须在任何SDK初始化之前设置，因为NetSDKLib.NETSDK_INSTANCE是静态的
             try {
@@ -42,38 +53,35 @@ public class SDKFactory {
                 logger.debug("设置大华SDK库路径失败: {}", e.getMessage());
             }
             
-            // 初始化海康SDK
-            if (config.getSdk() != null) {
-                hikvisionSDK = HikvisionSDK.getInstance();
-                if (hikvisionSDK.init(config.getSdk())) {
-                    logger.info("海康SDK初始化成功");
-                } else {
-                    logger.warn("海康SDK初始化失败");
-                }
+            // 初始化海康SDK（不依赖config.getSdk()，SDK内部会检查库文件和架构）
+            logger.info("尝试初始化海康SDK...");
+            hikvisionSDK = HikvisionSDK.getInstance();
+            if (hikvisionSDK.init(sdkConfig)) {
+                logger.info("✓ 海康SDK初始化成功");
+            } else {
+                logger.warn("✗ 海康SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
             }
             
-            // 初始化天地伟业SDK
-            if (config.getSdk() != null) {
-                tiandySDK = TiandySDK.getInstance();
-                // 使用相同的配置，但可以后续扩展为独立配置
-                if (tiandySDK.init(config.getSdk())) {
-                    logger.info("天地伟业SDK初始化成功");
-                } else {
-                    logger.warn("天地伟业SDK初始化失败");
-                }
+            // 初始化天地伟业SDK（不依赖config.getSdk()，SDK内部会检查库文件和架构）
+            logger.info("尝试初始化天地伟业SDK...");
+            tiandySDK = TiandySDK.getInstance();
+            if (tiandySDK.init(sdkConfig)) {
+                logger.info("✓ 天地伟业SDK初始化成功");
+            } else {
+                logger.warn("✗ 天地伟业SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
             }
             
-            // 初始化大华SDK
-            if (config.getSdk() != null) {
-                dahuaSDK = DahuaSDK.getInstance();
-                if (dahuaSDK.init(config.getSdk())) {
-                    logger.info("大华SDK初始化成功");
-                } else {
-                    logger.warn("大华SDK初始化失败");
-                }
+            // 初始化大华SDK（不依赖config.getSdk()，SDK内部会检查库文件和架构）
+            logger.info("尝试初始化大华SDK...");
+            dahuaSDK = DahuaSDK.getInstance();
+            if (dahuaSDK.init(sdkConfig)) {
+                logger.info("✓ 大华SDK初始化成功");
+            } else {
+                logger.warn("✗ 大华SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
             }
             
             initialized = true;
+            logger.info("SDK工厂初始化完成（部分SDK可能未初始化，这是正常的）");
             
         } catch (Exception e) {
             logger.error("SDK工厂初始化异常", e);
