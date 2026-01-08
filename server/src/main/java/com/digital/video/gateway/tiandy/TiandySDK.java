@@ -59,7 +59,25 @@ public class TiandySDK implements DeviceSDK {
         
         // 初始化报警回调（如果alarmService已设置）
         if (alarmService != null) {
-            initAlarmCallback();
+            // 创建报警回调
+            alarmNotifyCallback = new NvssdkLibrary.ALARM_NOTIFY_V4() {
+                @Override
+                public void apply(int ulLogonID, int iChan, int iAlarmState, int iAlarmType, com.sun.jna.Pointer iUser) {
+                    try {
+                        // 处理报警事件
+                        if (alarmService != null) {
+                            // 通过logonID查找设备信息
+                            // 这里需要从设备管理器中查找对应的设备
+                            String alarmType = "Tiandy_Alarm_" + iAlarmType;
+                            String alarmMessage = String.format("天地伟业报警: logonID=%d, channel=%d, state=%d, type=%d", 
+                                ulLogonID, iChan, iAlarmState, iAlarmType);
+                            alarmService.handleAlarm(String.valueOf(ulLogonID), iChan, alarmType, alarmMessage);
+                        }
+                    } catch (Exception e) {
+                        logger.error("处理天地伟业报警回调异常", e);
+                    }
+                }
+            };
         }
         
         emptyParaNotify = new NvssdkLibrary.PARACHANGE_NOTIFY_V4() {
@@ -197,8 +215,19 @@ public class TiandySDK implements DeviceSDK {
         }
         
         try {
-            // 天地伟业SDK库文件在 ./lib/tiandy/ 目录下，不依赖config中的lib_path
-            String libDir = System.getProperty("user.dir") + "/lib/tiandy";
+            // 天地伟业SDK库文件在 ./lib/x86/tiandy/ 目录下
+            // 注意：天地伟业仅支持x86架构，不支持ARM
+            String libDir = com.digital.video.gateway.Common.LibraryPathHelper.getSDKLibPath("tiandy");
+            
+            // 检查是否支持当前架构
+            if (libDir == null) {
+                String archDir = com.digital.video.gateway.Common.LibraryPathHelper.getArchitectureDir();
+                logger.warn("天地伟业SDK仅支持x86架构，当前系统架构为{}，跳过初始化", archDir);
+                return false;
+            }
+            
+            logger.debug("天地伟业SDK库路径: {} (架构: {})", libDir, 
+                com.digital.video.gateway.Common.LibraryPathHelper.getArchitectureDir());
             
             File libDirFile = new File(libDir);
             if (!libDirFile.exists()) {
@@ -223,10 +252,11 @@ public class TiandySDK implements DeviceSDK {
             
             String actualLibPath = libFile.getAbsolutePath();
             
-            // 设置库路径到LD_LIBRARY_PATH（用于加载依赖库）
-            String currentLibPath = System.getProperty("java.library.path");
-            String newLibPath = libDir + (currentLibPath != null ? ":" + currentLibPath : "");
+            // 设置库路径到java.library.path（用于加载依赖库）
+            // 使用LibraryPathHelper构建完整的库路径
+            String newLibPath = com.digital.video.gateway.Common.LibraryPathHelper.buildLibraryPath();
             System.setProperty("java.library.path", newLibPath);
+            logger.debug("设置java.library.path: {}", newLibPath);
             
             // 使用绝对路径加载库（类似海康SDK的方式）
             try {

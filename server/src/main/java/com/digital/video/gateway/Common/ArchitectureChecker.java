@@ -108,7 +108,7 @@ public class ArchitectureChecker {
     /**
      * 标准化架构名称
      */
-    private static String normalizeArchitecture(String arch) {
+    public static String normalizeArchitecture(String arch) {
         if (arch == null) {
             return "unknown";
         }

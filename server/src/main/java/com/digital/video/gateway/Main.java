@@ -98,7 +98,7 @@ public class Main {
                     "hikvision_sdk",
                     "Hikvision SDK",
                     "6.1.9.45",
-                    sdkConfig.getLibPath() != null ? sdkConfig.getLibPath() : "./lib/hikvision",
+                    sdkConfig.getLibPath() != null ? sdkConfig.getLibPath() : "./lib",
                     sdkConfig.getLogPath() != null ? sdkConfig.getLogPath() : "./sdkLog",
                     sdkConfig.getLogLevel() > 0 ? sdkConfig.getLogLevel() : 3,
                     "ACTIVE"

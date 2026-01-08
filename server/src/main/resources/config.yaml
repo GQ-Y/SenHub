@@ -59,14 +59,20 @@ log:
   max_age: 30  # 日志文件保留天数
 
 # SDK配置（支持多品牌：海康、天地伟业、大华）
-# 所有品牌SDK共享此配置，库文件路径会自动识别
+# 所有品牌SDK共享此配置，库文件路径会根据系统架构自动识别
 sdk:
-  lib_path: "./lib/hikvision"  # 海康SDK库文件路径
+  lib_path: "./lib"  # SDK库文件基础路径（会根据架构自动选择arm或x86子目录）
   log_path: "./sdkLog"  # SDK日志路径
   log_level: 3  # SDK日志级别
-  # 注意：海康SDK库文件在 ./lib/hikvision/
-  # 注意：天地伟业SDK库文件在 ./lib/tiandy/
-  # 注意：大华SDK库文件在 ./lib/dahua/
+  # 目录结构：
+  #   lib/
+  #     arm/
+  #       hikvision/    (海康ARM库)
+  #       dahua/        (大华ARM库)
+  #     x86/
+  #       hikvision/    (海康x86库)
+  #       tiandy/       (天地伟业x86库，仅x86)
+  #       dahua/        (大华x86库)
 
 # 录制配置
 recorder:

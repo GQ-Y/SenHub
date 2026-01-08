@@ -1,6 +1,7 @@
 package com.digital.video.gateway.hikvision;
 
 import com.digital.video.gateway.Common.ArchitectureChecker;
+import com.digital.video.gateway.Common.LibraryPathHelper;
 import com.digital.video.gateway.Common.osSelect;
 import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.device.DeviceManager;
@@ -113,19 +114,26 @@ public class HikvisionSDK implements DeviceSDK {
         }
 
         try {
+            // 使用架构区分的目录结构：lib/{arch}/hikvision/
             String baseLibPath;
             if (sdkConfig != null && sdkConfig.getLibPath() != null) {
-                baseLibPath = sdkConfig.getLibPath();
+                // 如果配置中提供了路径，使用LibraryPathHelper处理
+                baseLibPath = LibraryPathHelper.getSDKLibPath(
+                    sdkConfig.getLibPath(), "hikvision");
             } else {
-                baseLibPath = System.getProperty("user.dir") + "/lib/hikvision";
+                // 默认使用架构区分的路径
+                baseLibPath = LibraryPathHelper.getSDKLibPath("hikvision");
             }
+            
+            logger.debug("海康SDK库路径: {} (架构: {})", baseLibPath, 
+                LibraryPathHelper.getArchitectureDir());
 
-            // 根据系统架构选择对应的库文件
-            String osArch = System.getProperty("os.arch");
+            // 查找库文件（优先查找架构特定文件，然后查找默认文件）
             File libFile = null;
             String libFileName = "libhcnetsdk.so";
             
-            // 尝试使用架构特定的库文件
+            // 首先尝试查找架构特定的库文件（如libhcnetsdk.so.x86_64）
+            String osArch = System.getProperty("os.arch");
             if (osArch != null) {
                 String normalizedArch = normalizeArchitecture(osArch);
                 String archSpecificLib = baseLibPath + "/libhcnetsdk.so." + normalizedArch;
@@ -138,12 +146,14 @@ public class HikvisionSDK implements DeviceSDK {
                 }
             }
             
-            // 如果架构特定库不存在，尝试使用默认库
+            // 如果架构特定库不存在，尝试使用默认库文件
             if (libFile == null || !libFile.exists()) {
                 String defaultLibPath = baseLibPath + "/libhcnetsdk.so";
                 libFile = new File(defaultLibPath);
                 if (!libFile.exists()) {
-                    logger.error("SDK库文件不存在: {} (已尝试: {})", defaultLibPath, baseLibPath + "/libhcnetsdk.so." + normalizeArchitecture(osArch));
+                    logger.error("SDK库文件不存在: {} (已尝试架构特定文件: {})", 
+                        defaultLibPath, baseLibPath + "/libhcnetsdk.so." + 
+                        (osArch != null ? normalizeArchitecture(osArch) : "unknown"));
                     return false;
                 }
                 libFileName = "libhcnetsdk.so";
@@ -155,29 +165,43 @@ public class HikvisionSDK implements DeviceSDK {
                 return false;
             }
 
-            // 设置库路径到java.library.path（用于JNA查找库文件）
+            // 设置库路径到java.library.path（用于JNA查找库文件和依赖库）
+            // 使用LibraryPathHelper构建完整的库路径
             String libDir = libFile.getParent();
-            String currentLibPath = System.getProperty("java.library.path");
-            String newLibPath = libDir + (currentLibPath != null ? ":" + currentLibPath : "");
+            String hcNetSDKComDir = libDir + "/HCNetSDKCom";
+            
+            // 使用LibraryPathHelper构建完整的库路径
+            String newLibPath = LibraryPathHelper.buildLibraryPath();
             System.setProperty("java.library.path", newLibPath);
+            logger.debug("设置java.library.path: {}", newLibPath);
             
-            // JNA的Native.loadLibrary需要库文件名（不带路径和扩展名）
-            // 库文件名格式：libhcnetsdk.so 或 libhcnetsdk.so.x86_64
-            // 需要提取基础名称：hcnetsdk
-            String libraryName = libFileName;
-            if (libraryName.startsWith("lib")) {
-                libraryName = libraryName.substring(3);
-            }
-            if (libraryName.endsWith(".so")) {
-                libraryName = libraryName.substring(0, libraryName.length() - 3);
-            }
-            // 如果还有架构后缀，去掉
-            if (libraryName.contains(".")) {
-                libraryName = libraryName.substring(0, libraryName.indexOf("."));
-            }
+            // 使用绝对路径直接加载库文件，确保能找到正确的架构版本
+            // 这样可以避免JNA在java.library.path中查找时的问题
+            String absoluteLibPath = libFile.getAbsolutePath();
             
-            // 使用库文件名加载（JNA会从java.library.path中查找）
-            hCNetSDK = (HCNetSDK) Native.loadLibrary(libraryName, HCNetSDK.class);
+            // 如果使用的是架构特定的库文件（如libhcnetsdk.so.x86_64），
+            // 需要确保libhcnetsdk.so符号链接指向它，或者直接使用绝对路径加载
+            try {
+                // 尝试使用绝对路径加载
+                hCNetSDK = (HCNetSDK) Native.load(absoluteLibPath, HCNetSDK.class);
+                logger.debug("使用绝对路径加载库成功: {}", absoluteLibPath);
+            } catch (UnsatisfiedLinkError e) {
+                // 如果绝对路径加载失败，尝试使用库名加载（JNA会从java.library.path中查找）
+                // 提取基础库名：hcnetsdk
+                String libraryName = libFileName;
+                if (libraryName.startsWith("lib")) {
+                    libraryName = libraryName.substring(3);
+                }
+                if (libraryName.endsWith(".so")) {
+                    libraryName = libraryName.substring(0, libraryName.length() - 3);
+                }
+                // 如果还有架构后缀，去掉
+                if (libraryName.contains(".")) {
+                    libraryName = libraryName.substring(0, libraryName.indexOf("."));
+                }
+                logger.debug("尝试使用库名加载: {}", libraryName);
+                hCNetSDK = (HCNetSDK) Native.loadLibrary(libraryName, HCNetSDK.class);
+            }
             logger.info("SDK库加载成功: {} (系统架构: {}, 库文件名: {})", libFile.getAbsolutePath(), osArch, libFileName);
             return true;
 
@@ -221,11 +245,15 @@ public class HikvisionSDK implements DeviceSDK {
      */
     private void setupLinuxLibraries(Config.SdkConfig config) {
         try {
-            String libPath = config.getLibPath();
-            if (libPath == null) {
-                libPath = System.getProperty("user.dir") + "/lib/hikvision";
+            // 使用架构区分的目录结构：lib/{arch}/hikvision/
+            String libPath;
+            if (config.getLibPath() != null) {
+                libPath = LibraryPathHelper.getSDKLibPath(
+                    config.getLibPath(), "hikvision");
+            } else {
+                libPath = LibraryPathHelper.getSDKLibPath("hikvision");
             }
-
+            
             // 确保路径是绝对路径
             File libPathFile = new File(libPath);
             if (!libPathFile.isAbsolute()) {
@@ -480,7 +508,7 @@ public class HikvisionSDK implements DeviceSDK {
         // 设置报警回调
         if (hCNetSDK != null && alarmService != null) {
             AlarmMessageCallback alarmCallback = new AlarmMessageCallback();
-            hCNetSDK.NET_DVR_SetDVRMessCallBack(alarmCallback);
+            hCNetSDK.NET_DVR_SetDVRMessageCallBack_V30(alarmCallback, null);
             logger.info("海康SDK报警回调已设置");
         }
     }
@@ -503,10 +531,7 @@ public class HikvisionSDK implements DeviceSDK {
                     // 从pAlarmer中提取设备信息
                     if (pAlarmer != null && pAlarmer.byDeviceIPValid == 1) {
                         String deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8).trim();
-                        int channel = 1; // 默认通道1
-                        if (pAlarmer.byChannelValid == 1) {
-                            channel = pAlarmer.byChannel;
-                        }
+                        int channel = 1; // 默认通道1，通道信息需要从报警信息中解析
                         
                         // 通过IP和端口查找设备
                         if (deviceManager != null && alarmService != null) {

@@ -102,8 +102,15 @@ public class DahuaSDK implements DeviceSDK {
         }
         
         try {
-            // 大华SDK库文件在 ./lib/dahua/ 目录下
-            String libDir = System.getProperty("user.dir") + "/lib/dahua";
+            // 大华SDK库文件在 ./lib/{arch}/dahua/ 目录下
+            // 使用架构区分的目录结构
+            String libDir = com.digital.video.gateway.Common.LibraryPathHelper.getSDKLibPath("dahua");
+            if (libDir == null) {
+                logger.error("无法获取大华SDK库路径");
+                return false;
+            }
+            logger.debug("大华SDK库路径: {} (架构: {})", libDir, 
+                com.digital.video.gateway.Common.LibraryPathHelper.getArchitectureDir());
             String libPath = libDir + "/libdhnetsdk.so";
             
             File libFile = new File(libPath);
@@ -118,11 +125,11 @@ public class DahuaSDK implements DeviceSDK {
                 return false;
             }
             
-            // 设置库路径到LD_LIBRARY_PATH（用于加载依赖库）
-            String currentLibPath = System.getProperty("java.library.path");
-            String newLibPath = libDir + 
-                (currentLibPath != null ? ":" + currentLibPath : "");
+            // 设置库路径到java.library.path（用于加载依赖库）
+            // 使用LibraryPathHelper构建完整的库路径
+            String newLibPath = com.digital.video.gateway.Common.LibraryPathHelper.buildLibraryPath();
             System.setProperty("java.library.path", newLibPath);
+            logger.debug("设置java.library.path: {}", newLibPath);
             
             // 使用绝对路径直接加载NetSDKLib，而不是使用静态的NETSDK_INSTANCE
             // 这样可以避免静态初始化时路径未设置的问题
