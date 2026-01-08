@@ -149,7 +149,7 @@ public interface NvssdkLibrary extends Library {
     
     // 回调接口定义
     interface MAIN_NOTIFY_V4 extends com.sun.jna.Callback {
-        void apply(int iLogonID, long wParam, Pointer lParam, Pointer notifyUserData);
+        void apply(int iLogonID, com.sun.jna.NativeLong wParam, Pointer lParam, Pointer notifyUserData);
     }
     
     interface ALARM_NOTIFY_V4 extends com.sun.jna.Callback {
@@ -157,7 +157,7 @@ public interface NvssdkLibrary extends Library {
     }
     
     interface PARACHANGE_NOTIFY_V4 extends com.sun.jna.Callback {
-        void apply(int ulLogonID, int iChan, int iParaType, Pointer strPara, Pointer iUser);
+        void apply(int ulLogonID, int iChan, int iParaType, TiandySDKStructure.STR_Para strPara, Pointer iUser);
     }
     
     interface COMRECV_NOTIFY_V4 extends com.sun.jna.Callback {

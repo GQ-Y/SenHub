@@ -300,6 +300,20 @@ public class TiandySDKStructure {
     }
     
     /**
+     * 参数结构体（用于PARACHANGE_NOTIFY_V4回调）
+     * 参考NVSSDK.java:268-271
+     */
+    public static class STR_Para extends Structure {
+        public long[] m_iPara = new long[10];
+        public byte[] m_cPara = new byte[33];
+        
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("m_iPara", "m_cPara");
+        }
+    }
+    
+    /**
      * 抓图数据结构体
      * 参考NetClientTypes.h:12895-12902
      */

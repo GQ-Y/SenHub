@@ -25,6 +25,55 @@ public class TiandySDK implements DeviceSDK {
     private boolean initialized = false;
     private Config.SdkConfig sdkConfig;
     
+    // 回调对象（延迟初始化，在库加载后创建，确保JNA能正确映射）
+    private NvssdkLibrary.MAIN_NOTIFY_V4 emptyMainNotify;
+    private NvssdkLibrary.ALARM_NOTIFY_V4 emptyAlarmNotify;
+    private NvssdkLibrary.PARACHANGE_NOTIFY_V4 emptyParaNotify;
+    private NvssdkLibrary.COMRECV_NOTIFY_V4 emptyComNotify;
+    private NvssdkLibrary.PROXY_NOTIFY emptyProxyNotify;
+    
+    /**
+     * 初始化回调对象（在库加载后调用）
+     */
+    private void initCallbacks() {
+        // 空的回调对象（SDK要求不能传null，必须使用匿名内部类，不能使用lambda）
+        // 注意：MAIN_NOTIFY_V4的第二个参数必须是NativeLong，不能是long（与官方示例一致）
+        emptyMainNotify = new NvssdkLibrary.MAIN_NOTIFY_V4() {
+            @Override
+            public void apply(int iLogonID, com.sun.jna.NativeLong wParam, com.sun.jna.Pointer lParam, com.sun.jna.Pointer notifyUserData) {
+                // 空实现
+            }
+        };
+        
+        emptyAlarmNotify = new NvssdkLibrary.ALARM_NOTIFY_V4() {
+            @Override
+            public void apply(int ulLogonID, int iChan, int iAlarmState, int iAlarmType, com.sun.jna.Pointer iUser) {
+                // 空实现
+            }
+        };
+        
+        emptyParaNotify = new NvssdkLibrary.PARACHANGE_NOTIFY_V4() {
+            @Override
+            public void apply(int ulLogonID, int iChan, int iParaType, TiandySDKStructure.STR_Para strPara, com.sun.jna.Pointer iUser) {
+                // 空实现
+            }
+        };
+        
+        emptyComNotify = new NvssdkLibrary.COMRECV_NOTIFY_V4() {
+            @Override
+            public void apply(int ulLogonID, com.sun.jna.Pointer cData, int iLen, int iComNo, com.sun.jna.Pointer iUser) {
+                // 空实现
+            }
+        };
+        
+        emptyProxyNotify = new NvssdkLibrary.PROXY_NOTIFY() {
+            @Override
+            public void apply(int ulLogonID, int iCmdKey, com.sun.jna.Pointer cData, int iLen, com.sun.jna.Pointer iUser) {
+                // 空实现
+            }
+        };
+    }
+    
     private TiandySDK() {
     }
     
@@ -51,15 +100,73 @@ public class TiandySDK implements DeviceSDK {
                 return false;
             }
             
-            // SDK初始化
-            int ret = nvssdkLibrary.NetClient_Startup_V4(0, 0, 0);
-            if (ret != NvssdkLibrary.RET_SUCCESS) {
-                logger.error("天地伟业SDK初始化失败，返回值: {}（SDK库加载成功但SDK初始化失败）", ret);
-                return false;
+            // 在库加载后初始化回调对象（确保JNA能正确映射回调接口）
+            initCallbacks();
+            
+            // 根据官方示例，先获取SDK版本信息（必须调用read()方法）
+            try {
+                TiandySDKStructure.SDK_VERSION ver = new TiandySDKStructure.SDK_VERSION();
+                int versionRet = nvssdkLibrary.NetClient_GetVersion(ver);
+                ver.read(); // 根据官方示例，必须调用read()方法
+                logger.debug("天地伟业SDK获取版本信息返回值: {}", versionRet);
+                if (versionRet == NvssdkLibrary.RET_SUCCESS && ver.m_cVerInfo != null) {
+                    String versionInfo = new String(ver.m_cVerInfo).trim();
+                    if (!versionInfo.isEmpty()) {
+                        logger.info("天地伟业SDK版本: {}", versionInfo);
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("获取SDK版本信息失败: {}", e.getMessage());
             }
             
-            // 设置回调函数（可以传null，简化处理）
-            nvssdkLibrary.NetClient_SetNotifyFunction_V4(null, null, null, null, null);
+            // 尝试先调用Startup，然后再设置回调函数（测试不同的初始化顺序）
+            // 注意：官方示例是先SetNotifyFunction再Startup，但我们可以尝试相反的顺序
+            int startupRet = nvssdkLibrary.NetClient_Startup_V4(0, 0, 0);
+            logger.debug("天地伟业SDK Startup返回值: {}", startupRet);
+            if (startupRet != NvssdkLibrary.RET_SUCCESS) {
+                int lastError = nvssdkLibrary.NetClient_GetLastError();
+                logger.warn("天地伟业SDK Startup失败，返回值: {}，GetLastError返回值: {}（尝试继续设置回调函数）", startupRet, lastError);
+            }
+            
+            // 设置回调函数（根据官方综合示例JavaClientDemo.java，所有5个回调对象都应该传入）
+            int setNotifyRet = nvssdkLibrary.NetClient_SetNotifyFunction_V4(
+                emptyMainNotify, emptyAlarmNotify, emptyParaNotify, emptyComNotify, emptyProxyNotify);
+            logger.debug("天地伟业SDK设置回调函数返回值: {}", setNotifyRet);
+            if (setNotifyRet != NvssdkLibrary.RET_SUCCESS) {
+                // 如果Startup和SetNotifyFunction都失败，尝试清理后重新按官方顺序初始化
+                if (startupRet == NvssdkLibrary.RET_SUCCESS) {
+                    nvssdkLibrary.NetClient_Cleanup();
+                }
+                
+                // 按官方示例顺序：先SetNotifyFunction，再Startup
+                logger.debug("尝试按官方示例顺序重新初始化：先SetNotifyFunction，再Startup");
+                int setNotifyRet2 = nvssdkLibrary.NetClient_SetNotifyFunction_V4(
+                    emptyMainNotify, emptyAlarmNotify, emptyParaNotify, emptyComNotify, emptyProxyNotify);
+                logger.debug("天地伟业SDK重新设置回调函数返回值: {}", setNotifyRet2);
+                
+                if (setNotifyRet2 != NvssdkLibrary.RET_SUCCESS) {
+                    int lastError = nvssdkLibrary.NetClient_GetLastError();
+                    logger.error("天地伟业SDK设置回调函数失败，返回值: {}，GetLastError返回值: {}（可能原因：回调对象类型不匹配或SDK环境问题）", setNotifyRet2, lastError);
+                    return false;
+                }
+                
+                int startupRet2 = nvssdkLibrary.NetClient_Startup_V4(0, 0, 0);
+                logger.debug("天地伟业SDK重新Startup返回值: {}", startupRet2);
+                if (startupRet2 != NvssdkLibrary.RET_SUCCESS) {
+                    int lastError = nvssdkLibrary.NetClient_GetLastError();
+                    logger.error("天地伟业SDK初始化失败，Startup返回值: {}，GetLastError返回值: {}（SDK库加载成功但SDK初始化失败，可能原因：依赖库缺失或环境配置问题）", startupRet2, lastError);
+                    return false;
+                }
+            } else if (startupRet != NvssdkLibrary.RET_SUCCESS) {
+                // SetNotifyFunction成功但Startup失败，需要重新Startup
+                int startupRet2 = nvssdkLibrary.NetClient_Startup_V4(0, 0, 0);
+                logger.debug("天地伟业SDK重新Startup返回值: {}", startupRet2);
+                if (startupRet2 != NvssdkLibrary.RET_SUCCESS) {
+                    int lastError = nvssdkLibrary.NetClient_GetLastError();
+                    logger.error("天地伟业SDK初始化失败，Startup返回值: {}，GetLastError返回值: {}", startupRet2, lastError);
+                    return false;
+                }
+            }
             
             initialized = true;
             logger.info("天地伟业SDK初始化成功");
