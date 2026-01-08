@@ -259,4 +259,99 @@ public class TiandySDKStructure {
             return Arrays.asList("iFrameType", "iWidth", "iHeight", "iTimeStamp", "iDataLen");
         }
     }
+    
+    /**
+     * 图片时间结构体
+     * 参考NVSSDK.java:195-203
+     */
+    public static class PicTime extends Structure {
+        public int uiYear;
+        public int uiMonth;
+        public int uiDay;
+        public int uiWeek;
+        public int uiHour;
+        public int uiMinute;
+        public int uiSecondsr;
+        public int uiMilliseconds;
+        
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("uiYear", "uiMonth", "uiDay", "uiWeek", "uiHour", "uiMinute", "uiSecondsr", "uiMilliseconds");
+        }
+    }
+    
+    /**
+     * 图片数据结构体
+     * 参考NVSSDK.java:205-210
+     */
+    public static class PicData extends Structure {
+        public PicTime tPicTime;
+        public int iDataLen;
+        public Pointer pcPicData;
+        
+        public PicData() {
+            tPicTime = new PicTime();
+        }
+        
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("tPicTime", "iDataLen", "pcPicData");
+        }
+    }
+    
+    /**
+     * 抓图数据结构体
+     * 参考NetClientTypes.h:12895-12902
+     */
+    public static class SnapPicData extends Structure {
+        public int iSnapType;      // 抓图类型
+        public int iWidth;         // 图片宽度
+        public int iHeight;        // 图片高度
+        public int iSize;          // PicData结构体大小
+        public Pointer ptPicData;  // PicData指针（可以为null，如果为null则不返回图片数据）
+        
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("iSnapType", "iWidth", "iHeight", "iSize", "ptPicData");
+        }
+    }
+    
+    /**
+     * 按时间范围下载结构体
+     * 参考NVSSDK.java:392-412
+     */
+    public static class DOWNLOAD_TIMESPAN extends Structure {
+        public int m_iSize;                        // 结构体大小
+        public byte[] m_cLocalFilename = new byte[255];  // 本地保存文件名
+        public int m_iChannelNO;                   // 通道号
+        public NVS_FILE_TIME m_tTimeBegin;         // 开始时间
+        public NVS_FILE_TIME m_tTimeEnd;           // 结束时间
+        public int m_iPosition;                    // 定位位置，-1表示不使用定位
+        public int m_iSpeed;                        // 下载速度：1,2,4,8,16,32
+        public int m_iIFrame;                       // 是否只下载I帧：1-只I帧，0-全帧
+        public int m_iReqMode;                      // 数据模式：1-帧模式，0-流模式
+        public int m_iVodTransEnable;              // VOD转换使能
+        public int m_iVodTransVideoSize;           // VOD转换视频分辨率
+        public int m_iVodTransFrameRate;           // VOD转换帧率
+        public int m_iVodTransStreamRate;          // VOD转换码率
+        public int m_iFileFlag;                    // 文件标志：0-下载多个文件，1-下载为单个文件
+        public int m_iSaveFileType;                // 保存文件类型：0-SDV, 3-PS, 4-MP4
+        public int m_iStreamNo;                    // 码流号：0-主码流，1-子码流
+        public int m_iFileAttr;                    // 文件属性：0-NVR本地存储，10000-IPC存储
+        public int m_iCryptType;                   // 加密类型：0-不加密，1-AES加密
+        public byte[] m_cCryptKey = new byte[32];   // 加密密钥
+        
+        public DOWNLOAD_TIMESPAN() {
+            m_tTimeBegin = new NVS_FILE_TIME();
+            m_tTimeEnd = new NVS_FILE_TIME();
+        }
+        
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("m_iSize", "m_cLocalFilename", "m_iChannelNO", "m_tTimeBegin", "m_tTimeEnd",
+                                "m_iPosition", "m_iSpeed", "m_iIFrame", "m_iReqMode", "m_iVodTransEnable",
+                                "m_iVodTransVideoSize", "m_iVodTransFrameRate", "m_iVodTransStreamRate",
+                                "m_iFileFlag", "m_iSaveFileType", "m_iStreamNo", "m_iFileAttr", "m_iCryptType", "m_cCryptKey");
+        }
+    }
 }

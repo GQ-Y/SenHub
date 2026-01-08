@@ -17,6 +17,8 @@ public class MqttClient {
     private Config.MqttConfig config;
     private boolean connected = false;
     private Consumer<String> messageHandler;
+    private volatile boolean reconnecting = false;  // 重连锁，避免并发重连
+    private final Object reconnectLock = new Object();  // 重连同步锁
 
     public MqttClient(Config.MqttConfig config) {
         this.config = config;
@@ -34,7 +36,13 @@ public class MqttClient {
 
             MqttConnectOptions options = new MqttConnectOptions();
             options.setCleanSession(true);
-            options.setKeepAliveInterval(config.getKeepAlive());
+            // 设置KeepAlive，至少60秒，避免频繁断开
+            int keepAlive = Math.max(config.getKeepAlive(), 60);
+            options.setKeepAliveInterval(keepAlive);
+            // 设置自动重连（但我们会手动处理重连逻辑）
+            options.setAutomaticReconnect(false);
+            // 设置连接超时
+            options.setConnectionTimeout(30);
 
             // 设置用户名和密码（如果提供）
             if (config.getUsername() != null && !config.getUsername().isEmpty()) {
@@ -48,9 +56,19 @@ public class MqttClient {
             client.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
+                    // 先检查是否已经在重连中，避免重复触发
+                    synchronized (reconnectLock) {
+                        if (reconnecting) {
+                            logger.debug("MQTT连接丢失，但重连已在进行中，忽略本次连接丢失事件");
+                            return;
+                        }
+                    }
+                    
                     connected = false;
-                    logger.warn("MQTT连接丢失: {}", cause.getMessage());
-                    // 自动重连
+                    String reason = cause != null ? cause.getMessage() : "未知原因";
+                    logger.warn("MQTT连接丢失: {}", reason);
+                    
+                    // 自动重连（使用同步锁避免并发重连）
                     reconnect();
                 }
 
@@ -73,6 +91,9 @@ public class MqttClient {
             IMqttToken token = client.connect(options);
             token.waitForCompletion();
             connected = true;
+            synchronized (reconnectLock) {
+                reconnecting = false;  // 重置重连标志
+            }
             logger.info("MQTT连接成功: {}", broker);
 
             // 订阅命令主题
@@ -161,23 +182,50 @@ public class MqttClient {
      * 重连
      */
     private void reconnect() {
-        int maxRetries = 5;
-        int retryCount = 0;
-        while (retryCount < maxRetries && !connected) {
-            try {
-                Thread.sleep(5000); // 等待5秒后重连
-                logger.info("尝试重连MQTT服务器 ({}/{})", retryCount + 1, maxRetries);
-                if (connect()) {
-                    logger.info("MQTT重连成功");
-                    return;
-                }
-                retryCount++;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        synchronized (reconnectLock) {
+            if (reconnecting) {
+                logger.debug("MQTT重连已在进行中，跳过本次重连请求");
                 return;
             }
+            reconnecting = true;
         }
-        logger.error("MQTT重连失败，已达到最大重试次数");
+        
+        // 在后台线程中执行重连，避免阻塞回调线程
+        new Thread(() -> {
+            try {
+                int maxRetries = 5;
+                int retryCount = 0;
+                while (retryCount < maxRetries && !connected) {
+                    try {
+                        Thread.sleep(5000); // 等待5秒后重连
+                        logger.info("尝试重连MQTT服务器 ({}/{})", retryCount + 1, maxRetries);
+                        if (connect()) {
+                            logger.info("MQTT重连成功");
+                            synchronized (reconnectLock) {
+                                reconnecting = false;
+                            }
+                            return;
+                        }
+                        retryCount++;
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        synchronized (reconnectLock) {
+                            reconnecting = false;
+                        }
+                        return;
+                    }
+                }
+                logger.error("MQTT重连失败，已达到最大重试次数");
+                synchronized (reconnectLock) {
+                    reconnecting = false;
+                }
+            } catch (Exception e) {
+                logger.error("MQTT重连过程异常", e);
+                synchronized (reconnectLock) {
+                    reconnecting = false;
+                }
+            }
+        }, "MQTT Reconnect Thread").start();
     }
 
     /**

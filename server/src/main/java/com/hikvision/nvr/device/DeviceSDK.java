@@ -137,6 +137,39 @@ public interface DeviceSDK {
     }
     
     /**
+     * 按时间范围下载录像文件（从设备存储下载）
+     * @param userId 登录句柄
+     * @param channel 通道号
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @param localFilePath 本地保存文件路径
+     * @param streamType 码流类型（0-主码流，1-子码流）
+     * @return 下载连接ID（用于后续控制下载），失败返回-1
+     */
+    default int downloadPlaybackByTimeRange(int userId, int channel, Date startTime, Date endTime, 
+                                             String localFilePath, int streamType) {
+        return -1; // 默认不支持，子类可重写
+    }
+    
+    /**
+     * 停止下载录像
+     * @param downloadId 下载连接ID
+     * @return 是否成功
+     */
+    default boolean stopDownload(int downloadId) {
+        return false; // 默认不支持，子类可重写
+    }
+    
+    /**
+     * 获取下载进度
+     * @param downloadId 下载连接ID
+     * @return 下载进度（0-100），失败返回-1
+     */
+    default int getDownloadProgress(int downloadId) {
+        return -1; // 默认不支持，子类可重写
+    }
+    
+    /**
      * 重启设备
      * @param userId 登录句柄
      * @return 是否成功

@@ -33,6 +33,13 @@ public interface NvssdkLibrary extends Library {
     // 同步预览错误码
     int RET_SYNCREALPLAY_TIMEOUT = -2;
     
+    // 登录状态常量（参考NVSSDK.java）
+    int LOGON_SUCCESS = 0;  // 登录成功
+    int LOGON_FAILED = 4;    // 登录失败
+    int LOGON_TIMEOUT = 5;   // 登录超时
+    int LOGON_RETRY = 6;     // 重试
+    int LOGON_ING = 7;       // 登录中
+    
     // 抓图类型
     int CAPTURE_PICTURE_TYPE_YUV = 0;
     int CAPTURE_PICTURE_TYPE_BMP = 1;
@@ -92,6 +99,7 @@ public interface NvssdkLibrary extends Library {
     int NetClient_GetDigitalChannelNum(int iLogonID, IntByReference piDigitChannelNum);
     
     // 预览相关
+    // 使用Pointer传递结构体，更安全
     int NetClient_SyncRealPlay(IntByReference puiRecvID, Pointer ptPara, int iParaSize);
     int NetClient_StopRealPlay(int uiRecvID, int iParam);
     
@@ -102,9 +110,28 @@ public interface NvssdkLibrary extends Library {
     // 抓图相关
     int NetClient_CapturePicture(int uiConID, int iPicType, ByteBuffer strFileName);
     int NetClient_CapturePic(int uiConID, PointerByReference pucData);
+    // 直接抓图（不需要预览连接）
+    int NetClient_CapturePicByDevice(int iLogonID, int iChanNo, int iQvalue, ByteBuffer pcPicFilePath, 
+                                     TiandySDKStructure.SnapPicData ptSnapPicData, int iInSize);
     
     // 云台控制
     int NetClient_SendCommand(int iLogonID, int iCommand, int iChannel, Pointer pvBuffer, int iBufSize);
+    
+    // 下载相关
+    int NetClient_NetFileDownload(IntByReference uiConID, int iLogonID, int iCmd, Pointer pvBuf, int iBufSize);
+    int NetClient_NetFileStopDownloadFile(int uiConID);
+    int NetClient_NetFileGetDownloadPos(int uiConID, IntByReference piPos, IntByReference piDLSize);
+    
+    // 下载命令常量
+    int DOWNLOAD_CMD_FILE = 0;           // 按文件名下载
+    int DOWNLOAD_CMD_TIMESPAN = 1;       // 按时间范围下载
+    int DOWNLOAD_CMD_CONTROL = 2;        // 下载控制
+    int DOWNLOAD_CMD_FILE_CONTINUE = 3;  // 继续下载文件
+    
+    // 下载文件类型常量
+    int DOWNLOAD_FILE_TYPE_SDV = 0;      // SDV格式
+    int DOWNLOAD_FILE_TYPE_PS = 3;       // PS格式
+    int DOWNLOAD_FILE_TYPE_ZFMP4 = 4;    // MP4格式
     
     // 查询相关
     int NetClient_SyncQuery(int iLogonID, int iChanNo, int iCmd, Pointer pvInPara, int iInLen, 

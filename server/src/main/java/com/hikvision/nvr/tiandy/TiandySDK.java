@@ -273,37 +273,109 @@ public class TiandySDK implements DeviceSDK {
         
         try {
             // 参考Channel.java:245-318的实现
+            // 首先验证登录状态（确保连接保持有效）
+            int logonStatus = nvssdkLibrary.NetClient_GetLogonStatus(userId);
+            if (logonStatus != NvssdkLibrary.LOGON_SUCCESS) {  // 0表示登录成功
+                logger.error("设备登录状态无效: userId={}, logonStatus={}（0=成功, 4=失败, 5=超时），无法启动预览", 
+                    userId, logonStatus);
+                return -1;
+            }
+            
+            // 天地伟业SDK的通道号从0开始，如果传入的是1-based的通道号，需要转换为0-based
+            int channelNo = channel;
+            if (channel > 0) {
+                channelNo = channel - 1;  // 转换为0-based索引
+            }
+            
+            // 参考Channel.java:253-277，必须验证通道号是否有效
+            IntByReference piDigitalChanCount = new IntByReference();
+            int ret = nvssdkLibrary.NetClient_GetDigitalChannelNum(userId, piDigitalChanCount);
+            if (ret != NvssdkLibrary.RET_SUCCESS) {
+                logger.error("获取数字通道数失败: userId={}, 错误码={}", userId, ret);
+                return -1;
+            }
+            int digitalChanCount = piDigitalChanCount.getValue();
+            
+            // 获取总通道数
+            IntByReference piChanTotalCount = new IntByReference();
+            ret = nvssdkLibrary.NetClient_GetChannelNum(userId, piChanTotalCount);
+            if (ret != NvssdkLibrary.RET_SUCCESS) {
+                logger.error("获取总通道数失败: userId={}, 错误码={}", userId, ret);
+                return -1;
+            }
+            int chanTotalCount = piChanTotalCount.getValue();
+            
+            // 如果数字通道数为0，则是IPC设备，使用总通道数
+            if (digitalChanCount == 0) {
+                digitalChanCount = chanTotalCount;
+            }
+            
+            logger.debug("通道信息: 总通道数={}, 数字通道数={}, 请求通道号={}(0-based: {})", 
+                chanTotalCount, digitalChanCount, channel, channelNo);
+            
+            // 验证通道号是否在有效范围内
+            if (channelNo < 0 || channelNo >= digitalChanCount) {
+                logger.error("通道号无效: channelNo={}, 有效范围: 0-{}", channelNo, digitalChanCount - 1);
+                return -1;
+            }
+            
             TiandySDKStructure.tagNetClientPara tVideoPara = new TiandySDKStructure.tagNetClientPara();
             
             // 设置预览参数
             tVideoPara.iSize = tVideoPara.size();
+            
+            // 初始化CLIENTINFO结构体的所有必要字段
             tVideoPara.tCltInfo.m_iServerID = userId;  // logon handle
-            tVideoPara.tCltInfo.m_iChannelNo = channel;
+            tVideoPara.tCltInfo.m_iChannelNo = channelNo;  // 使用0-based通道号
             tVideoPara.tCltInfo.m_iStreamNO = streamType;  // 0=主码流, 1=子码流
             tVideoPara.tCltInfo.m_iNetMode = 1;  // TCP方式
             tVideoPara.tCltInfo.m_iTimeout = 20;
+            
+            // 初始化字节数组字段（避免未初始化导致的问题）
+            if (tVideoPara.tCltInfo.m_cNetFile == null) {
+                tVideoPara.tCltInfo.m_cNetFile = new byte[255];
+            }
+            if (tVideoPara.tCltInfo.m_cRemoteIP == null) {
+                tVideoPara.tCltInfo.m_cRemoteIP = new byte[16];
+            }
+            
+            // 设置缓冲区参数（参考官方示例Channel.java:287-299和VideoCtrl.java:336-344）
+            tVideoPara.tCltInfo.m_iBufferCount = 20;  // 缓冲区数量，官方示例使用20
+            tVideoPara.tCltInfo.m_iDelayNum = 1;  // 延迟数量，官方示例使用1
+            tVideoPara.tCltInfo.m_iDelayTime = 0;  // 延迟时间
+            tVideoPara.tCltInfo.m_iTTL = 8;  // TTL值，官方示例使用8
+            tVideoPara.tCltInfo.m_iFlag = 0;  // 标志位
+            tVideoPara.tCltInfo.m_iPosition = 0;  // 位置
+            tVideoPara.tCltInfo.m_iSpeed = 0;  // 速度
+            
+            // 回调函数设置（可以为null，但需要确保结构体正确）
             tVideoPara.pCbkFullFrm = null;  // 完整帧回调（可以为null）
             tVideoPara.pvCbkFullFrmUsrData = null;
             tVideoPara.pCbkRawFrm = null;  // 原始流回调（可以为null）
             tVideoPara.pvCbkRawFrmUsrData = null;
+            // 允许解码（参考Channel.java:297，预览时使用ALLOW_DECODE）
+            // 虽然我们不需要显示，但SDK可能需要解码来建立连接
             tVideoPara.iIsForbidDecode = NvssdkLibrary.RAW_NOTIFY_ALLOW_DECODE;
             tVideoPara.pvWnd = null;  // 不显示视频窗口
             
+            // 先写入CLIENTINFO，再写入整个结构体
+            tVideoPara.tCltInfo.write();
             tVideoPara.write();
             
             IntByReference piConnectID = new IntByReference();
+            // 使用Pointer传递结构体（更安全，避免JNA自动转换问题）
             int iRet = nvssdkLibrary.NetClient_SyncRealPlay(piConnectID, tVideoPara.getPointer(), tVideoPara.iSize);
             
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 int connectID = piConnectID.getValue();
-                logger.info("天地伟业预览启动成功: userId={}, channel={}, streamType={}, connectID={}", 
-                    userId, channel, streamType, connectID);
+                logger.info("天地伟业预览启动成功: userId={}, channel={}(0-based: {}), streamType={}, connectID={}", 
+                    userId, channel, channelNo, streamType, connectID);
                 return connectID;
             } else if (iRet == NvssdkLibrary.RET_SYNCREALPLAY_TIMEOUT) {
-                logger.error("天地伟业预览启动超时: userId={}, channel={}", userId, channel);
+                logger.error("天地伟业预览启动超时: userId={}, channel={}(0-based: {})", userId, channel, channelNo);
                 return -1;
             } else {
-                logger.error("天地伟业预览启动失败: userId={}, channel={}, 错误码={}", userId, channel, iRet);
+                logger.error("天地伟业预览启动失败: userId={}, channel={}(0-based: {}), 错误码={}", userId, channel, channelNo, iRet);
                 return -1;
             }
         } catch (Exception e) {
@@ -351,20 +423,22 @@ public class TiandySDK implements DeviceSDK {
         
         try {
             // 参考Channel.java:401-425的实现
-            // 确保文件路径以.sdv结尾（天地伟业默认格式）
+            // 确保文件路径以.sdv结尾（天地伟业默认格式），并添加\0结尾
             String actualFilePath = filePath;
             if (!actualFilePath.endsWith(".sdv")) {
                 actualFilePath = filePath + ".sdv";
             }
+            // 参考Channel.java:414，文件名需要以\0结尾
+            actualFilePath += "\0";
             
-            ByteBuffer strBuffer = ByteBuffer.wrap((actualFilePath + "\0").getBytes());
+            ByteBuffer strBuffer = ByteBuffer.wrap(actualFilePath.getBytes());
             int iRet = nvssdkLibrary.NetClient_StartCaptureFile(connectId, strBuffer, NvssdkLibrary.REC_FILE_TYPE_SDV);
             
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                logger.info("天地伟业录制启动成功: connectID={}, filePath={}", connectId, actualFilePath);
+                logger.info("天地伟业录制启动成功: connectID={}, filePath={}", connectId, actualFilePath.trim());
                 return true;
             } else {
-                logger.error("天地伟业录制启动失败: connectID={}, filePath={}, 错误码={}", connectId, actualFilePath, iRet);
+                logger.error("天地伟业录制启动失败: connectID={}, filePath={}, 错误码={}", connectId, actualFilePath.trim(), iRet);
                 return false;
             }
         } catch (Exception e) {
@@ -405,18 +479,12 @@ public class TiandySDK implements DeviceSDK {
             return false;
         }
         
-        // 天地伟业SDK的抓图需要connectID，如果connectId无效，需要先启动预览
-        if (connectId < 0) {
-            logger.warn("天地伟业抓图需要有效的预览连接ID，尝试启动预览: userId={}, channel={}", userId, channel);
-            connectId = startRealPlay(userId, channel, 0);  // 使用主码流启动预览
-            if (connectId < 0) {
-                logger.error("启动预览失败，无法抓图: userId={}, channel={}", userId, channel);
-                return false;
-            }
-        }
-        
         try {
-            // 参考Channel.java:485-520的实现
+            // 使用NetClient_CapturePicByDevice直接抓图，不需要预览连接
+            // 参考NetSdkClient.h:3830-3848
+            // 天地伟业SDK的通道号从0开始，需要转换为0-based
+            int channelNo = channel > 0 ? channel - 1 : 0;
+            
             // 确保文件路径有正确的扩展名
             String actualFilePath = filePath;
             if (pictureType == NvssdkLibrary.CAPTURE_PICTURE_TYPE_BMP && !actualFilePath.endsWith(".bmp")) {
@@ -425,18 +493,25 @@ public class TiandySDK implements DeviceSDK {
                 actualFilePath = filePath + ".jpg";
             }
             
-            ByteBuffer strBuffer = ByteBuffer.wrap(actualFilePath.getBytes());
-            int iRet = nvssdkLibrary.NetClient_CapturePicture(connectId, pictureType, strBuffer);
+            // iQvalue: 图片质量值（通常1-100，0表示使用设备默认值）
+            int iQvalue = 0;  // 使用设备默认质量
             
-            if (iRet > 0) {
-                logger.info("天地伟业抓图成功: connectID={}, filePath={}, size={}", connectId, actualFilePath, iRet);
+            // 如果只需要保存到文件，ptSnapPicData可以传null
+            // 参考官方文档：when _ptSnapPicData==NULL:don't save picture data (只保存到文件)
+            ByteBuffer strBuffer = ByteBuffer.wrap(actualFilePath.getBytes());
+            int iRet = nvssdkLibrary.NetClient_CapturePicByDevice(userId, channelNo, iQvalue, strBuffer, null, 0);
+            
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                logger.info("天地伟业直接抓图成功: userId={}, channel={}(0-based: {}), filePath={}", 
+                    userId, channel, channelNo, actualFilePath);
                 return true;
             } else {
-                logger.error("天地伟业抓图失败: connectID={}, filePath={}, 错误码={}", connectId, actualFilePath, iRet);
+                logger.error("天地伟业直接抓图失败: userId={}, channel={}(0-based: {}), filePath={}, 错误码={}", 
+                    userId, channel, channelNo, actualFilePath, iRet);
                 return false;
             }
         } catch (Exception e) {
-            logger.error("天地伟业抓图异常: connectID={}, filePath={}", connectId, filePath, e);
+            logger.error("天地伟业直接抓图异常: userId={}, channel={}, filePath={}", userId, channel, filePath, e);
             return false;
         }
     }
@@ -457,23 +532,26 @@ public class TiandySDK implements DeviceSDK {
                 return false;
             }
             
+            // 天地伟业SDK的通道号从0开始，需要转换为0-based
+            int channelNo = channel > 0 ? channel - 1 : 0;
+            
             TiandySDKStructure.tagTransparentChannelControl aPara = new TiandySDKStructure.tagTransparentChannelControl();
             aPara.iControlCode = controlCode;
-            aPara.iSpeed = speed;
+            aPara.iSpeed = speed > 0 ? speed : 1;  // 速度至少为1
             aPara.iPresetNo = 0;  // 预置点号，普通控制为0
             aPara.write();
             
             int iRet = nvssdkLibrary.NetClient_SendCommand(userId, 
-                NvssdkLibrary.COMMAND_ID_TRANSPARENTCHANNELCONTROL_V5, channel, 
+                NvssdkLibrary.COMMAND_ID_TRANSPARENTCHANNELCONTROL_V5, channelNo, 
                 aPara.getPointer(), aPara.size());
             
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                logger.info("天地伟业云台控制成功: userId={}, channel={}, command={}, action={}, speed={}", 
-                    userId, channel, command, action, speed);
+                logger.info("天地伟业云台控制成功: userId={}, channel={}(0-based: {}), command={}, speed={}", 
+                    userId, channel, channelNo, command, aPara.iSpeed);
                 return true;
             } else {
-                logger.error("天地伟业云台控制失败: userId={}, channel={}, command={}, 错误码={}", 
-                    userId, channel, command, iRet);
+                logger.error("天地伟业云台控制失败: userId={}, channel={}(0-based: {}), command={}, 错误码={}", 
+                    userId, channel, channelNo, command, iRet);
                 return false;
             }
         } catch (Exception e) {
@@ -615,6 +693,139 @@ public class TiandySDK implements DeviceSDK {
         } catch (Exception e) {
             logger.error("天地伟业回放查询异常: userId={}, channel={}", userId, channel, e);
             return files;
+        }
+    }
+    
+    @Override
+    public int downloadPlaybackByTimeRange(int userId, int channel, Date startTime, Date endTime, 
+                                            String localFilePath, int streamType) {
+        if (!initialized || nvssdkLibrary == null) {
+            logger.error("天地伟业SDK未初始化");
+            return -1;
+        }
+        
+        if (userId < 0) {
+            logger.error("无效的登录句柄: {}", userId);
+            return -1;
+        }
+        
+        try {
+            // 参考SyncBusiness.java:754-803的实现
+            // 天地伟业SDK的通道号从0开始，需要转换为0-based
+            int channelNo = channel > 0 ? channel - 1 : 0;
+            
+            TiandySDKStructure.DOWNLOAD_TIMESPAN tDownloadTimeSpan = new TiandySDKStructure.DOWNLOAD_TIMESPAN();
+            tDownloadTimeSpan.m_iSize = tDownloadTimeSpan.size();
+            tDownloadTimeSpan.m_iSaveFileType = NvssdkLibrary.DOWNLOAD_FILE_TYPE_SDV;  // SDV格式
+            tDownloadTimeSpan.m_iFileFlag = 0;  // 0-下载多个文件，1-下载为单个文件
+            tDownloadTimeSpan.m_iChannelNO = channelNo;  // 通道号（0-based）
+            tDownloadTimeSpan.m_iStreamNo = streamType;  // 码流号：0-主码流，1-子码流
+            tDownloadTimeSpan.m_iPosition = -1;  // 不使用定位功能
+            tDownloadTimeSpan.m_iSpeed = 16;  // 下载速度：16倍速（官方示例建议）
+            tDownloadTimeSpan.m_iIFrame = 0;  // 0-全帧，1-只I帧
+            tDownloadTimeSpan.m_iReqMode = 1;  // 1-帧模式，0-流模式
+            tDownloadTimeSpan.m_iVodTransEnable = 0;  // 不启用VOD转换
+            tDownloadTimeSpan.m_iFileAttr = 0;  // 0-NVR本地存储
+            
+            // 设置本地保存文件名
+            byte[] filenameBytes = localFilePath.getBytes();
+            int copyLen = Math.min(filenameBytes.length, tDownloadTimeSpan.m_cLocalFilename.length - 1);
+            System.arraycopy(filenameBytes, 0, tDownloadTimeSpan.m_cLocalFilename, 0, copyLen);
+            tDownloadTimeSpan.m_cLocalFilename[copyLen] = 0;  // 字符串结束符
+            
+            // 设置开始时间
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(startTime);
+            tDownloadTimeSpan.m_tTimeBegin.iYear = (short)cal.get(Calendar.YEAR);
+            tDownloadTimeSpan.m_tTimeBegin.iMonth = (short)(cal.get(Calendar.MONTH) + 1);
+            tDownloadTimeSpan.m_tTimeBegin.iDay = (short)cal.get(Calendar.DAY_OF_MONTH);
+            tDownloadTimeSpan.m_tTimeBegin.iHour = (short)cal.get(Calendar.HOUR_OF_DAY);
+            tDownloadTimeSpan.m_tTimeBegin.iMinute = (short)cal.get(Calendar.MINUTE);
+            tDownloadTimeSpan.m_tTimeBegin.iSecond = (short)cal.get(Calendar.SECOND);
+            
+            // 设置结束时间
+            cal.setTime(endTime);
+            tDownloadTimeSpan.m_tTimeEnd.iYear = (short)cal.get(Calendar.YEAR);
+            tDownloadTimeSpan.m_tTimeEnd.iMonth = (short)(cal.get(Calendar.MONTH) + 1);
+            tDownloadTimeSpan.m_tTimeEnd.iDay = (short)cal.get(Calendar.DAY_OF_MONTH);
+            tDownloadTimeSpan.m_tTimeEnd.iHour = (short)cal.get(Calendar.HOUR_OF_DAY);
+            tDownloadTimeSpan.m_tTimeEnd.iMinute = (short)cal.get(Calendar.MINUTE);
+            tDownloadTimeSpan.m_tTimeEnd.iSecond = (short)cal.get(Calendar.SECOND);
+            
+            tDownloadTimeSpan.write();
+            
+            IntByReference iConnID = new IntByReference();
+            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId, 
+                NvssdkLibrary.DOWNLOAD_CMD_TIMESPAN, tDownloadTimeSpan.getPointer(), tDownloadTimeSpan.size());
+            
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                int downloadId = iConnID.getValue();
+                logger.info("天地伟业按时间范围下载启动成功: userId={}, channel={}(0-based: {}), " +
+                    "startTime={}, endTime={}, localFile={}, downloadId={}", 
+                    userId, channel, channelNo, startTime, endTime, localFilePath, downloadId);
+                return downloadId;
+            } else {
+                logger.error("天地伟业按时间范围下载启动失败: userId={}, channel={}(0-based: {}), 错误码={}", 
+                    userId, channel, channelNo, iRet);
+                return -1;
+            }
+        } catch (Exception e) {
+            logger.error("天地伟业按时间范围下载异常: userId={}, channel={}", userId, channel, e);
+            return -1;
+        }
+    }
+    
+    @Override
+    public boolean stopDownload(int downloadId) {
+        if (!initialized || nvssdkLibrary == null) {
+            return false;
+        }
+        
+        if (downloadId < 0) {
+            return false;
+        }
+        
+        try {
+            int iRet = nvssdkLibrary.NetClient_NetFileStopDownloadFile(downloadId);
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                logger.info("天地伟业下载停止成功: downloadId={}", downloadId);
+                return true;
+            } else {
+                logger.error("天地伟业下载停止失败: downloadId={}, 错误码={}", downloadId, iRet);
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("天地伟业下载停止异常: downloadId={}", downloadId, e);
+            return false;
+        }
+    }
+    
+    @Override
+    public int getDownloadProgress(int downloadId) {
+        if (!initialized || nvssdkLibrary == null) {
+            return -1;
+        }
+        
+        if (downloadId < 0) {
+            return -1;
+        }
+        
+        try {
+            IntByReference piPos = new IntByReference();
+            IntByReference piDLSize = new IntByReference();
+            int iRet = nvssdkLibrary.NetClient_NetFileGetDownloadPos(downloadId, piPos, piDLSize);
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                int progress = piPos.getValue();  // 进度：0-100
+                logger.debug("天地伟业下载进度: downloadId={}, progress={}%, size={}", 
+                    downloadId, progress, piDLSize.getValue());
+                return progress;
+            } else {
+                logger.error("天地伟业获取下载进度失败: downloadId={}, 错误码={}", downloadId, iRet);
+                return -1;
+            }
+        } catch (Exception e) {
+            logger.error("天地伟业获取下载进度异常: downloadId={}", downloadId, e);
+            return -1;
         }
     }
     

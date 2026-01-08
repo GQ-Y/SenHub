@@ -1011,35 +1011,86 @@ public class DeviceController {
             Date startTime = sdf.parse(startTimeStr);
             Date endTime = sdf.parse(endTimeStr);
             
-            // 使用PlaybackService查询回放文件列表
-            List<DeviceSDK.PlaybackFile> files = playbackService.queryPlaybackFiles(deviceId, channel, startTime, endTime);
-            
-            // 转换为响应格式
-            List<Map<String, Object>> fileList = new ArrayList<>();
-            for (DeviceSDK.PlaybackFile file : files) {
-                Map<String, Object> fileInfo = new HashMap<>();
-                fileInfo.put("fileName", file.getFileName());
-                fileInfo.put("startTime", sdf.format(file.getStartTime()));
-                fileInfo.put("endTime", sdf.format(file.getEndTime()));
-                fileInfo.put("fileSize", file.getFileSize());
-                fileInfo.put("channel", file.getChannel());
-                fileList.add(fileInfo);
+            // 验证时间范围：所有设备限制1小时
+            long timeDiff = endTime.getTime() - startTime.getTime();
+            long oneHourInMillis = 60 * 60 * 1000; // 1小时的毫秒数
+            if (timeDiff > oneHourInMillis) {
+                response.status(400);
+                return createErrorResponse(400, "设备录像回放时间范围不能超过1小时");
             }
             
+            if (timeDiff <= 0) {
+                response.status(400);
+                return createErrorResponse(400, "结束时间必须晚于开始时间");
+            }
+            
+            // 确保设备已登录
+            if (!deviceManager.isDeviceLoggedIn(deviceId)) {
+                if (!deviceManager.loginDevice(device)) {
+                    response.status(500);
+                    return createErrorResponse(500, "设备登录失败，无法启动录像下载");
+                }
+            }
+            
+            // 获取设备SDK
+            DeviceSDK sdk = deviceManager.getDeviceSDK(deviceId);
+            if (sdk == null) {
+                response.status(500);
+                return createErrorResponse(500, "无法获取设备SDK");
+            }
+            
+            int userId = deviceManager.getDeviceUserId(deviceId);
+            if (userId < 0) {
+                response.status(500);
+                return createErrorResponse(500, "设备未登录");
+            }
+            
+            // 创建下载目录
+            String downloadDir = "./downloads";
+            File downloadDirFile = new File(downloadDir);
+            if (!downloadDirFile.exists()) {
+                downloadDirFile.mkdirs();
+            }
+            
+            // 生成本地保存文件路径
+            // 根据设备品牌选择文件扩展名：天地伟业使用.sdv，其他使用.mp4
+            String fileExtension = "tiandy".equalsIgnoreCase(device.getBrand()) ? ".sdv" : ".mp4";
+            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+            String localFilePath = downloadDir + "/playback_" + deviceId.replaceAll("[^a-zA-Z0-9]", "_") + "_" + timestamp + fileExtension;
+            
+            // 调用SDK启动下载（使用主码流，streamType=0）
+            int downloadHandle = sdk.downloadPlaybackByTimeRange(userId, channel, startTime, endTime, localFilePath, 0);
+            
+            if (downloadHandle < 0) {
+                logger.error("启动录像下载失败: deviceId={}, channel={}, startTime={}, endTime={}", 
+                    deviceId, channel, startTimeStr, endTimeStr);
+                response.status(500);
+                return createErrorResponse(500, "启动录像下载失败，请检查设备连接和参数");
+            }
+            
+            logger.info("录像下载启动成功: deviceId={}, channel={}, downloadHandle={}, filePath={}", 
+                deviceId, channel, downloadHandle, localFilePath);
+            
+            // 返回下载句柄和文件路径
             Map<String, Object> data = new HashMap<>();
-            data.put("files", fileList);
-            data.put("count", fileList.size());
+            data.put("downloadHandle", downloadHandle);
+            data.put("filePath", localFilePath);
             data.put("channel", channel);
             data.put("startTime", startTimeStr);
             data.put("endTime", endTimeStr);
+            data.put("message", "录像下载已启动");
             
             response.status(200);
             response.type("application/json");
             return createSuccessResponse(data);
+        } catch (java.text.ParseException e) {
+            logger.error("时间解析失败", e);
+            response.status(400);
+            return createErrorResponse(400, "时间格式错误，请使用 yyyy-MM-dd HH:mm:ss 格式");
         } catch (Exception e) {
-            logger.error("查询回放文件失败", e);
+            logger.error("启动录像下载失败", e);
             response.status(500);
-            return createErrorResponse(500, "查询回放文件失败: " + e.getMessage());
+            return createErrorResponse(500, "启动录像下载失败: " + e.getMessage());
         }
     }
 
@@ -1065,14 +1116,15 @@ public class DeviceController {
                 return createErrorResponse(400, "downloadHandle参数格式错误");
             }
             
-            HCNetSDK hcNetSDK = sdk.getSDK();
-            if (hcNetSDK == null) {
+            // 获取设备SDK（支持所有品牌）
+            DeviceSDK deviceSDK = deviceManager.getDeviceSDK(deviceId);
+            if (deviceSDK == null) {
                 response.status(500);
-                return createErrorResponse(500, "SDK未初始化");
+                return createErrorResponse(500, "无法获取设备SDK");
             }
             
-            // 查询下载进度（0-100）
-            int progress = hcNetSDK.NET_DVR_GetDownloadPos(downloadHandle);
+            // 使用DeviceSDK接口查询下载进度（支持所有品牌）
+            int progress = deviceSDK.getDownloadProgress(downloadHandle);
             
             Map<String, Object> data = new HashMap<>();
             data.put("downloadHandle", downloadHandle);

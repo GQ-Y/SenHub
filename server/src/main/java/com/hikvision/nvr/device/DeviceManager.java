@@ -30,6 +30,8 @@ public class DeviceManager {
     private final Map<String, Integer> deviceLoginMap = new ConcurrentHashMap<>();
     // 设备SDK映射：deviceId -> SDK实例
     private final Map<String, DeviceSDK> deviceSDKMap = new ConcurrentHashMap<>();
+    // 设备登录锁：deviceId -> 锁对象，防止同一设备并发登录
+    private final Map<String, Object> deviceLoginLocks = new ConcurrentHashMap<>();
 
     public DeviceManager(Database database, Config.DeviceConfig config) {
         this.database = database;
@@ -37,21 +39,26 @@ public class DeviceManager {
     }
 
     /**
-     * 登录设备
+     * 登录设备（线程安全，防止同一设备并发登录）
      */
     public boolean loginDevice(DeviceInfo device) {
         String deviceId = device.getDeviceId();
         
-        // 检查是否已登录
-        if (deviceLoginMap.containsKey(deviceId)) {
-            int userId = deviceLoginMap.get(deviceId);
-            if (userId > 0) {
-                logger.debug("设备已登录: {} (userId: {})", deviceId, userId);
-                return true;
+        // 获取或创建该设备的登录锁
+        Object lock = deviceLoginLocks.computeIfAbsent(deviceId, k -> new Object());
+        
+        // 同步块，确保同一设备不会并发登录
+        synchronized (lock) {
+            // 再次检查是否已登录（双重检查锁定模式）
+            if (deviceLoginMap.containsKey(deviceId)) {
+                int userId = deviceLoginMap.get(deviceId);
+                if (userId > 0) {
+                    logger.debug("设备已登录: {} (userId: {})", deviceId, userId);
+                    return true;
+                }
             }
-        }
 
-        // 执行登录
+            // 执行登录
         String username = device.getUsername() != null ? device.getUsername() : config.getDefaultUsername();
         String password = device.getPassword() != null ? device.getPassword() : config.getDefaultPassword();
         int port = device.getPort() > 0 ? device.getPort() : config.getDefaultPort();
@@ -176,6 +183,7 @@ public class DeviceManager {
             logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
             return false;
         }
+        } // 同步块结束
     }
 
     /**

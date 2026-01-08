@@ -18,6 +18,7 @@ import { deviceService } from '../src/api/services';
 import { Device, DeviceStatus } from '../types';
 import { Modal, ConfirmModal } from './Modal';
 import { useModal } from '../hooks/useModal';
+import { API_CONFIG } from '../src/api/config';
 
 export const DeviceDetail: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -87,7 +88,8 @@ export const DeviceDetail: React.FC = () => {
       try {
         const response = await deviceService.captureSnapshot(deviceId, 1);
         if (response.data?.url) {
-          const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+          // 使用API_CONFIG.BASE_URL，但需要去掉/api后缀，因为response.data.url已经包含了/api前缀
+          const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
           const fullUrl = response.data.url.startsWith('http') 
             ? response.data.url 
             : `${baseUrl}${response.data.url}`;
@@ -126,14 +128,15 @@ export const DeviceDetail: React.FC = () => {
 
   // 初始化时间范围 - 必须在所有条件返回之前调用
   useEffect(() => {
-    const selected = new Date(selectedDate);
-    const start = new Date(selected);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(selected);
-    end.setHours(23, 59, 59, 999);
+    // 设置默认时间为当前时间往前推1小时
+    const now = new Date();
+    const end = new Date(now);
+    const start = new Date(now.getTime() - 60 * 60 * 1000); // 当前时间 - 1小时
     
     setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
     setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
+    // 同步更新选中日期为当前日期
+    setSelectedDate(now.toISOString().split('T')[0]);
   }, []); // 只在组件挂载时执行一次
 
   // 条件返回必须在所有 Hooks 调用之后
@@ -164,8 +167,8 @@ export const DeviceDetail: React.FC = () => {
     try {
       const response = await deviceService.captureSnapshot(deviceId, 1);
       if (response.data?.url) {
-        // 构建完整的URL
-        const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+        // 使用API_CONFIG.BASE_URL，但需要去掉/api后缀，因为response.data.url已经包含了/api前缀
+        const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
         const fullUrl = response.data.url.startsWith('http') 
           ? response.data.url 
           : `${baseUrl}${response.data.url}`;
@@ -214,7 +217,8 @@ export const DeviceDetail: React.FC = () => {
           try {
             const response = await deviceService.captureSnapshot(deviceId, 1);
             if (response.data?.url) {
-              const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+              // 使用API_CONFIG.BASE_URL，但需要去掉/api后缀，因为response.data.url已经包含了/api前缀
+              const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
               const fullUrl = response.data.url.startsWith('http') 
                 ? response.data.url 
                 : `${baseUrl}${response.data.url}`;
@@ -249,6 +253,28 @@ export const DeviceDetail: React.FC = () => {
     }
 
     if (!deviceId) return;
+
+    // 验证时间范围：所有设备限制1小时
+    const startTime = new Date(playbackStartTime.replace(' ', 'T'));
+    const endTime = new Date(playbackEndTime.replace(' ', 'T'));
+    const timeDiff = endTime.getTime() - startTime.getTime();
+    const oneHourInMillis = 60 * 60 * 1000; // 1小时的毫秒数
+
+    if (timeDiff > oneHourInMillis) {
+      modal.showModal({
+        message: '设备录像回放时间范围不能超过1小时',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (timeDiff <= 0) {
+      modal.showModal({
+        message: '结束时间必须晚于开始时间',
+        type: 'error',
+      });
+      return;
+    }
 
     setIsLoadingPlayback(true);
     setDownloadProgress(0);
@@ -344,17 +370,33 @@ export const DeviceDetail: React.FC = () => {
     }
   };
 
-  // 根据选择的日期设置默认时间范围（当天）
+  // 根据选择的日期设置默认时间范围（最新1小时）
   const handleDateChange = (date: string) => {
     setSelectedDate(date);
-    const selected = new Date(date);
-    const start = new Date(selected);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(selected);
-    end.setHours(23, 59, 59, 999);
     
-    setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
-    setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
+    // 当日期改变时，设置为该日期的最新1小时（当前时间往前推1小时）
+    const now = new Date();
+    const end = new Date(now);
+    const start = new Date(now.getTime() - 60 * 60 * 1000); // 当前时间 - 1小时
+    
+    // 如果选中的日期不是今天，则设置为该日期的最后1小时（23:00:00 - 23:59:59）
+    const selected = new Date(date);
+    const today = new Date();
+    const isToday = selected.toDateString() === today.toDateString();
+    
+    if (!isToday) {
+      // 不是今天，设置为选中日期的最后1小时
+      const endDate = new Date(selected);
+      endDate.setHours(23, 59, 59, 999);
+      const startDate = new Date(selected);
+      startDate.setHours(22, 59, 59, 999);
+      setPlaybackStartTime(startDate.toISOString().slice(0, 19).replace('T', ' '));
+      setPlaybackEndTime(endDate.toISOString().slice(0, 19).replace('T', ' '));
+    } else {
+      // 是今天，设置为当前时间往前推1小时
+      setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
+      setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
+    }
   };
 
   const handleFullscreen = async () => {
@@ -562,20 +604,58 @@ export const DeviceDetail: React.FC = () => {
                    <input
                      type="datetime-local"
                      value={playbackStartTime ? playbackStartTime.replace(' ', 'T') : ''}
-                     onChange={(e) => setPlaybackStartTime(e.target.value.replace('T', ' '))}
+                     onChange={(e) => {
+                       const newStartTime = e.target.value.replace('T', ' ');
+                       setPlaybackStartTime(newStartTime);
+                       // 如果结束时间已设置，确保不超过1小时限制
+                       if (playbackEndTime) {
+                         const start = new Date(newStartTime.replace(' ', 'T'));
+                         const end = new Date(playbackEndTime.replace(' ', 'T'));
+                         const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
+                         if (end > maxEnd) {
+                           setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
+                         }
+                       }
+                     }}
                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                    />
                  </div>
                  <div>
-                   <label className="block text-xs text-gray-600 mb-1">结束时间</label>
+                   <label className="block text-xs text-gray-600 mb-1">结束时间（最多1小时）</label>
                    <input
                      type="datetime-local"
                      value={playbackEndTime ? playbackEndTime.replace(' ', 'T') : ''}
-                     onChange={(e) => setPlaybackEndTime(e.target.value.replace('T', ' '))}
+                     onChange={(e) => {
+                       const newEndTime = e.target.value.replace('T', ' ');
+                       if (playbackStartTime) {
+                         const start = new Date(playbackStartTime.replace(' ', 'T'));
+                         const end = new Date(newEndTime.replace(' ', 'T'));
+                         const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
+                         if (end > maxEnd) {
+                           modal.showModal({
+                             message: '结束时间不能超过开始时间1小时',
+                             type: 'warning',
+                           });
+                           setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
+                           return;
+                         }
+                       }
+                       setPlaybackEndTime(newEndTime);
+                     }}
+                     min={playbackStartTime ? (() => {
+                       const start = new Date(playbackStartTime.replace(' ', 'T'));
+                       return start.toISOString().slice(0, 16);
+                     })() : undefined}
+                     max={playbackStartTime ? (() => {
+                       const start = new Date(playbackStartTime.replace(' ', 'T'));
+                       const maxEnd = new Date(start.getTime() + 60 * 60 * 1000);
+                       return maxEnd.toISOString().slice(0, 16);
+                     })() : undefined}
                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                    />
                  </div>
                </div>
+               <p className="text-xs text-gray-500">提示：录像回放时间范围限制为1小时</p>
                
                <div className="flex items-center space-x-2">
                  <button

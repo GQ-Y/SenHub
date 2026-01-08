@@ -73,26 +73,12 @@ public class CaptureService {
             cleanupOldCaptures(deviceIdForFile);
             
             // 执行抓图
-            // 注意：天地伟业SDK需要connectId，海康SDK不需要（但接口统一，传-1表示不使用）
-            int connectId = -1;
+            // 注意：现在所有SDK都支持直接抓图，不需要预览连接
+            // 天地伟业SDK已更新为使用NetClient_CapturePicByDevice，直接抓图不需要预览
+            int connectId = -1;  // 不使用预览连接
             int pictureType = 2; // JPG格式
             
-            // 对于天地伟业SDK，需要先启动预览获取connectId
-            String brand = sdk.getBrand();
-            if ("tiandy".equals(brand)) {
-                connectId = sdk.startRealPlay(userId, actualChannel, 0);
-                if (connectId < 0) {
-                    logger.error("启动预览失败，无法抓图: deviceId={}", deviceId);
-                    return null;
-                }
-            }
-            
             boolean result = sdk.capturePicture(connectId, userId, actualChannel, fileName, pictureType);
-            
-            // 天地伟业SDK需要停止预览
-            if ("tiandy".equals(brand) && connectId >= 0) {
-                sdk.stopRealPlay(connectId);
-            }
             
             if (result) {
                 // 等待文件写入完成
