@@ -923,9 +923,22 @@ public class TiandySDK implements DeviceSDK {
             IntByReference piDLSize = new IntByReference();
             int iRet = nvssdkLibrary.NetClient_NetFileGetDownloadPos(downloadId, piPos, piDLSize);
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                int progress = piPos.getValue();  // 进度：0-100
-                logger.debug("天地伟业下载进度: downloadId={}, progress={}%, size={}", 
-                    downloadId, progress, piDLSize.getValue());
+                int downloadedBytes = piPos.getValue();  // 已下载字节数
+                int totalBytes = piDLSize.getValue();     // 总字节数
+                
+                // 计算百分比（0-100）
+                int progress;
+                if (totalBytes > 0) {
+                    // 使用long避免溢出
+                    long progressLong = (long)downloadedBytes * 100 / totalBytes;
+                    progress = (int)Math.min(progressLong, 100);  // 限制在0-100之间
+                } else {
+                    // 如果总大小为0，返回0或根据已下载字节数判断
+                    progress = downloadedBytes > 0 ? 1 : 0;
+                }
+                
+                logger.debug("天地伟业下载进度: downloadId={}, progress={}%, downloaded={} bytes, total={} bytes", 
+                    downloadId, progress, downloadedBytes, totalBytes);
                 return progress;
             } else {
                 logger.error("天地伟业获取下载进度失败: downloadId={}, 错误码={}", downloadId, iRet);

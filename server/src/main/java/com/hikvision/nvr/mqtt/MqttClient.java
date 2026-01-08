@@ -28,9 +28,39 @@ public class MqttClient {
      * 连接MQTT服务器
      */
     public boolean connect() {
+        String broker = null;
         try {
-            String broker = config.getBroker();
+            broker = config.getBroker();
             String clientId = config.getClientId();
+            
+            // 验证配置
+            if (broker == null || broker.isEmpty()) {
+                logger.error("MQTT broker地址未配置");
+                return false;
+            }
+            if (clientId == null || clientId.isEmpty()) {
+                logger.error("MQTT clientId未配置");
+                return false;
+            }
+            
+            logger.debug("尝试连接MQTT服务器: broker={}, clientId={}", broker, clientId);
+            
+            // 预解析DNS，提前发现DNS问题
+            try {
+                String host = extractHostFromBroker(broker);
+                if (host != null && !host.isEmpty()) {
+                    java.net.InetAddress.getByName(host);
+                    logger.debug("DNS解析成功: {}", host);
+                }
+            } catch (java.net.UnknownHostException e) {
+                logger.error("MQTT连接失败：DNS预解析失败 - 无法解析主机名: {}，错误: {}", extractHostFromBroker(broker), e.getMessage());
+                logger.error("请检查：1) 网络连接是否正常 2) DNS服务器配置是否正确 3) 主机名是否正确");
+                connected = false;
+                return false;
+            } catch (Exception e) {
+                logger.warn("DNS预解析警告: {}", e.getMessage());
+                // 继续尝试连接，可能只是警告
+            }
 
             client = new MqttAsyncClient(broker, clientId, new MemoryPersistence());
 
@@ -101,7 +131,32 @@ public class MqttClient {
             return true;
 
         } catch (MqttException e) {
-            logger.error("MQTT连接失败", e);
+            // 详细记录错误信息，包括根本原因
+            Throwable cause = e.getCause();
+            if (cause != null) {
+                if (cause instanceof java.net.UnknownHostException) {
+                    logger.error("MQTT连接失败：DNS解析失败 - 无法解析主机名: {}，错误: {}", broker, cause.getMessage());
+                    logger.error("请检查：1) 网络连接是否正常 2) DNS服务器配置是否正确 3) 主机名是否正确");
+                } else if (cause instanceof java.net.ConnectException) {
+                    logger.error("MQTT连接失败：无法连接到服务器 - {}，错误: {}", broker, cause.getMessage());
+                    logger.error("请检查：1) MQTT服务器是否运行 2) 端口是否正确 3) 防火墙是否阻止连接");
+                } else if (cause instanceof java.net.SocketTimeoutException) {
+                    logger.error("MQTT连接失败：连接超时 - {}，错误: {}", broker, cause.getMessage());
+                    logger.error("请检查：1) 网络延迟是否过高 2) 连接超时设置是否合理 3) 服务器是否可访问");
+                } else {
+                    logger.error("MQTT连接失败：{}，根本原因: {} - {}", broker, cause.getClass().getSimpleName(), cause.getMessage());
+                }
+            } else {
+                logger.error("MQTT连接失败：{}，错误码: {}，错误消息: {}", broker, e.getReasonCode(), e.getMessage());
+            }
+            logger.debug("MQTT连接异常堆栈", e);
+            connected = false;
+            return false;
+        } catch (Exception e) {
+            // 捕获其他可能的异常（如NullPointerException等）
+            String brokerStr = broker != null ? broker : (config != null ? config.getBroker() : "未知");
+            logger.error("MQTT连接失败：发生未预期的异常 - {}，错误: {}", brokerStr, e.getMessage());
+            logger.debug("MQTT连接异常堆栈", e);
             connected = false;
             return false;
         }
@@ -262,5 +317,33 @@ public class MqttClient {
      */
     public boolean isConnected() {
         return connected && client != null && client.isConnected();
+    }
+    
+    /**
+     * 从broker URL提取主机名
+     */
+    private String extractHostFromBroker(String broker) {
+        if (broker == null || broker.isEmpty()) {
+            return null;
+        }
+        // tcp://host:port 格式
+        if (broker.startsWith("tcp://")) {
+            String withoutProtocol = broker.substring(6);
+            int colonIndex = withoutProtocol.indexOf(':');
+            if (colonIndex > 0) {
+                return withoutProtocol.substring(0, colonIndex);
+            }
+            return withoutProtocol;
+        }
+        // ssl://host:port 格式
+        if (broker.startsWith("ssl://")) {
+            String withoutProtocol = broker.substring(6);
+            int colonIndex = withoutProtocol.indexOf(':');
+            if (colonIndex > 0) {
+                return withoutProtocol.substring(0, colonIndex);
+            }
+            return withoutProtocol;
+        }
+        return broker;
     }
 }

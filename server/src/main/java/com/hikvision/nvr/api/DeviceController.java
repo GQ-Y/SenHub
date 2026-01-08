@@ -1176,8 +1176,24 @@ public class DeviceController {
                 return createErrorResponse(404, "录像文件不存在");
             }
             
-            // 设置响应头
-            response.type("video/mp4");
+            // 根据文件扩展名设置正确的Content-Type
+            String fileName = file.getName().toLowerCase();
+            String contentType;
+            if (fileName.endsWith(".mp4")) {
+                contentType = "video/mp4";
+            } else if (fileName.endsWith(".sdv")) {
+                // SDV是天地伟业的私有格式，尝试使用通用视频类型或application/octet-stream
+                // 如果浏览器不支持，可能需要转换格式
+                contentType = "video/mp4";  // 暂时使用mp4，实际可能需要转换
+            } else if (fileName.endsWith(".avi")) {
+                contentType = "video/x-msvideo";
+            } else if (fileName.endsWith(".mkv")) {
+                contentType = "video/x-matroska";
+            } else {
+                contentType = "video/mp4";  // 默认使用mp4
+            }
+            
+            response.type(contentType);
             response.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
             response.raw().setContentLengthLong(file.length());
             

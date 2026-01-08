@@ -111,17 +111,40 @@ public class HikvisionSDK implements DeviceSDK {
         }
 
         try {
-            String libPath;
+            String baseLibPath;
             if (sdkConfig != null && sdkConfig.getLibPath() != null) {
-                libPath = sdkConfig.getLibPath() + "/libhcnetsdk.so";
+                baseLibPath = sdkConfig.getLibPath();
             } else {
-                libPath = System.getProperty("user.dir") + "/lib/hikvision/libhcnetsdk.so";
+                baseLibPath = System.getProperty("user.dir") + "/lib/hikvision";
             }
 
-            File libFile = new File(libPath);
-            if (!libFile.exists()) {
-                logger.error("SDK库文件不存在: {}", libPath);
-                return false;
+            // 根据系统架构选择对应的库文件
+            String osArch = System.getProperty("os.arch");
+            File libFile = null;
+            String libFileName = "libhcnetsdk.so";
+            
+            // 尝试使用架构特定的库文件
+            if (osArch != null) {
+                String normalizedArch = normalizeArchitecture(osArch);
+                String archSpecificLib = baseLibPath + "/libhcnetsdk.so." + normalizedArch;
+                File archSpecificFile = new File(archSpecificLib);
+                
+                if (archSpecificFile.exists()) {
+                    libFile = archSpecificFile;
+                    libFileName = "libhcnetsdk.so." + normalizedArch;
+                    logger.debug("检测到架构特定库文件: {}", libFileName);
+                }
+            }
+            
+            // 如果架构特定库不存在，尝试使用默认库
+            if (libFile == null || !libFile.exists()) {
+                String defaultLibPath = baseLibPath + "/libhcnetsdk.so";
+                libFile = new File(defaultLibPath);
+                if (!libFile.exists()) {
+                    logger.error("SDK库文件不存在: {} (已尝试: {})", defaultLibPath, baseLibPath + "/libhcnetsdk.so." + normalizeArchitecture(osArch));
+                    return false;
+                }
+                libFileName = "libhcnetsdk.so";
             }
             
             // 检查库文件架构是否与系统架构匹配
@@ -130,14 +153,65 @@ public class HikvisionSDK implements DeviceSDK {
                 return false;
             }
 
-            hCNetSDK = (HCNetSDK) Native.loadLibrary(libPath, HCNetSDK.class);
-            logger.info("SDK库加载成功: {}", libPath);
+            // 设置库路径到java.library.path（用于JNA查找库文件）
+            String libDir = libFile.getParent();
+            String currentLibPath = System.getProperty("java.library.path");
+            String newLibPath = libDir + (currentLibPath != null ? ":" + currentLibPath : "");
+            System.setProperty("java.library.path", newLibPath);
+            
+            // JNA的Native.loadLibrary需要库文件名（不带路径和扩展名）
+            // 库文件名格式：libhcnetsdk.so 或 libhcnetsdk.so.x86_64
+            // 需要提取基础名称：hcnetsdk
+            String libraryName = libFileName;
+            if (libraryName.startsWith("lib")) {
+                libraryName = libraryName.substring(3);
+            }
+            if (libraryName.endsWith(".so")) {
+                libraryName = libraryName.substring(0, libraryName.length() - 3);
+            }
+            // 如果还有架构后缀，去掉
+            if (libraryName.contains(".")) {
+                libraryName = libraryName.substring(0, libraryName.indexOf("."));
+            }
+            
+            // 使用库文件名加载（JNA会从java.library.path中查找）
+            hCNetSDK = (HCNetSDK) Native.loadLibrary(libraryName, HCNetSDK.class);
+            logger.info("SDK库加载成功: {} (系统架构: {}, 库文件名: {})", libFile.getAbsolutePath(), osArch, libFileName);
             return true;
 
         } catch (Exception e) {
             logger.error("加载SDK库异常", e);
             return false;
         }
+    }
+    
+    /**
+     * 标准化架构名称
+     */
+    private String normalizeArchitecture(String arch) {
+        if (arch == null) {
+            return "unknown";
+        }
+        
+        arch = arch.toLowerCase().trim();
+        
+        // ARM架构
+        if (arch.contains("aarch64") || arch.equals("arm64")) {
+            return "aarch64";
+        }
+        if (arch.contains("arm")) {
+            return "arm";
+        }
+        
+        // x86架构
+        if (arch.contains("x86_64") || arch.contains("x86-64") || arch.equals("amd64")) {
+            return "x86_64";
+        }
+        if (arch.contains("x86") || arch.contains("i386") || arch.contains("i686")) {
+            return "x86";
+        }
+        
+        return arch;
     }
 
     /**
@@ -150,9 +224,27 @@ public class HikvisionSDK implements DeviceSDK {
                 libPath = System.getProperty("user.dir") + "/lib/hikvision";
             }
 
+            // 确保路径是绝对路径
+            File libPathFile = new File(libPath);
+            if (!libPathFile.isAbsolute()) {
+                libPath = libPathFile.getAbsolutePath();
+            }
+            
+            logger.debug("设置海康SDK库路径: {}", libPath);
+
             // 设置crypto和ssl库路径
             String cryptoPath = libPath + "/libcrypto.so.1.1";
             String sslPath = libPath + "/libssl.so.1.1";
+            
+            // 检查文件是否存在
+            File cryptoFile = new File(cryptoPath);
+            File sslFile = new File(sslPath);
+            if (!cryptoFile.exists()) {
+                logger.warn("libcrypto.so.1.1不存在: {}", cryptoPath);
+            }
+            if (!sslFile.exists()) {
+                logger.warn("libssl.so.1.1不存在: {}", sslPath);
+            }
 
             HCNetSDK.BYTE_ARRAY ptrByteArray1 = new HCNetSDK.BYTE_ARRAY(256);
             HCNetSDK.BYTE_ARRAY ptrByteArray2 = new HCNetSDK.BYTE_ARRAY(256);
@@ -166,13 +258,20 @@ public class HikvisionSDK implements DeviceSDK {
             hCNetSDK.NET_DVR_SetSDKInitCfg(HCNetSDK.NET_SDK_INIT_CFG_SSLEAY_PATH, ptrByteArray2.getPointer());
 
             // 设置组件库路径
-            String strPathCom = libPath + "/HCNetSDKCom";
+            // 根据海康SDK文档：NET_SDK_INIT_CFG_SDK_PATH应该设置为包含HCNetSDKCom目录的父目录
+            // 例如：如果HCNetSDKCom在 /path/to/lib/hikvision/HCNetSDKCom
+            // 则应该设置为 /path/to/lib/hikvision
+            String strPathCom = libPath;  // lib/hikvision目录
             HCNetSDK.NET_DVR_LOCAL_SDK_PATH struComPath = new HCNetSDK.NET_DVR_LOCAL_SDK_PATH();
-            System.arraycopy(strPathCom.getBytes(), 0, struComPath.sPath, 0, Math.min(strPathCom.length(), 255));
+            byte[] pathBytes = strPathCom.getBytes();
+            int copyLen = Math.min(pathBytes.length, struComPath.sPath.length - 1);
+            System.arraycopy(pathBytes, 0, struComPath.sPath, 0, copyLen);
+            struComPath.sPath[copyLen] = 0;  // 确保以null结尾
             struComPath.write();
             hCNetSDK.NET_DVR_SetSDKInitCfg(HCNetSDK.NET_SDK_INIT_CFG_SDK_PATH, struComPath.getPointer());
 
-            logger.info("Linux库路径设置成功");
+            logger.info("Linux库路径设置成功: libPath={}, HCNetSDKCom父目录={}", libPath, strPathCom);
+            logger.debug("HCNetSDKCom目录应该在: {}/HCNetSDKCom", strPathCom);
 
         } catch (Exception e) {
             logger.error("设置Linux库路径异常", e);
@@ -507,6 +606,24 @@ public class HikvisionSDK implements DeviceSDK {
         }
         
         try {
+            // 确保目录存在
+            File file = new File(filePath);
+            File parentDir = file.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs();
+            }
+            
+            // 使用绝对路径（海康SDK要求绝对路径）
+            // 规范化路径，移除 ./ 和 ../
+            String absolutePath = file.getAbsolutePath();
+            try {
+                absolutePath = new File(absolutePath).getCanonicalPath();
+            } catch (java.io.IOException e) {
+                logger.warn("无法规范化路径，使用原始路径: {}", e.getMessage());
+            }
+            logger.debug("海康抓图参数: userId={}, channel={}, filePath={}, absolutePath={}", 
+                userId, channel, filePath, absolutePath);
+            
             // 参考DeviceController.java:448-518的实现
             // 海康SDK的抓图使用NET_DVR_CaptureJPEGPicture，需要userId和channel，不需要connectId
             HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
@@ -514,17 +631,35 @@ public class HikvisionSDK implements DeviceSDK {
             jpegPara.wPicQuality = 2;  // 图片质量：0-最好 1-较好 2-一般
             jpegPara.write();
             
-            byte[] fileNameBytes = filePath.getBytes("UTF-8");
-            byte[] fileNameArray = new byte[256];
-            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, Math.min(fileNameBytes.length, fileNameArray.length - 1));
+            // 海康SDK要求使用GBK编码（中文SDK）
+            // 如果使用UTF-8可能导致路径解析错误
+            byte[] fileNameBytes;
+            try {
+                fileNameBytes = absolutePath.getBytes("GBK");
+            } catch (java.io.UnsupportedEncodingException e) {
+                // 如果GBK不支持，回退到UTF-8
+                logger.warn("GBK编码不支持，使用UTF-8: {}", e.getMessage());
+                fileNameBytes = absolutePath.getBytes("UTF-8");
+            }
             
-            boolean result = hCNetSDK.NET_DVR_CaptureJPEGPicture(userId, channel, jpegPara, fileNameArray);
+            byte[] fileNameArray = new byte[256];
+            int copyLength = Math.min(fileNameBytes.length, fileNameArray.length - 1);
+            System.arraycopy(fileNameBytes, 0, fileNameArray, 0, copyLength);
+            // 确保字符串以null结尾
+            fileNameArray[copyLength] = 0;
+            
+            // 海康SDK的通道号从1开始，确保channel >= 1
+            int actualChannel = channel > 0 ? channel : 1;
+            
+            boolean result = hCNetSDK.NET_DVR_CaptureJPEGPicture(userId, actualChannel, jpegPara, fileNameArray);
             if (result) {
-                logger.info("海康抓图成功: userId={}, channel={}, filePath={}", userId, channel, filePath);
+                logger.info("海康抓图成功: userId={}, channel={}, filePath={}", userId, actualChannel, absolutePath);
                 return true;
             } else {
-                logger.error("海康抓图失败: userId={}, channel={}, filePath={}, 错误码={}", 
-                    userId, channel, filePath, getLastError());
+                int errorCode = getLastError();
+                String errorMsg = getLastErrorString();
+                logger.error("海康抓图失败: userId={}, channel={}, filePath={}, 错误码={}, 错误信息={}", 
+                    userId, actualChannel, absolutePath, errorCode, errorMsg);
                 return false;
             }
         } catch (Exception e) {

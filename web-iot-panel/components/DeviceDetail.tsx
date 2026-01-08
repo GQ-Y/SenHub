@@ -508,16 +508,33 @@ export const DeviceDetail: React.FC = () => {
             className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
           >
             {playbackVideoUrl ? (
-              <video
-                ref={videoRef}
-                src={playbackVideoUrl}
-                controls
-                className="w-full h-full"
-                onError={(e) => {
-                  console.error('视频加载失败:', playbackVideoUrl);
-                  setPlaybackVideoUrl(null);
-                }}
-              />
+              <div className="w-full h-full flex flex-col">
+                <video
+                  ref={videoRef}
+                  src={playbackVideoUrl}
+                  controls
+                  className="w-full h-full"
+                  onError={(e) => {
+                    console.error('视频加载失败:', playbackVideoUrl, e);
+                    modal.showModal({
+                      message: '视频加载失败，可能是格式不支持。SDV格式需要转换为MP4格式。',
+                      type: 'error',
+                    });
+                    setPlaybackVideoUrl(null);
+                  }}
+                  onLoadedMetadata={() => {
+                    console.log('视频元数据加载成功');
+                  }}
+                  onCanPlay={() => {
+                    console.log('视频可以播放');
+                  }}
+                />
+                {downloadProgress > 0 && downloadProgress < 100 && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 text-sm">
+                    下载进度: {downloadProgress}%
+                  </div>
+                )}
+              </div>
             ) : snapshot ? (
               <img
                 src={snapshot}

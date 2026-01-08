@@ -118,14 +118,15 @@ public class Main {
             recorder.start();
             logger.info("录制管理器初始化成功");
 
-            // 7. 初始化MQTT客户端
+            // 7. 初始化MQTT客户端（MQTT连接失败不应阻止服务启动）
             mqttClient = new MqttClient(config.getMqtt());
             setupMqttMessageHandler();
             if (!mqttClient.connect()) {
-                logger.error("MQTT连接失败");
-                System.exit(1);
+                logger.warn("MQTT连接失败，服务将继续运行但MQTT功能不可用（可以稍后通过API重启MQTT连接）");
+                // 不退出服务，允许HTTP服务器正常启动
+            } else {
+                logger.info("MQTT客户端连接成功");
             }
-            logger.info("MQTT客户端连接成功");
             
             // 7.5. 设置DeviceManager的MQTT客户端（用于状态通知）
             deviceManager.setMqttClient(mqttClient);
