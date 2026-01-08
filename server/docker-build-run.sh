@@ -5,7 +5,7 @@
 
 set -e
 
-echo "=== 海康威视NVR控制服务 - Docker编译运行脚本 ==="
+echo "=== 综合性数字视频监控网关系统 - Docker编译运行脚本 ==="
 echo ""
 
 # 检查Docker是否运行
@@ -35,7 +35,7 @@ echo ""
 
 # 编译项目
 echo "🔨 编译项目..."
-docker-compose run --rm nvr-service mvn clean package -DskipTests
+docker-compose run --rm video-gateway-service mvn clean package -DskipTests
 
 if [ $? -ne 0 ]; then
     echo "❌ 编译失败"
@@ -59,7 +59,7 @@ if docker-compose ps | grep -q "Up"; then
     echo ""
     echo "📋 服务信息："
     echo "   - HTTP API: http://localhost:8080"
-    echo "   - 容器名称: hikvision-nvr-service"
+    echo "   - 容器名称: video-gateway-service"
     echo ""
     echo "📝 查看日志: docker-compose logs -f"
     echo "🛑 停止服务: docker-compose down"

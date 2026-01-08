@@ -1,0 +1,25 @@
+package com.digital.video.gateway.dahua.lib.structure;
+import com.digital.video.gateway.dahua.lib.NetSDKLib;
+/**
+ * CLIENT_StopAudioRecordManagerChannel 接口输入参数
+*/
+public class NET_IN_STOP_AUDIO_RECORD_MANAGER_CHANNEL extends com.digital.video.gateway.dahua.lib.NetSDKLib.SdkStructure
+{
+    /**
+     * 此结构体大小,必须赋值
+    */
+    public int              dwSize;
+    /**
+     * 音频通道号
+    */
+    public int              nChannel;
+    /**
+     * 码流类型,视频伴音的音频类型:"Main","Extra1",Extra2" "Extra3";Mic的音频类型："TalkBack"
+    */
+    public byte[]           szStream = new byte[16];
+
+    public NET_IN_STOP_AUDIO_RECORD_MANAGER_CHANNEL() {
+        this.dwSize = this.size();
+    }
+}
+

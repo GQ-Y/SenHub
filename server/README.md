@@ -1,6 +1,6 @@
-# 海康威视NVR录像机控制服务
+# 综合性数字视频监控网关系统
 
-基于海康威视NVR录像机Linux端SDK开发的Java语言局域网控制服务程序。
+综合性数字视频监控网关系统，支持多品牌视频监控设备（海康威视、天地伟业、大华等）的统一管理和控制。
 
 ## 功能特性
 
@@ -31,7 +31,7 @@ server/
 ├── src/
 │   ├── main/
 │   │   ├── java/
-│   │   │   └── com/hikvision/nvr/
+│   │   │   └── com/digital/video/gateway/
 │   │   │       ├── Main.java              # 主程序入口
 │   │   │       ├── config/                # 配置管理
 │   │   │       ├── hikvision/             # 海康威视SDK封装
@@ -76,10 +76,10 @@ mvn clean package
 
 ```bash
 # 方式1：使用Maven运行
-mvn exec:java -Dexec.mainClass="com.hikvision.nvr.Main"
+mvn exec:java -Dexec.mainClass="com.digital.video.gateway.Main"
 
 # 方式2：运行打包后的jar
-java -jar target/nvr-control-service-1.0.0.jar
+java -jar target/video-gateway-service-1.0.0.jar
 ```
 
 ## 配置说明
@@ -215,13 +215,13 @@ java -jar target/nvr-control-service-1.0.0.jar
 
 ### SDK封装
 
-SDK封装位于 `com.hikvision.nvr.hikvision` 包，使用JNA调用海康威视SDK的C接口。
+SDK封装位于 `com.digital.video.gateway.hikvision`、`com.digital.video.gateway.tiandy`、`com.digital.video.gateway.dahua` 等包，使用JNA调用各品牌SDK的C接口。
 
 ### 添加新功能
 
-1. 在 `com.hikvision.nvr.command` 包中添加新的命令处理类
+1. 在 `com.digital.video.gateway.command` 包中添加新的命令处理类
 2. 在 `MqttClient` 中添加命令路由
-3. 如需新的SDK接口，在 `HikvisionSDK` 中添加封装
+3. 如需新的SDK接口，在对应的SDK封装类中添加接口
 
 ## 许可证
 

@@ -5,7 +5,7 @@
 
 set -e
 
-echo "=== 海康威视NVR控制服务 - Docker运行脚本 ==="
+echo "=== 综合性数字视频监控网关系统 - Docker运行脚本 ==="
 echo ""
 
 # 检查Docker是否运行
@@ -21,7 +21,7 @@ echo ""
 
 # 构建镜像
 echo "📦 构建Docker镜像..."
-docker build --platform linux/arm64 -t hikvision-nvr-service:latest .
+docker build --platform linux/arm64 -t video-gateway-service:latest .
 
 if [ $? -ne 0 ]; then
     echo "❌ 镜像构建失败"
@@ -38,5 +38,5 @@ docker run --rm -it \
     -v "$(pwd):/app" \
     -v "$(pwd)/../sdk:/app/../sdk:ro" \
     -e LD_LIBRARY_PATH="/app/lib:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/tiandy:/app/lib/dahua" \
-    hikvision-nvr-service:latest \
+    video-gateway-service:latest \
     "$@"

@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  nvr-service:
+  video-gateway-service:
     build:
       context: .
       dockerfile: Dockerfile
-    image: hikvision-nvr-service:latest
-    container_name: hikvision-nvr-service
+    image: video-gateway-service:latest
+    container_name: video-gateway-service
     platform: linux/arm64
     ports:
       - "8080:8080"  # HTTP API端口映射，允许外部访问

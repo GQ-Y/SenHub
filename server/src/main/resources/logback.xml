@@ -28,5 +28,5 @@
         <appender-ref ref="FILE"/>
     </root>
 
-    <logger name="com.hikvision.nvr" level="DEBUG"/>
+    <logger name="com.digital.video.gateway" level="DEBUG"/>
 </configuration>

@@ -24,16 +24,16 @@
 
 ### 4. ✅ 多余文件清理
 - **删除**：`server/CaptureTest.java`（重复的测试文件）
-- **保留**：`src/main/java/com/hikvision/nvr/CaptureTest.java`（源码中的测试类）
+- **保留**：`src/main/java/com/digital/video/gateway/CaptureTest.java`（源码中的测试类）
 
 ### 5. ✅ 报警自动抓图功能实现
 - **创建服务**：`AlarmService.java` - 报警处理服务
-- **海康SDK集成**：在`HikvisionSDK.java`中添加报警回调支持
+- **海康SDK集成**：在`com.digital.video.gateway.hikvision.HikvisionSDK.java`中添加报警回调支持
   - 实现`AlarmMessageCallback`类
   - 支持`COMM_ALARM`、`COMM_ALARM_V30`、`COMM_ALARM_V40`等报警类型
-- **天地伟业SDK集成**：在`TiandySDK.java`中添加报警回调支持
+- **天地伟业SDK集成**：在`com.digital.video.gateway.tiandy.TiandySDK.java`中添加报警回调支持
   - 使用`ALARM_NOTIFY_V4`回调接口
-- **主程序集成**：在`Main.java`中初始化报警服务
+- **主程序集成**：在`com.digital.video.gateway.Main.java`中初始化报警服务
 
 ### 6. ✅ OSS上传服务实现
 - **创建服务**：`OssService.java` - OSS上传服务
@@ -55,7 +55,7 @@
 
 ### 2. ⏳ 天地伟业SDK报警回调完善
 - **当前状态**：已添加基础结构，需要完善设备ID查找逻辑
-- **需要**：在`TiandySDK`中添加`setAlarmService`方法，完善报警回调实现
+- **需要**：在`com.digital.video.gateway.tiandy.TiandySDK`中添加`setAlarmService`方法，完善报警回调实现
 
 ## 新功能说明
 

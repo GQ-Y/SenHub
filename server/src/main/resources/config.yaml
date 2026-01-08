@@ -1,9 +1,9 @@
-# 海康威视NVR录像机控制服务配置文件
+# 综合性数字视频监控网关系统配置文件
 
 # MQTT配置
 mqtt:
   broker: "tcp://mqtt.yingzhu.net:1883"  # MQTT服务器地址
-  client_id: "hikvision-nvr-control"  # 客户端ID
+  client_id: "video-gateway-service"  # 客户端ID
   username: "demos1"  # MQTT用户名
   password: "demos1"  # MQTT密码
   status_topic: "hikvision/status"  # 状态上报主题

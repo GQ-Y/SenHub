@@ -1,0 +1,19 @@
+ package com.digital.video.gateway.dahua.lib.structure;
+ import com.digital.video.gateway.dahua.lib.NetSDKLib;
+
+ /**
+  * @author 291189
+  * @version 1.0
+  * @description CLIENT_NET_API BOOL CALL_METHOD CLIENT_UploadUnpackingCheckInfo 出参
+  * @date 2021/9/9
+  */
+
+public class NET_OUT_UPLOAD_UPPACKING_CHECK_INFO extends com.digital.video.gateway.dahua.lib.NetSDKLib.SdkStructure {
+/** 结构体大小*/
+    public			int            dwSize;
+
+ public NET_OUT_UPLOAD_UPPACKING_CHECK_INFO(){
+  this.dwSize=this.size();
+ }
+}
+

@@ -5,13 +5,13 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.hikvision</groupId>
-    <artifactId>nvr-control-service</artifactId>
+    <groupId>com.digital.video.gateway</groupId>
+    <artifactId>video-gateway-service</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Hikvision NVR Control Service</name>
-    <description>基于海康威视NVR录像机Linux端SDK开发的Java语言局域网控制服务程序</description>
+    <name>Digital Video Gateway Service</name>
+    <description>综合性数字视频监控网关系统</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -134,7 +134,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.hikvision.nvr.Main</mainClass>
+                                    <mainClass>com.digital.video.gateway.Main</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
