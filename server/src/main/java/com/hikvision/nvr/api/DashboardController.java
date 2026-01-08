@@ -87,7 +87,7 @@ public class DashboardController {
             }
             
             // 计算下载文件大小
-            File downloadsDir = new File("./downloads");
+            File downloadsDir = new File("./storage/downloads");
             if (downloadsDir.exists() && downloadsDir.isDirectory()) {
                 totalBytes += getDirectorySize(downloadsDir);
             }

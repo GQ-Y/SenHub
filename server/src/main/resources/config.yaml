@@ -71,5 +71,5 @@ sdk:
 # 录制配置
 recorder:
   enabled: true  # 是否启用自动录制
-  record_path: "./records"  # 录制文件存储路径
+  record_path: "./storage/records"  # 录制文件存储路径
   retention_minutes: 10  # 录制文件保留时长（分钟），超过此时间的文件将被自动删除

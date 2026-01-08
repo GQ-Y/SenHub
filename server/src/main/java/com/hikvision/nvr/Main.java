@@ -21,6 +21,8 @@ import com.hikvision.nvr.service.RecorderService;
 import com.hikvision.nvr.service.CaptureService;
 import com.hikvision.nvr.service.PTZService;
 import com.hikvision.nvr.service.PlaybackService;
+import com.hikvision.nvr.service.AlarmService;
+import com.hikvision.nvr.service.OssService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Spark;
@@ -48,6 +50,8 @@ public class Main {
     private CaptureService captureService;
     private PTZService ptzService;
     private PlaybackService playbackService;
+    private OssService ossService;
+    private AlarmService alarmService;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -108,9 +112,18 @@ public class Main {
 
             // 5. 初始化功能服务类
             recorderService = new RecorderService(deviceManager, config.getRecorder());
-            captureService = new CaptureService(deviceManager, "./captures");
+            captureService = new CaptureService(deviceManager, "./storage/captures");
             ptzService = new PTZService(deviceManager);
             playbackService = new PlaybackService(deviceManager);
+            
+            // 5.5. 初始化OSS服务
+            ossService = new OssService(config.getOss());
+            logger.info("OSS服务初始化完成，状态: {}", ossService.isEnabled() ? "已启用" : "未启用");
+            
+            // 5.6. 初始化报警服务
+            alarmService = new AlarmService(deviceManager, captureService, ossService);
+            logger.info("报警服务初始化成功");
+            
             logger.info("功能服务类初始化成功");
 
             // 6. 初始化录制管理器（使用RecorderService）
@@ -136,7 +149,8 @@ public class Main {
             HikvisionSDK hikvisionSDK = (HikvisionSDK) SDKFactory.getSDK("hikvision");
             if (hikvisionSDK != null) {
                 hikvisionSDK.setStatusCallbacks(deviceManager, mqttClient);
-                logger.info("海康SDK状态回调已设置");
+                hikvisionSDK.setAlarmService(alarmService);
+                logger.info("海康SDK状态回调和报警回调已设置");
             }
             
             com.hikvision.nvr.dahua.DahuaSDK dahuaSDK = (com.hikvision.nvr.dahua.DahuaSDK) SDKFactory.getSDK("dahua");

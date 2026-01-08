@@ -22,7 +22,7 @@ public class CaptureService {
     
     public CaptureService(DeviceManager deviceManager, String captureDir) {
         this.deviceManager = deviceManager;
-        this.captureDir = captureDir != null ? captureDir : "./captures";
+        this.captureDir = captureDir != null ? captureDir : "./storage/captures";
         
         // 确保目录存在
         File dir = new File(this.captureDir);

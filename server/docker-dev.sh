@@ -60,6 +60,7 @@ else
         -v "$(pwd)/data:/app/data" \
         -v "$(pwd)/logs:/app/logs" \
         -v "$(pwd)/sdkLog:/app/sdkLog" \
+        -v "$(pwd)/storage:/app/storage" \
         -v maven-repo:/root/.m2 \
         -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64 \
         -e MAVEN_HOME=/opt/maven \

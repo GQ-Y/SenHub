@@ -29,6 +29,7 @@ public class HikvisionSDK implements DeviceSDK {
     private Config.SdkConfig sdkConfig;
     private DeviceManager deviceManager;
     private MqttClient mqttClient;
+    private com.hikvision.nvr.service.AlarmService alarmService;
 
     private HikvisionSDK() {
     }
@@ -468,6 +469,84 @@ public class HikvisionSDK implements DeviceSDK {
             hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, exceptionCallback, null);
         }
         logger.debug("已设置状态回调：DeviceManager和MqttClient");
+    }
+    
+    /**
+     * 设置报警服务（用于报警自动抓图）
+     */
+    public void setAlarmService(com.hikvision.nvr.service.AlarmService alarmService) {
+        this.alarmService = alarmService;
+        // 设置报警回调
+        if (hCNetSDK != null && alarmService != null) {
+            AlarmMessageCallback alarmCallback = new AlarmMessageCallback();
+            hCNetSDK.NET_DVR_SetDVRMessCallBack(alarmCallback);
+            logger.info("海康SDK报警回调已设置");
+        }
+    }
+    
+    /**
+     * 海康SDK报警消息回调实现
+     */
+    class AlarmMessageCallback implements HCNetSDK.FMSGCallBack {
+        @Override
+        public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen, Pointer pUser) {
+            try {
+                // 处理报警消息
+                // 常见的报警类型：COMM_ALARM (0x1100), COMM_ALARM_V30 (0x4000), COMM_ALARM_V40 (0x4007)
+                if (lCommand == HCNetSDK.COMM_ALARM || 
+                    lCommand == HCNetSDK.COMM_ALARM_V30 || 
+                    lCommand == HCNetSDK.COMM_ALARM_V40 ||
+                    lCommand == HCNetSDK.COMM_ALARM_RULE ||
+                    lCommand == HCNetSDK.COMM_SWITCH_ALARM) {
+                    
+                    // 从pAlarmer中提取设备信息
+                    if (pAlarmer != null && pAlarmer.byDeviceIPValid == 1) {
+                        String deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8).trim();
+                        int channel = 1; // 默认通道1
+                        if (pAlarmer.byChannelValid == 1) {
+                            channel = pAlarmer.byChannel;
+                        }
+                        
+                        // 通过IP和端口查找设备
+                        if (deviceManager != null && alarmService != null) {
+                            // 尝试通过userId查找设备（如果pAlarmer中有userId信息）
+                            // 否则通过IP查找
+                            int userId = -1;
+                            if (pAlarmer.byUserIDValid == 1) {
+                                userId = pAlarmer.lUserID;
+                            }
+                            
+                            String deviceId = null;
+                            if (userId > 0) {
+                                deviceId = deviceManager.getDeviceIdByUserId(userId);
+                            }
+                            
+                            // 如果通过userId找不到，尝试通过IP查找
+                            if (deviceId == null) {
+                                // 获取所有设备，查找匹配的IP
+                                java.util.List<DeviceInfo> devices = deviceManager.getAllDevices();
+                                for (DeviceInfo device : devices) {
+                                    if (deviceIP.equals(device.getIp())) {
+                                        deviceId = device.getDeviceId();
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (deviceId != null) {
+                                String alarmType = "COMM_ALARM_" + Integer.toHexString(lCommand);
+                                String alarmMessage = "报警类型: " + alarmType;
+                                alarmService.handleAlarm(deviceId, channel, alarmType, alarmMessage);
+                            } else {
+                                logger.debug("无法找到设备: IP={}, userId={}", deviceIP, userId);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("处理报警回调异常", e);
+            }
+        }
     }
 
     /**

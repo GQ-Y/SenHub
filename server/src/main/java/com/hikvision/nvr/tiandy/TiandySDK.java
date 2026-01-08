@@ -28,6 +28,8 @@ public class TiandySDK implements DeviceSDK {
     // 回调对象（延迟初始化，在库加载后创建，确保JNA能正确映射）
     private NvssdkLibrary.MAIN_NOTIFY_V4 emptyMainNotify;
     private NvssdkLibrary.ALARM_NOTIFY_V4 emptyAlarmNotify;
+    private NvssdkLibrary.ALARM_NOTIFY_V4 alarmNotifyCallback;
+    private com.hikvision.nvr.service.AlarmService alarmService;
     private NvssdkLibrary.PARACHANGE_NOTIFY_V4 emptyParaNotify;
     private NvssdkLibrary.COMRECV_NOTIFY_V4 emptyComNotify;
     private NvssdkLibrary.PROXY_NOTIFY emptyProxyNotify;
@@ -48,9 +50,17 @@ public class TiandySDK implements DeviceSDK {
         emptyAlarmNotify = new NvssdkLibrary.ALARM_NOTIFY_V4() {
             @Override
             public void apply(int ulLogonID, int iChan, int iAlarmState, int iAlarmType, com.sun.jna.Pointer iUser) {
-                // 空实现
+                // 空实现（默认使用空回调，如果设置了alarmService则使用实际回调）
+                if (alarmNotifyCallback != null) {
+                    alarmNotifyCallback.apply(ulLogonID, iChan, iAlarmState, iAlarmType, iUser);
+                }
             }
         };
+        
+        // 初始化报警回调（如果alarmService已设置）
+        if (alarmService != null) {
+            initAlarmCallback();
+        }
         
         emptyParaNotify = new NvssdkLibrary.PARACHANGE_NOTIFY_V4() {
             @Override

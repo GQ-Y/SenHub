@@ -483,7 +483,7 @@ public class DeviceController {
             
             // 安全检查：确保路径在captures目录下
             java.io.File file = new java.io.File(path);
-            if (!file.exists() || !file.getCanonicalPath().startsWith(new java.io.File("./captures").getCanonicalPath())) {
+            if (!file.exists() || !file.getCanonicalPath().startsWith(new java.io.File("./storage/captures").getCanonicalPath())) {
                 response.status(404);
                 return createErrorResponse(404, "文件不存在");
             }
@@ -659,7 +659,7 @@ public class DeviceController {
             
             // 如果找不到，尝试获取最新的已完成文件
             if (filePath == null) {
-                File recordDir = new File("./records");
+                File recordDir = new File("./storage/records");
                 if (!recordDir.exists()) {
                     return null;
                 }
@@ -707,7 +707,7 @@ public class DeviceController {
             }
             
             // 转换为HTTP访问URL（视频文件访问已免token验证）
-            // 文件路径格式：./records/record_192_168_1_100_8000_20260106154930.mp4
+            // 文件路径格式：./storage/records/record_192_168_1_100_8000_20260106154930.mp4
             // URL格式：/api/devices/:id/video?file=xxx.mp4
             File file = new File(filePath);
             if (file.exists()) {
@@ -778,7 +778,7 @@ public class DeviceController {
             }
             
             // 确定文件路径（提取文件在extracts子目录）
-            String filePath = fileName.startsWith("extract_") ? "./records/extracts/" + fileName : "./records/" + fileName;
+            String filePath = fileName.startsWith("extract_") ? "./storage/records/extracts/" + fileName : "./storage/records/" + fileName;
             File videoFile = new File(filePath);
             if (!videoFile.exists() || !videoFile.isFile()) {
                 response.status(404);
@@ -1046,7 +1046,7 @@ public class DeviceController {
             }
             
             // 创建下载目录
-            String downloadDir = "./downloads";
+            String downloadDir = "./storage/downloads";
             File downloadDirFile = new File(downloadDir);
             if (!downloadDirFile.exists()) {
                 downloadDirFile.mkdirs();
@@ -1166,7 +1166,7 @@ public class DeviceController {
             java.io.File file = new java.io.File(filePath);
             
             // 安全检查：确保文件在downloads目录下
-            if (!file.getCanonicalPath().startsWith(new java.io.File("./downloads").getCanonicalPath())) {
+            if (!file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
                 response.status(403);
                 return createErrorResponse(403, "访问被拒绝：文件不在允许的目录中");
             }
@@ -1288,7 +1288,7 @@ public class DeviceController {
                 return createErrorResponse(404, "文件不存在");
             }
             
-            if (!file.getCanonicalPath().startsWith(new java.io.File("./downloads").getCanonicalPath())) {
+            if (!file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
                 response.status(403);
                 return createErrorResponse(403, "无权访问该文件");
             }
@@ -1323,7 +1323,7 @@ public class DeviceController {
             
             // 安全检查：确保路径在downloads目录下
             java.io.File file = new java.io.File(path);
-            if (!file.exists() || !file.getCanonicalPath().startsWith(new java.io.File("./downloads").getCanonicalPath())) {
+            if (!file.exists() || !file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
                 response.status(404);
                 return createErrorResponse(404, "文件不存在");
             }

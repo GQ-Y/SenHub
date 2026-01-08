@@ -22,6 +22,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./sdkLog:/app/sdkLog
+      - ./storage:/app/storage
     environment:
       - JAVA_HOME=/usr/lib/jvm/java-11-openjdk-arm64
       - MAVEN_HOME=/opt/maven
