@@ -11,7 +11,9 @@ import {
   Menu,
   Languages,
   X,
-  Check
+  Check,
+  Package,
+  Shield
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useAppContext } from '../contexts/AppContext';
@@ -67,11 +69,20 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
       case 'DEVICE_LIST':
         navigate('/devices');
         break;
+      case 'ASSEMBLY_MANAGEMENT':
+        navigate('/assemblies');
+        break;
+      case 'ASSEMBLY_DETAIL':
+        // 这个由路由自动处理
+        break;
       case 'DRIVER_CONFIG':
         navigate('/drivers');
         break;
       case 'MQTT_CONFIG':
         navigate('/mqtt');
+        break;
+      case 'ALARM_RULES':
+        navigate('/alarm-rules');
         break;
       case 'SYSTEM_CONFIG':
         navigate('/settings');
@@ -186,6 +197,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               isActive={currentView === 'DEVICE_LIST' || currentView === 'DEVICE_DETAIL'} 
               onClick={() => handleNavigate('DEVICE_LIST')}
             />
+            <SidebarItem 
+              icon={Package} 
+              label={t('assembly_management')} 
+              isActive={currentView === 'ASSEMBLY_MANAGEMENT' || currentView === 'ASSEMBLY_DETAIL'} 
+              onClick={() => handleNavigate('ASSEMBLY_MANAGEMENT')}
+            />
              <div className="pt-4 pb-2">
               <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('integration')}</p>
             </div>
@@ -204,6 +221,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
              <div className="pt-4 pb-2">
               <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('settings')}</p>
             </div>
+            <SidebarItem 
+              icon={Shield} 
+              label={t('alarm_rules')} 
+              isActive={currentView === 'ALARM_RULES'} 
+              onClick={() => handleNavigate('ALARM_RULES')}
+            />
             <SidebarItem 
               icon={Settings} 
               label={t('system_config')} 
@@ -237,8 +260,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
                {currentView === 'DASHBOARD' ? t('dashboard') : 
                 currentView === 'DEVICE_LIST' ? t('cameras') :
                 currentView === 'DEVICE_DETAIL' ? t('live_view') :
+                currentView === 'ASSEMBLY_MANAGEMENT' ? t('assembly_management') :
+                currentView === 'ASSEMBLY_DETAIL' ? t('assembly_management') :
                 currentView === 'DRIVER_CONFIG' ? t('drivers') :
-                currentView === 'MQTT_CONFIG' ? t('mqtt_broker') : t('system_config')}
+                currentView === 'MQTT_CONFIG' ? t('mqtt_broker') :
+                currentView === 'ALARM_RULES' ? t('alarm_rules') :
+                t('system_config')}
             </h2>
           </div>
 

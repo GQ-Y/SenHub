@@ -11,13 +11,15 @@ import {
   Edit2,
   X,
   AlertTriangle,
-  Check
+  Check,
+  Settings
 } from 'lucide-react';
 import { Device, DeviceStatus } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
 import { Modal } from './Modal';
 import { useModal } from '../hooks/useModal';
+import { QuickConfigModal } from './QuickConfigModal';
 
 // Reusable Modal Component
 const CustomModal = ({ 
@@ -66,6 +68,8 @@ export const DeviceList: React.FC = () => {
   // Local state for actions
   const [activeModal, setActiveModal] = useState<'NONE' | 'ADD' | 'EDIT' | 'DELETE' | 'REBOOT'>('NONE');
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [showQuickConfig, setShowQuickConfig] = useState(false);
+  const [configDevice, setConfigDevice] = useState<Device | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
@@ -166,6 +170,11 @@ export const DeviceList: React.FC = () => {
   const openRebootModal = (device: Device) => {
     setSelectedDevice(device);
     setActiveModal('REBOOT');
+  };
+
+  const openQuickConfig = (device: Device) => {
+    setConfigDevice(device);
+    setShowQuickConfig(true);
   };
 
   const handleCloseModal = () => {
@@ -411,6 +420,13 @@ export const DeviceList: React.FC = () => {
                         <Video size={18} />
                       </button>
                       <button 
+                        className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        title={t('quick_config')}
+                        onClick={(e) => { e.stopPropagation(); openQuickConfig(device); }}
+                      >
+                        <Settings size={18} />
+                      </button>
+                      <button 
                         className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         title={t('edit_device')}
                         onClick={(e) => { e.stopPropagation(); openEditModal(device); }}
@@ -593,6 +609,20 @@ export const DeviceList: React.FC = () => {
              <p className="font-bold text-gray-800 mt-2">{selectedDevice?.name}</p>
         </div>
       </CustomModal>
+
+      {/* Quick Config Modal */}
+      {showQuickConfig && configDevice && (
+        <QuickConfigModal
+          device={configDevice}
+          onClose={() => {
+            setShowQuickConfig(false);
+            setConfigDevice(null);
+          }}
+          onSave={() => {
+            loadDevices();
+          }}
+        />
+      )}
 
     </div>
     </>

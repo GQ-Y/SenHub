@@ -1,6 +1,6 @@
 // API服务模块
 import { get, post, put, del, setToken } from './client';
-import { Device, Driver, SystemConfig } from '../../types';
+import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord } from '../../types';
 
 // ==================== 认证服务 ====================
 export const authService = {
@@ -145,6 +145,40 @@ export const deviceService = {
    */
   async getBrands() {
     const response = await get<{ supported: string[]; default: string }>('/devices/brands');
+    return response;
+  },
+
+  /**
+   * 获取设备配置（装置关联、规则等）
+   */
+  async getDeviceConfig(deviceId: string) {
+    const response = await get<{
+      assemblies: Assembly[];
+      rules: AlarmRule[];
+      role?: DeviceRole;
+      extensionData?: string;
+    }>(`/devices/${encodeURIComponent(deviceId)}/config`);
+    return response;
+  },
+
+  /**
+   * 更新设备配置
+   */
+  async updateDeviceConfig(deviceId: string, config: {
+    assemblyId?: string;
+    role?: DeviceRole;
+    positionInfo?: string;
+    extensionData?: string;
+  }) {
+    const response = await put<{ message: string }>(`/devices/${encodeURIComponent(deviceId)}/config`, config);
+    return response;
+  },
+
+  /**
+   * 获取设备所属的装置列表
+   */
+  async getDeviceAssemblies(deviceId: string) {
+    const response = await get<Assembly[]>(`/devices/${encodeURIComponent(deviceId)}/assemblies`);
     return response;
   },
 };
@@ -316,3 +350,170 @@ export const dashboardService = {
     }
   },
 };
+
+// ==================== 装置服务 ====================
+export const assemblyService = {
+  /**
+   * 获取装置列表
+   */
+  async getAssemblies(params?: { search?: string; status?: string }) {
+    const response = await get<Assembly[]>('/assemblies', params);
+    return response;
+  },
+
+  /**
+   * 获取装置详情
+   */
+  async getAssembly(assemblyId: string) {
+    const response = await get<Assembly>(`/assemblies/${encodeURIComponent(assemblyId)}`);
+    return response;
+  },
+
+  /**
+   * 创建装置
+   */
+  async createAssembly(assembly: Partial<Assembly>) {
+    const response = await post<Assembly>('/assemblies', assembly);
+    return response;
+  },
+
+  /**
+   * 更新装置
+   */
+  async updateAssembly(assemblyId: string, assembly: Partial<Assembly>) {
+    const response = await put<Assembly>(`/assemblies/${encodeURIComponent(assemblyId)}`, assembly);
+    return response;
+  },
+
+  /**
+   * 删除装置
+   */
+  async deleteAssembly(assemblyId: string) {
+    const response = await del<{ message: string }>(`/assemblies/${encodeURIComponent(assemblyId)}`);
+    return response;
+  },
+
+  /**
+   * 添加设备到装置
+   */
+  async addDeviceToAssembly(assemblyId: string, deviceId: string, role: DeviceRole, positionInfo?: string) {
+    const response = await post<AssemblyDevice>(`/assemblies/${encodeURIComponent(assemblyId)}/devices`, {
+      deviceId,
+      role,
+      positionInfo,
+    });
+    return response;
+  },
+
+  /**
+   * 从装置移除设备
+   */
+  async removeDeviceFromAssembly(assemblyId: string, deviceId: string) {
+    const response = await del<{ message: string }>(
+      `/assemblies/${encodeURIComponent(assemblyId)}/devices/${encodeURIComponent(deviceId)}`
+    );
+    return response;
+  },
+
+  /**
+   * 获取装置的所有设备
+   */
+  async getAssemblyDevices(assemblyId: string) {
+    const response = await get<AssemblyDevice[]>(`/assemblies/${encodeURIComponent(assemblyId)}/devices`);
+    return response;
+  },
+};
+
+// ==================== 报警规则服务 ====================
+export const alarmRuleService = {
+  /**
+   * 获取规则列表（支持过滤）
+   */
+  async getAlarmRules(params?: { deviceId?: string; assemblyId?: string; alarmType?: AlarmType; enabled?: boolean }) {
+    const response = await get<AlarmRule[]>('/alarm-rules', params);
+    return response;
+  },
+
+  /**
+   * 获取规则详情
+   */
+  async getAlarmRule(ruleId: string) {
+    const response = await get<AlarmRule>(`/alarm-rules/${encodeURIComponent(ruleId)}`);
+    return response;
+  },
+
+  /**
+   * 创建规则
+   */
+  async createAlarmRule(rule: Partial<AlarmRule>) {
+    const response = await post<AlarmRule>('/alarm-rules', rule);
+    return response;
+  },
+
+  /**
+   * 更新规则
+   */
+  async updateAlarmRule(ruleId: string, rule: Partial<AlarmRule>) {
+    const response = await put<AlarmRule>(`/alarm-rules/${encodeURIComponent(ruleId)}`, rule);
+    return response;
+  },
+
+  /**
+   * 删除规则
+   */
+  async deleteAlarmRule(ruleId: string) {
+    const response = await del<{ message: string }>(`/alarm-rules/${encodeURIComponent(ruleId)}`);
+    return response;
+  },
+
+  /**
+   * 启用/禁用规则
+   */
+  async toggleRule(ruleId: string, enabled: boolean) {
+    const response = await put<AlarmRule>(`/alarm-rules/${encodeURIComponent(ruleId)}/toggle`, { enabled });
+    return response;
+  },
+
+  /**
+   * 获取设备的所有规则
+   */
+  async getDeviceRules(deviceId: string) {
+    const response = await get<AlarmRule[]>(`/devices/${encodeURIComponent(deviceId)}/alarm-rules`);
+    return response;
+  },
+
+  /**
+   * 获取装置的所有规则
+   */
+  async getAssemblyRules(assemblyId: string) {
+    const response = await get<AlarmRule[]>(`/assemblies/${encodeURIComponent(assemblyId)}/alarm-rules`);
+    return response;
+  },
+};
+
+// ==================== 报警记录服务 ====================
+export const alarmRecordService = {
+  /**
+   * 获取报警记录列表
+   */
+  async getAlarmRecords(params?: {
+    deviceId?: string;
+    assemblyId?: string;
+    alarmType?: AlarmType;
+    startTime?: string;
+    endTime?: string;
+    limit?: number;
+  }) {
+    const response = await get<AlarmRecord[]>('/alarm-records', params);
+    return response;
+  },
+
+  /**
+   * 获取报警记录详情
+   */
+  async getAlarmRecord(recordId: string) {
+    const response = await get<AlarmRecord>(`/alarm-records/${encodeURIComponent(recordId)}`);
+    return response;
+  },
+};
+

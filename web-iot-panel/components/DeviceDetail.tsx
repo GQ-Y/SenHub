@@ -11,7 +11,8 @@ import {
   Calendar,
   Download,
   Maximize,
-  Minimize
+  Minimize,
+  Video as VideoIcon
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
@@ -19,6 +20,7 @@ import { Device, DeviceStatus } from '../types';
 import { Modal, ConfirmModal } from './Modal';
 import { useModal } from '../hooks/useModal';
 import { API_CONFIG } from '../src/api/config';
+import { DeviceConfig } from './DeviceConfig';
 
 export const DeviceDetail: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -41,6 +43,7 @@ export const DeviceDetail: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [activeTab, setActiveTab] = useState<'preview' | 'config'>('preview');
   
   // 弹窗管理
   const modal = useModal();
@@ -500,9 +503,40 @@ export const DeviceDetail: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Image Area - 录像回放播放窗口 */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* 标签页 */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="border-b border-gray-100">
+          <div className="flex space-x-1 px-4">
+            <button
+              onClick={() => setActiveTab('preview')}
+              className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
+                activeTab === 'preview'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <VideoIcon size={18} className="inline mr-2" />
+              {t('live_view')}
+            </button>
+            <button
+              onClick={() => setActiveTab('config')}
+              className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
+                activeTab === 'config'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Settings size={18} className="inline mr-2" />
+              {t('device_config')}
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {activeTab === 'preview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Main Image Area - 录像回放播放窗口 */}
+              <div className="lg:col-span-2 space-y-6">
           <div 
             ref={imageContainerRef}
             className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
@@ -800,6 +834,11 @@ export const DeviceDetail: React.FC = () => {
                     </button>
                 </div>
             </div>
+            </div>
+            </div>
+          )}
+
+          {activeTab === 'config' && deviceId && <DeviceConfig deviceId={deviceId} />}
         </div>
       </div>
     </div>

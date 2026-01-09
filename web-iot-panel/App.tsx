@@ -8,6 +8,9 @@ import { DriverConfig } from './components/DriverConfig';
 import { MqttConfig } from './components/MqttConfig';
 import { SystemSettings } from './components/SystemSettings';
 import { LoginPage } from './components/LoginPage';
+import { AssemblyManagement } from './components/AssemblyManagement';
+import { AssemblyDetail } from './components/AssemblyDetail';
+import { AlarmRules } from './components/AlarmRules';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 
 // 路由守卫组件
@@ -27,6 +30,9 @@ const getViewFromPath = (pathname: string): string => {
   if (pathname === '/') return 'DASHBOARD';
   if (pathname.startsWith('/devices/')) return 'DEVICE_DETAIL';
   if (pathname === '/devices') return 'DEVICE_LIST';
+  if (pathname.startsWith('/assemblies/')) return 'ASSEMBLY_DETAIL';
+  if (pathname === '/assemblies') return 'ASSEMBLY_MANAGEMENT';
+  if (pathname === '/alarm-rules') return 'ALARM_RULES';
   if (pathname === '/drivers') return 'DRIVER_CONFIG';
   if (pathname === '/mqtt') return 'MQTT_CONFIG';
   if (pathname === '/settings') return 'SYSTEM_CONFIG';
@@ -69,6 +75,30 @@ const AppContent: React.FC = () => {
           element={
             <ProtectedRoute>
               <DeviceDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/assemblies"
+          element={
+            <ProtectedRoute>
+              <AssemblyManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/assemblies/:assemblyId"
+          element={
+            <ProtectedRoute>
+              <AssemblyDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/alarm-rules"
+          element={
+            <ProtectedRoute>
+              <AlarmRules />
             </ProtectedRoute>
           }
         />
