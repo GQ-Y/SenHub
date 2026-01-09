@@ -84,24 +84,37 @@ public class RadarTestService {
     }
 
     private boolean tryHandshake(String lidarIp) {
-        // 构建一个简单的 Livox SDK 2.0 探测包 (GetDeviceInfo 或者类似的 Header 探测)
-        // Mid-360 协议头: 0xAA, 0x01, length(2), seq(4), cmd_set(1), cmd_id(1),
-        // cmd_type(1), sender_type(1), crc16(2), data..., crc32(4)
-        // 这里我们使用一个简单的 UDP 探测，看端口是否 Reset
         try (DatagramSocket socket = new DatagramSocket()) {
-            socket.setSoTimeout(2000);
+            socket.setSoTimeout(3000);
             InetAddress address = InetAddress.getByName(lidarIp);
 
-            // 构造一个简单的获取设备信息的包 (这里简化，实际需要 CRC 校验)
-            // 根据官方协议，我们可以发送一个空的探测或直接尝试连接
-            byte[] dummy = new byte[] { 0x00, 0x01, 0x02 }; // 占位探测
-            DatagramPacket packet = new DatagramPacket(dummy, dummy.length, address, COMMAND_PORT);
-            socket.send(packet);
+            // 构造一个简单的 Livox SDK 2.0 GetDeviceInfo 请求包
+            // AA 01 0F 00 00 00 00 00 00 00 01 00 00 ... (简化版，包含协议头)
+            byte[] getDeviceInfoCmd = new byte[] {
+                    (byte) 0xAA, 0x01, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x01, 0x00, 0x00, (byte) 0xAD, (byte) 0xF0 // 简单固定包
+            };
 
-            // 尝试接收（即便出错，只要不被 ICMP Unreachable 也是一种迹象，但严格来说要看回包）
-            // 在测试阶段，我们主要看对方是否开放该端口
-            return true;
+            DatagramPacket sendPacket = new DatagramPacket(getDeviceInfoCmd, getDeviceInfoCmd.length, address,
+                    COMMAND_PORT);
+            socket.send(sendPacket);
+
+            // 尝试接收响应
+            byte[] buf = new byte[1024];
+            DatagramPacket receivePacket = new DatagramPacket(buf, buf.length);
+            try {
+                socket.receive(receivePacket);
+                String senderIp = receivePacket.getAddress().getHostAddress();
+                if (lidarIp.equals(senderIp)) {
+                    logger.info("接收到来自雷达 {} 的握手响应", senderIp);
+                    return true;
+                }
+            } catch (java.net.SocketTimeoutException e) {
+                logger.warn("雷达握手响应超时: {}", lidarIp);
+            }
+            return false;
         } catch (Exception e) {
+            logger.error("雷达握手异常", e);
             return false;
         }
     }

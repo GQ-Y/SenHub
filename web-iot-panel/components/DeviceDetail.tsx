@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  Camera, 
-  Settings, 
-  ZoomIn, 
-  ZoomOut, 
+import {
+  ArrowLeft,
+  Camera,
+  Settings,
+  ZoomIn,
+  ZoomOut,
   RotateCw,
   MoreHorizontal,
   Calendar,
@@ -32,7 +32,7 @@ export const DeviceDetail: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
   const imageContainerRef = useRef<HTMLDivElement>(null);
-  
+
   // 录像回放相关状态
   const [playbackVideoUrl, setPlaybackVideoUrl] = useState<string | null>(null);
   const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
@@ -44,7 +44,7 @@ export const DeviceDetail: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'config'>('preview');
-  
+
   // 弹窗管理
   const modal = useModal();
 
@@ -52,26 +52,11 @@ export const DeviceDetail: React.FC = () => {
   useEffect(() => {
     const loadDevice = async () => {
       if (!deviceId) return;
-      
+
       setIsLoading(true);
       try {
         const response = await deviceService.getDevice(deviceId);
-        const deviceData = response.data;
-        const deviceInfo = {
-          id: deviceData.id || deviceId,
-          name: deviceData.name || '',
-          ip: deviceData.ip || '',
-          port: deviceData.port || 8000,
-          brand: deviceData.brand || 'Hikvision',
-          model: deviceData.model || '',
-          status: (deviceData.status?.toUpperCase() as DeviceStatus) || DeviceStatus.OFFLINE,
-          lastSeen: deviceData.lastSeen || 'Never',
-          firmware: deviceData.firmware || '',
-          rtspUrl: deviceData.rtspUrl || '',
-          username: deviceData.username || '',
-          password: deviceData.password || '',
-        };
-        setDevice(deviceInfo);
+        setDevice(response.data);
       } catch (err) {
         console.error('加载设备详情失败:', err);
       } finally {
@@ -85,7 +70,7 @@ export const DeviceDetail: React.FC = () => {
   // 进入页面时自动抓图
   useEffect(() => {
     if (!deviceId || !device) return;
-    
+
     const captureSnapshot = async () => {
       setIsLoadingSnapshot(true);
       try {
@@ -93,8 +78,8 @@ export const DeviceDetail: React.FC = () => {
         if (response.data?.url) {
           // 使用API_CONFIG.BASE_URL，但需要去掉/api后缀，因为response.data.url已经包含了/api前缀
           const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
-          const fullUrl = response.data.url.startsWith('http') 
-            ? response.data.url 
+          const fullUrl = response.data.url.startsWith('http')
+            ? response.data.url
             : `${baseUrl}${response.data.url}`;
           setSnapshot(fullUrl);
         }
@@ -135,7 +120,7 @@ export const DeviceDetail: React.FC = () => {
     const now = new Date();
     const end = new Date(now);
     const start = new Date(now.getTime() - 60 * 60 * 1000); // 当前时间 - 1小时
-    
+
     setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
     setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
     // 同步更新选中日期为当前日期
@@ -172,18 +157,18 @@ export const DeviceDetail: React.FC = () => {
       if (response.data?.url) {
         // 使用API_CONFIG.BASE_URL，但需要去掉/api后缀，因为response.data.url已经包含了/api前缀
         const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
-        const fullUrl = response.data.url.startsWith('http') 
-          ? response.data.url 
+        const fullUrl = response.data.url.startsWith('http')
+          ? response.data.url
           : `${baseUrl}${response.data.url}`;
         setSnapshot(fullUrl);
       }
-      } catch (err: any) {
-        console.error('抓图失败:', err);
-        modal.showModal({
-          message: err.message || '获取快照失败',
-          type: 'error',
-        });
-      } finally {
+    } catch (err: any) {
+      console.error('抓图失败:', err);
+      modal.showModal({
+        message: err.message || '获取快照失败',
+        type: 'error',
+      });
+    } finally {
       setIsLoadingSnapshot(false);
     }
   };
@@ -212,7 +197,7 @@ export const DeviceDetail: React.FC = () => {
   const handlePtzControl = async (command: string, action: 'start' | 'stop' = 'start') => {
     try {
       await deviceService.ptzControl(deviceId, command, action, 1);
-      
+
       // PTZ控制结束时（stop），自动抓图并更新显示
       if (action === 'stop') {
         // 延迟500ms后抓图，确保PTZ操作完全停止
@@ -222,8 +207,8 @@ export const DeviceDetail: React.FC = () => {
             if (response.data?.url) {
               // 使用API_CONFIG.BASE_URL，但需要去掉/api后缀，因为response.data.url已经包含了/api前缀
               const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
-              const fullUrl = response.data.url.startsWith('http') 
-                ? response.data.url 
+              const fullUrl = response.data.url.startsWith('http')
+                ? response.data.url
                 : `${baseUrl}${response.data.url}`;
               setSnapshot(fullUrl);
             }
@@ -286,15 +271,15 @@ export const DeviceDetail: React.FC = () => {
     try {
       // 启动下载
       const response = await deviceService.playback(deviceId, playbackStartTime, playbackEndTime, 1);
-      
+
       // 检查响应数据
       if (!response || !response.data) {
         throw new Error('启动下载失败：服务器未返回数据');
       }
-      
+
       // 检查响应数据结构
       console.log('Playback API响应:', JSON.stringify(response, null, 2));
-      
+
       const handle = response.data?.downloadHandle;
       const filePath = response.data?.filePath;
 
@@ -376,17 +361,17 @@ export const DeviceDetail: React.FC = () => {
   // 根据选择的日期设置默认时间范围（最新1小时）
   const handleDateChange = (date: string) => {
     setSelectedDate(date);
-    
+
     // 当日期改变时，设置为该日期的最新1小时（当前时间往前推1小时）
     const now = new Date();
     const end = new Date(now);
     const start = new Date(now.getTime() - 60 * 60 * 1000); // 当前时间 - 1小时
-    
+
     // 如果选中的日期不是今天，则设置为该日期的最后1小时（23:00:00 - 23:59:59）
     const selected = new Date(date);
     const today = new Date();
     const isToday = selected.toDateString() === today.toDateString();
-    
+
     if (!isToday) {
       // 不是今天，设置为选中日期的最后1小时
       const endDate = new Date(selected);
@@ -460,388 +445,385 @@ export const DeviceDetail: React.FC = () => {
           onConfirm={modal.modalOptions?.onConfirm}
         />
       )}
-      
+
       <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={() => navigate('/devices')}
-            className="p-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            <ArrowLeft size={20} className="text-gray-600" />
-          </button>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">{device.name}</h2>
-            <div className="flex items-center space-x-3 text-sm text-gray-500 mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                device.status === 'ONLINE' ? 'bg-green-100 text-green-700' : 
-                device.status === 'OFFLINE' ? 'bg-red-100 text-red-700' : 
-                'bg-yellow-100 text-yellow-700'
-              }`}>
-                {getStatusText(device.status)}
-              </span>
-              <span>•</span>
-              <span className="font-mono">{device.ip}</span>
-              <span>•</span>
-              <span>{device.brand} {device.model}</span>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigate('/devices')}
+              className="p-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              <ArrowLeft size={20} className="text-gray-600" />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">{device.name}</h2>
+              <div className="flex items-center space-x-3 text-sm text-gray-500 mt-1">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${device.status === 'ONLINE' ? 'bg-green-100 text-green-700' :
+                  device.status === 'OFFLINE' ? 'bg-red-100 text-red-700' :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>
+                  {getStatusText(device.status)}
+                </span>
+                <span>•</span>
+                <span className="font-mono">{device.ip}</span>
+                <span>•</span>
+                <span>{device.brand} {device.model}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3">
             <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors shadow-sm">
-                <Settings size={18} />
-                <span>{t('settings')}</span>
+              <Settings size={18} />
+              <span>{t('settings')}</span>
             </button>
-            <button 
+            <button
               onClick={handleReboot}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
             >
-                <RotateCw size={18} />
-                <span>{t('reboot')}</span>
-            </button>
-        </div>
-      </div>
-
-      {/* 标签页 */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="border-b border-gray-100">
-          <div className="flex space-x-1 px-4">
-            <button
-              onClick={() => setActiveTab('preview')}
-              className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
-                activeTab === 'preview'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <VideoIcon size={18} className="inline mr-2" />
-              {t('live_view')}
-            </button>
-            <button
-              onClick={() => setActiveTab('config')}
-              className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
-                activeTab === 'config'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Settings size={18} className="inline mr-2" />
-              {t('device_config')}
+              <RotateCw size={18} />
+              <span>{t('reboot')}</span>
             </button>
           </div>
         </div>
 
-        <div className="p-6">
-          {activeTab === 'preview' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Main Image Area - 录像回放播放窗口 */}
-              <div className="lg:col-span-2 space-y-6">
-          <div 
-            ref={imageContainerRef}
-            className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
-          >
-            {playbackVideoUrl ? (
-              <div className="w-full h-full flex flex-col">
-                <video
-                  ref={videoRef}
-                  src={playbackVideoUrl}
-                  controls
-                  className="w-full h-full"
-                  onError={(e) => {
-                    console.error('视频加载失败:', playbackVideoUrl, e);
-                    modal.showModal({
-                      message: '视频加载失败，可能是格式不支持。SDV格式需要转换为MP4格式。',
-                      type: 'error',
-                    });
-                    setPlaybackVideoUrl(null);
-                  }}
-                  onLoadedMetadata={() => {
-                    console.log('视频元数据加载成功');
-                  }}
-                  onCanPlay={() => {
-                    console.log('视频可以播放');
-                  }}
-                />
-                {downloadProgress > 0 && downloadProgress < 100 && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 text-sm">
-                    下载进度: {downloadProgress}%
-                  </div>
-                )}
-              </div>
-            ) : snapshot ? (
-              <img
-                src={snapshot}
-                alt="设备快照"
-                className="w-full h-full object-contain"
-                onError={(e) => {
-                  console.error('图片加载失败:', snapshot);
-                  setSnapshot(null);
-                }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                <div className="text-center text-gray-400">
-                  {isLoadingSnapshot ? (
-                    <>
-                      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-sm">正在抓图...</p>
-                    </>
-                  ) : isLoadingPlayback ? (
-                    <>
-                      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-sm">正在下载录像: {downloadProgress}%</p>
-                      {downloadHandle !== null && (
-                        <button
-                          onClick={handleStopPlayback}
-                          className="mt-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
-                        >
-                          取消下载
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <p className="mb-2">暂无图像</p>
-                      <p className="text-sm">点击抓图按钮获取设备快照，或选择时间进行录像回放</p>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {/* Overlay UI - 时间显示 */}
-            <div className="absolute top-4 right-4 z-10">
-                <span className="px-2 py-1 bg-black/50 backdrop-blur-md text-white text-xs rounded font-mono">
-                    {new Date().toLocaleTimeString()}
-                </span>
+        {/* 标签页 */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="border-b border-gray-100">
+            <div className="flex space-x-1 px-4">
+              <button
+                onClick={() => setActiveTab('preview')}
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'preview'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+              >
+                <VideoIcon size={18} className="inline mr-2" />
+                {t('live_view')}
+              </button>
+              <button
+                onClick={() => setActiveTab('config')}
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'config'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+              >
+                <Settings size={18} className="inline mr-2" />
+                {t('device_config')}
+              </button>
             </div>
-
-            {/* 控制按钮 - 全屏 */}
-            {snapshot && (
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
-                  <div className="flex items-center space-x-3">
-                      <button 
-                          onClick={handleFullscreen}
-                          className="text-white hover:text-blue-400 transition-colors" 
-                          title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
-                      >
-                          {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-                      </button>
-                  </div>
-              </div>
-            )}
           </div>
-          
-          {/* Timeline / Playback Controls */}
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-             <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-800 flex items-center">
-                    <Calendar size={18} className="mr-2 text-blue-500" />
-                    {t('playback')}
-                </h3>
-                <input 
-                  type="date" 
-                  value={selectedDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                />
-             </div>
-             
-             <div className="space-y-3">
-               <div className="grid grid-cols-2 gap-3">
-                 <div>
-                   <label className="block text-xs text-gray-600 mb-1">开始时间</label>
-                   <input
-                     type="datetime-local"
-                     value={playbackStartTime ? playbackStartTime.replace(' ', 'T') : ''}
-                     onChange={(e) => {
-                       const newStartTime = e.target.value.replace('T', ' ');
-                       setPlaybackStartTime(newStartTime);
-                       // 如果结束时间已设置，确保不超过1小时限制
-                       if (playbackEndTime) {
-                         const start = new Date(newStartTime.replace(' ', 'T'));
-                         const end = new Date(playbackEndTime.replace(' ', 'T'));
-                         const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
-                         if (end > maxEnd) {
-                           setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
-                         }
-                       }
-                     }}
-                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                   />
-                 </div>
-                 <div>
-                   <label className="block text-xs text-gray-600 mb-1">结束时间（最多1小时）</label>
-                   <input
-                     type="datetime-local"
-                     value={playbackEndTime ? playbackEndTime.replace(' ', 'T') : ''}
-                     onChange={(e) => {
-                       const newEndTime = e.target.value.replace('T', ' ');
-                       if (playbackStartTime) {
-                         const start = new Date(playbackStartTime.replace(' ', 'T'));
-                         const end = new Date(newEndTime.replace(' ', 'T'));
-                         const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
-                         if (end > maxEnd) {
-                           modal.showModal({
-                             message: '结束时间不能超过开始时间1小时',
-                             type: 'warning',
-                           });
-                           setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
-                           return;
-                         }
-                       }
-                       setPlaybackEndTime(newEndTime);
-                     }}
-                     min={playbackStartTime ? (() => {
-                       const start = new Date(playbackStartTime.replace(' ', 'T'));
-                       return start.toISOString().slice(0, 16);
-                     })() : undefined}
-                     max={playbackStartTime ? (() => {
-                       const start = new Date(playbackStartTime.replace(' ', 'T'));
-                       const maxEnd = new Date(start.getTime() + 60 * 60 * 1000);
-                       return maxEnd.toISOString().slice(0, 16);
-                     })() : undefined}
-                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                   />
-                 </div>
-               </div>
-               <p className="text-xs text-gray-500">提示：录像回放时间范围限制为1小时</p>
-               
-               <div className="flex items-center space-x-2">
-                 <button
-                   onClick={handleStartPlayback}
-                   disabled={isLoadingPlayback || !playbackStartTime || !playbackEndTime}
-                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                 >
-                   {isLoadingPlayback ? `下载中 ${downloadProgress}%` : '开始回放'}
-                 </button>
-                 {playbackVideoUrl && (
-                   <button
-                     onClick={() => {
-                       setPlaybackVideoUrl(null);
-                       setSnapshot(null);
-                       handleSnapshot();
-                     }}
-                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
-                   >
-                     查看快照
-                   </button>
-                 )}
-               </div>
-               
-               {isLoadingPlayback && downloadProgress > 0 && (
-                 <div className="w-full bg-gray-200 rounded-full h-2">
-                   <div
-                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                     style={{ width: `${downloadProgress}%` }}
-                   ></div>
-                 </div>
-               )}
-             </div>
-          </div>
-        </div>
 
-        {/* Controls Sidebar */}
-        <div className="space-y-6">
-            {/* PTZ Control */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between">
-                    {t('ptz_control')}
-                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">{t('online')}</span>
-                </h3>
-                
-                <div className="flex justify-center mb-6">
-                    <div className="relative w-48 h-48 bg-gray-50 rounded-full border border-gray-200 flex items-center justify-center shadow-inner">
-                         {/* D-Pad Buttons */}
-                         <button 
-                           onMouseDown={() => handlePtzControl('up', 'start')}
-                           onMouseUp={() => handlePtzControl('up', 'stop')}
-                           className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
-                         >
-                            <span className="rotate-90">‹</span>
-                         </button>
-                         <button 
-                           onMouseDown={() => handlePtzControl('down', 'start')}
-                           onMouseUp={() => handlePtzControl('down', 'stop')}
-                           className="absolute bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
-                         >
-                            <span className="-rotate-90">‹</span>
-                         </button>
-                         <button 
-                           onMouseDown={() => handlePtzControl('left', 'start')}
-                           onMouseUp={() => handlePtzControl('left', 'stop')}
-                           className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
-                         >
-                            <span>‹</span>
-                         </button>
-                         <button 
-                           onMouseDown={() => handlePtzControl('right', 'start')}
-                           onMouseUp={() => handlePtzControl('right', 'stop')}
-                           className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
-                         >
-                            <span className="rotate-180">‹</span>
-                         </button>
-                         
-                         {/* Center Reset */}
-                         <button className="w-14 h-14 bg-gradient-to-b from-white to-gray-50 rounded-full shadow flex items-center justify-center text-xs font-bold text-gray-500 border border-gray-100 active:scale-95 transition-transform">
-                             AUTO
-                         </button>
+          <div className="p-6">
+            {activeTab === 'preview' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Main Image Area - 录像回放播放窗口 */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div
+                    ref={imageContainerRef}
+                    className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
+                  >
+                    {playbackVideoUrl ? (
+                      <div className="w-full h-full flex flex-col">
+                        <video
+                          ref={videoRef}
+                          src={playbackVideoUrl}
+                          controls
+                          className="w-full h-full"
+                          onError={(e) => {
+                            console.error('视频加载失败:', playbackVideoUrl, e);
+                            modal.showModal({
+                              message: '视频加载失败，可能是格式不支持。SDV格式需要转换为MP4格式。',
+                              type: 'error',
+                            });
+                            setPlaybackVideoUrl(null);
+                          }}
+                          onLoadedMetadata={() => {
+                            console.log('视频元数据加载成功');
+                          }}
+                          onCanPlay={() => {
+                            console.log('视频可以播放');
+                          }}
+                        />
+                        {downloadProgress > 0 && downloadProgress < 100 && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 text-sm">
+                            下载进度: {downloadProgress}%
+                          </div>
+                        )}
+                      </div>
+                    ) : snapshot ? (
+                      <img
+                        src={snapshot}
+                        alt="设备快照"
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          console.error('图片加载失败:', snapshot);
+                          setSnapshot(null);
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                        <div className="text-center text-gray-400">
+                          {isLoadingSnapshot ? (
+                            <>
+                              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                              <p className="text-sm">正在抓图...</p>
+                            </>
+                          ) : isLoadingPlayback ? (
+                            <>
+                              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                              <p className="text-sm">正在下载录像: {downloadProgress}%</p>
+                              {downloadHandle !== null && (
+                                <button
+                                  onClick={handleStopPlayback}
+                                  className="mt-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                                >
+                                  取消下载
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <p className="mb-2">暂无图像</p>
+                              <p className="text-sm">点击抓图按钮获取设备快照，或选择时间进行录像回放</p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Overlay UI - 时间显示 */}
+                    <div className="absolute top-4 right-4 z-10">
+                      <span className="px-2 py-1 bg-black/50 backdrop-blur-md text-white text-xs rounded font-mono">
+                        {new Date().toLocaleTimeString()}
+                      </span>
                     </div>
+
+                    {/* 控制按钮 - 全屏 */}
+                    {snapshot && (
+                      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+                        <div className="flex items-center space-x-3">
+                          <button
+                            onClick={handleFullscreen}
+                            className="text-white hover:text-blue-400 transition-colors"
+                            title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
+                          >
+                            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Timeline / Playback Controls */}
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-gray-800 flex items-center">
+                        <Calendar size={18} className="mr-2 text-blue-500" />
+                        {t('playback')}
+                      </h3>
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => handleDateChange(e.target.value)}
+                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">开始时间</label>
+                          <input
+                            type="datetime-local"
+                            value={playbackStartTime ? playbackStartTime.replace(' ', 'T') : ''}
+                            onChange={(e) => {
+                              const newStartTime = e.target.value.replace('T', ' ');
+                              setPlaybackStartTime(newStartTime);
+                              // 如果结束时间已设置，确保不超过1小时限制
+                              if (playbackEndTime) {
+                                const start = new Date(newStartTime.replace(' ', 'T'));
+                                const end = new Date(playbackEndTime.replace(' ', 'T'));
+                                const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
+                                if (end > maxEnd) {
+                                  setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
+                                }
+                              }
+                            }}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">结束时间（最多1小时）</label>
+                          <input
+                            type="datetime-local"
+                            value={playbackEndTime ? playbackEndTime.replace(' ', 'T') : ''}
+                            onChange={(e) => {
+                              const newEndTime = e.target.value.replace('T', ' ');
+                              if (playbackStartTime) {
+                                const start = new Date(playbackStartTime.replace(' ', 'T'));
+                                const end = new Date(newEndTime.replace(' ', 'T'));
+                                const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
+                                if (end > maxEnd) {
+                                  modal.showModal({
+                                    message: '结束时间不能超过开始时间1小时',
+                                    type: 'warning',
+                                  });
+                                  setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
+                                  return;
+                                }
+                              }
+                              setPlaybackEndTime(newEndTime);
+                            }}
+                            min={playbackStartTime ? (() => {
+                              const start = new Date(playbackStartTime.replace(' ', 'T'));
+                              return start.toISOString().slice(0, 16);
+                            })() : undefined}
+                            max={playbackStartTime ? (() => {
+                              const start = new Date(playbackStartTime.replace(' ', 'T'));
+                              const maxEnd = new Date(start.getTime() + 60 * 60 * 1000);
+                              return maxEnd.toISOString().slice(0, 16);
+                            })() : undefined}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">提示：录像回放时间范围限制为1小时</p>
+
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={handleStartPlayback}
+                          disabled={isLoadingPlayback || !playbackStartTime || !playbackEndTime}
+                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                        >
+                          {isLoadingPlayback ? `下载中 ${downloadProgress}%` : '开始回放'}
+                        </button>
+                        {playbackVideoUrl && (
+                          <button
+                            onClick={() => {
+                              setPlaybackVideoUrl(null);
+                              setSnapshot(null);
+                              handleSnapshot();
+                            }}
+                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                          >
+                            查看快照
+                          </button>
+                        )}
+                      </div>
+
+                      {isLoadingPlayback && downloadProgress > 0 && (
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${downloadProgress}%` }}
+                          ></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex justify-between items-center px-4">
-                    <div className="flex flex-col items-center space-y-2">
-                        <button 
+                {/* Controls Sidebar */}
+                <div className="space-y-6">
+                  {/* PTZ Control */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between">
+                      {t('ptz_control')}
+                      <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">{t('online')}</span>
+                    </h3>
+
+                    <div className="flex justify-center mb-6">
+                      <div className="relative w-48 h-48 bg-gray-50 rounded-full border border-gray-200 flex items-center justify-center shadow-inner">
+                        {/* D-Pad Buttons */}
+                        <button
+                          onMouseDown={() => handlePtzControl('up', 'start')}
+                          onMouseUp={() => handlePtzControl('up', 'stop')}
+                          className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                        >
+                          <span className="rotate-90">‹</span>
+                        </button>
+                        <button
+                          onMouseDown={() => handlePtzControl('down', 'start')}
+                          onMouseUp={() => handlePtzControl('down', 'stop')}
+                          className="absolute bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                        >
+                          <span className="-rotate-90">‹</span>
+                        </button>
+                        <button
+                          onMouseDown={() => handlePtzControl('left', 'start')}
+                          onMouseUp={() => handlePtzControl('left', 'stop')}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                        >
+                          <span>‹</span>
+                        </button>
+                        <button
+                          onMouseDown={() => handlePtzControl('right', 'start')}
+                          onMouseUp={() => handlePtzControl('right', 'stop')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white shadow-md rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 active:bg-blue-50 transition-colors"
+                        >
+                          <span className="rotate-180">‹</span>
+                        </button>
+
+                        {/* Center Reset */}
+                        <button className="w-14 h-14 bg-gradient-to-b from-white to-gray-50 rounded-full shadow flex items-center justify-center text-xs font-bold text-gray-500 border border-gray-100 active:scale-95 transition-transform">
+                          AUTO
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center px-4">
+                      <div className="flex flex-col items-center space-y-2">
+                        <button
                           onMouseDown={() => handlePtzControl('zoom_out', 'start')}
                           onMouseUp={() => handlePtzControl('zoom_out', 'stop')}
                           className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
                         >
-                            <ZoomOut size={18} />
+                          <ZoomOut size={18} />
                         </button>
                         <span className="text-xs text-gray-500">{t('zoom_out')}</span>
-                    </div>
-                    <div className="flex flex-col items-center space-y-2">
-                        <button 
+                      </div>
+                      <div className="flex flex-col items-center space-y-2">
+                        <button
                           onMouseDown={() => handlePtzControl('zoom_in', 'start')}
                           onMouseUp={() => handlePtzControl('zoom_in', 'stop')}
                           className="w-10 h-10 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors"
                         >
-                            <ZoomIn size={18} />
+                          <ZoomIn size={18} />
                         </button>
                         <span className="text-xs text-gray-500">{t('zoom_in')}</span>
+                      </div>
                     </div>
-                </div>
-            </div>
+                  </div>
 
-            {/* Actions */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-800 mb-4">{t('quick_actions')}</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    <button 
+                  {/* Actions */}
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 className="font-bold text-gray-800 mb-4">{t('quick_actions')}</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
                         onClick={handleSnapshot}
                         className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
-                    >
+                      >
                         <Camera size={20} className="mb-1" />
                         <span className="text-xs font-medium">{t('snapshot')}</span>
-                    </button>
-                     <button 
-                       onClick={handleExport}
-                       className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
-                     >
+                      </button>
+                      <button
+                        onClick={handleExport}
+                        className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
+                      >
                         <Download size={20} className="mb-1" />
                         <span className="text-xs font-medium">{t('export')}</span>
-                    </button>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-            </div>
-            </div>
-            </div>
-          )}
+              </div>
+            )}
 
-          {activeTab === 'config' && deviceId && <DeviceConfig deviceId={deviceId} />}
+            {activeTab === 'config' && deviceId && <DeviceConfig deviceId={deviceId} />}
+          </div>
         </div>
       </div>
-    </div>
     </>
   );
 };

@@ -131,6 +131,13 @@ public class DeviceScanner {
      * 处理发现的设备
      */
     private void handleDeviceFound(String ip, int port, String deviceName) {
+        // 如果配置了网段过滤，检查发现的设备 IP 是否在网段内
+        String scanSegment = config.getScanSegment();
+        if (scanSegment != null && !scanSegment.isEmpty() && !ip.startsWith(scanSegment)) {
+            logger.debug("发现设备但被过滤（不在指定网段 {}）: {}", scanSegment, ip);
+            return;
+        }
+
         try {
             // 生成设备ID（使用IP地址）
             String deviceId = ip;

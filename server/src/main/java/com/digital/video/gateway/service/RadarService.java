@@ -74,6 +74,9 @@ public class RadarService {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
                 packetCount++;
+                if (packetCount == 1) {
+                    logger.info("成功接收到第一帧雷达点云数据包！");
+                }
                 if (packetCount % 500 == 0) {
                     logger.info("已累计接收到 {} 个雷达数据包", packetCount);
                 }

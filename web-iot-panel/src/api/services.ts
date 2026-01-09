@@ -1,6 +1,32 @@
 // API服务模块
 import { get, post, put, del, setToken } from './client';
-import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord } from '../../types';
+import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus } from '../../types';
+
+/**
+ * 助手函数：转换后端设备数据格式到前端格式
+ */
+const mapDevice = (d: any): Device => {
+  if (!d) return d;
+  return {
+    ...d,
+    id: d.id || d.device_id || `${d.ip}:${d.port}`,
+    status: (d.status === 1 || d.status === '1' || d.status === 'ONLINE')
+      ? DeviceStatus.ONLINE
+      : (d.status === 'WARNING' ? DeviceStatus.WARNING : DeviceStatus.OFFLINE)
+  };
+};
+
+/**
+ * 助手函数：转换后端装置数据格式到前端格式
+ */
+const mapAssembly = (a: any): Assembly => {
+  if (!a) return a;
+  return {
+    ...a,
+    id: a.id || a.assemblyId,
+    status: (a.status === 1 || a.status === '1' || a.status === 'active') ? 'active' : 'inactive'
+  };
+};
 
 // ==================== 认证服务 ====================
 export const authService = {
@@ -13,11 +39,11 @@ export const authService = {
       { username, password },
       { skipAuth: true }
     );
-    
+
     if (response.data.token) {
       setToken(response.data.token);
     }
-    
+
     return response;
   },
 };
@@ -28,16 +54,22 @@ export const deviceService = {
    * 获取设备列表
    */
   async getDevices(params?: { search?: string; status?: string }) {
-    const response = await get<Device[]>('/devices', params);
-    return response;
+    const response = await get<any[]>('/devices', params);
+    if (response.data && Array.isArray(response.data)) {
+      response.data = response.data.map(mapDevice);
+    }
+    return response as any;
   },
 
   /**
    * 获取设备详情
    */
   async getDevice(deviceId: string) {
-    const response = await get<Device>(`/devices/${encodeURIComponent(deviceId)}`);
-    return response;
+    const response = await get<any>(`/devices/${encodeURIComponent(deviceId)}`);
+    if (response.data) {
+      response.data = mapDevice(response.data);
+    }
+    return response as any;
   },
 
   /**
@@ -357,16 +389,22 @@ export const assemblyService = {
    * 获取装置列表
    */
   async getAssemblies(params?: { search?: string; status?: string }) {
-    const response = await get<Assembly[]>('/assemblies', params);
-    return response;
+    const response = await get<any[]>('/assemblies', params);
+    if (response.data && Array.isArray(response.data)) {
+      response.data = response.data.map(mapAssembly);
+    }
+    return response as any;
   },
 
   /**
    * 获取装置详情
    */
   async getAssembly(assemblyId: string) {
-    const response = await get<Assembly>(`/assemblies/${encodeURIComponent(assemblyId)}`);
-    return response;
+    const response = await get<any>(`/assemblies/${encodeURIComponent(assemblyId)}`);
+    if (response.data) {
+      response.data = mapAssembly(response.data);
+    }
+    return response as any;
   },
 
   /**

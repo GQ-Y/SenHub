@@ -8,6 +8,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
 
 /**
  * SQLite数据库管理类
@@ -744,7 +747,28 @@ public class Database {
      * 获取数据库连接（返回代理连接，防止被误关闭）
      */
     public Connection getConnection() {
-        return connection;
+        if (connection == null)
+            return null;
+
+        return (Connection) Proxy.newProxyInstance(
+                Connection.class.getClassLoader(),
+                new Class<?>[] { Connection.class },
+                new InvocationHandler() {
+                    @Override
+                    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                        // 如果调用的是 close 方法，且连接还没有真正关闭，则忽略
+                        if ("close".equals(method.getName())) {
+                            logger.debug("忽略对共享数据库连接的 close() 调用");
+                            return null;
+                        }
+                        // 其他方法正常执行
+                        try {
+                            return method.invoke(connection, args);
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            throw e.getTargetException();
+                        }
+                    }
+                });
     }
 
     /**
