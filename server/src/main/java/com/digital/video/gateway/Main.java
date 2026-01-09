@@ -400,7 +400,8 @@ public class Main {
         AuthController authController = new AuthController(database);
         HikvisionSDK hikvisionSDKForController = (HikvisionSDK) SDKFactory.getSDK("hikvision");
         DeviceController deviceController = new DeviceController(deviceManager, database, recorder,
-                captureService, ptzService, playbackService, hikvisionSDKForController);
+                captureService, ptzService, playbackService, hikvisionSDKForController,
+                assemblyService, alarmRuleService);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);
@@ -422,6 +423,8 @@ public class Main {
         Spark.get("/api/devices", deviceController::getDevices);
         Spark.get("/api/devices/brands", deviceController::getBrands);
         Spark.get("/api/devices/:id", deviceController::getDevice);
+        Spark.get("/api/devices/:id/config", deviceController::getDeviceConfig);
+        Spark.put("/api/devices/:id/config", deviceController::updateDeviceConfig);
         Spark.post("/api/devices", deviceController::addDevice);
         Spark.put("/api/devices/:id", deviceController::updateDevice);
         Spark.delete("/api/devices/:id", deviceController::deleteDevice);

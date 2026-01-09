@@ -10,6 +10,11 @@ import com.digital.video.gateway.recorder.Recorder;
 import com.digital.video.gateway.service.CaptureService;
 import com.digital.video.gateway.service.PTZService;
 import com.digital.video.gateway.service.PlaybackService;
+import com.digital.video.gateway.service.AssemblyService;
+import com.digital.video.gateway.service.AlarmRuleService;
+import com.digital.video.gateway.database.Assembly;
+import com.digital.video.gateway.database.AlarmRule;
+import com.digital.video.gateway.database.AssemblyDevice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.File;
@@ -32,11 +37,14 @@ public class DeviceController {
     private final PTZService ptzService;
     private final PlaybackService playbackService;
     private final HikvisionSDK sdk; // 保留用于重启等特殊功能（仅海康设备）
+    private final AssemblyService assemblyService;
+    private final AlarmRuleService alarmRuleService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public DeviceController(DeviceManager deviceManager, com.digital.video.gateway.database.Database database,
             Recorder recorder, CaptureService captureService, PTZService ptzService,
-            PlaybackService playbackService, HikvisionSDK sdk) {
+            PlaybackService playbackService, HikvisionSDK sdk,
+            AssemblyService assemblyService, AlarmRuleService alarmRuleService) {
         this.deviceManager = deviceManager;
         this.database = database;
         this.recorder = recorder;
@@ -44,6 +52,8 @@ public class DeviceController {
         this.ptzService = ptzService;
         this.playbackService = playbackService;
         this.sdk = sdk; // 保留用于重启等特殊功能
+        this.assemblyService = assemblyService;
+        this.alarmRuleService = alarmRuleService;
     }
 
     /**
@@ -1434,6 +1444,82 @@ public class DeviceController {
             logger.error("获取品牌列表失败", e);
             response.status(500);
             return createErrorResponse(500, "获取品牌列表失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取设备配置（装置关联、报警规则等）
+     * GET /api/devices/:id/config
+     */
+    public String getDeviceConfig(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+
+            Map<String, Object> data = new HashMap<>();
+
+            // Get assemblies
+            List<Assembly> assemblies = assemblyService.getAssembliesByDevice(deviceId);
+            data.put("assemblies", assemblies);
+
+            // Get rules
+            List<AlarmRule> rules = alarmRuleService.getDeviceRules(deviceId);
+            data.put("rules", rules);
+
+            // Get role (from first assembly if exists)
+            if (!assemblies.isEmpty()) {
+                AssemblyDevice ad = assemblyService.getAssemblyDevice(assemblies.get(0).getAssemblyId(), deviceId);
+                if (ad != null) {
+                    data.put("role", ad.getDeviceRole());
+                }
+            }
+
+            response.status(200);
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("获取设备配置失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取设备配置失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 更新设备配置
+     * PUT /api/devices/:id/config
+     */
+    public String updateDeviceConfig(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+
+            Object assemblyIdObj = body.get("assemblyId");
+            String assemblyId = assemblyIdObj != null ? String.valueOf(assemblyIdObj) : null;
+
+            Object roleObj = body.get("role");
+            String role = roleObj != null ? String.valueOf(roleObj) : null;
+
+            if (assemblyId != null && role != null) {
+                // Check if device is in assembly
+                AssemblyDevice ad = assemblyService.getAssemblyDevice(assemblyId, deviceId);
+                if (ad != null) {
+                    // Update role
+                    assemblyService.updateDeviceRole(assemblyId, deviceId, role);
+                } else {
+                    // Add to assembly
+                    assemblyService.addDeviceToAssembly(assemblyId, deviceId, role, null);
+                }
+            }
+
+            response.status(200);
+            return createSuccessResponse(Map.of("message", "配置已更新"));
+        } catch (Exception e) {
+            logger.error("更新设备配置失败", e);
+            response.status(500);
+            return createErrorResponse(500, "更新设备配置失败: " + e.getMessage());
         }
     }
 

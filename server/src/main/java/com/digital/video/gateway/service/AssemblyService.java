@@ -70,7 +70,8 @@ public class AssemblyService {
      */
     public Assembly getAssembly(String assemblyId) {
         String sql = "SELECT * FROM assemblies WHERE assembly_id = ?";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assemblyId);
             ResultSet rs = pstmt.executeQuery();
@@ -91,7 +92,8 @@ public class AssemblyService {
             assembly.setAssemblyId(UUID.randomUUID().toString());
         }
         String sql = "INSERT INTO assemblies (assembly_id, name, description, location, status) VALUES (?, ?, ?, ?, ?)";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assembly.getAssemblyId());
             pstmt.setString(2, assembly.getName());
@@ -111,7 +113,8 @@ public class AssemblyService {
      */
     public Assembly updateAssembly(String assemblyId, Assembly assembly) {
         String sql = "UPDATE assemblies SET name = ?, description = ?, location = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE assembly_id = ?";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assembly.getName());
             pstmt.setString(2, assembly.getDescription());
@@ -176,7 +179,8 @@ public class AssemblyService {
      */
     public AssemblyDevice addDeviceToAssembly(String assemblyId, String deviceId, String role, String positionInfo) {
         String sql = "INSERT OR REPLACE INTO assembly_devices (assembly_id, device_id, device_role, position_info, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assemblyId);
             pstmt.setString(2, deviceId);
@@ -195,7 +199,8 @@ public class AssemblyService {
      */
     public boolean removeDeviceFromAssembly(String assemblyId, String deviceId) {
         String sql = "DELETE FROM assembly_devices WHERE assembly_id = ? AND device_id = ?";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assemblyId);
             pstmt.setString(2, deviceId);
@@ -212,7 +217,8 @@ public class AssemblyService {
     public List<AssemblyDevice> getAssemblyDevices(String assemblyId) {
         List<AssemblyDevice> devices = new ArrayList<>();
         String sql = "SELECT * FROM assembly_devices WHERE assembly_id = ? ORDER BY priority DESC, created_at ASC";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assemblyId);
             ResultSet rs = pstmt.executeQuery();
@@ -231,7 +237,8 @@ public class AssemblyService {
     public List<Assembly> getAssembliesByDevice(String deviceId) {
         List<Assembly> assemblies = new ArrayList<>();
         String sql = "SELECT a.* FROM assemblies a INNER JOIN assembly_devices ad ON a.assembly_id = ad.assembly_id WHERE ad.device_id = ?";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             ResultSet rs = pstmt.executeQuery();
@@ -247,9 +254,13 @@ public class AssemblyService {
     /**
      * 获取装置设备关联
      */
-    private AssemblyDevice getAssemblyDevice(String assemblyId, String deviceId) {
+    /**
+     * 获取装置中的设备关联信息
+     */
+    public AssemblyDevice getAssemblyDevice(String assemblyId, String deviceId) {
         String sql = "SELECT * FROM assembly_devices WHERE assembly_id = ? AND device_id = ?";
-        Connection conn = database.getConnection(); try (
+        Connection conn = database.getConnection();
+        try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, assemblyId);
             pstmt.setString(2, deviceId);
@@ -261,5 +272,22 @@ public class AssemblyService {
             logger.error("获取装置设备关联失败: assemblyId={}, deviceId={}", assemblyId, deviceId, e);
         }
         return null;
+    }
+
+    /**
+     * 更新装置中的设备角色
+     */
+    public boolean updateDeviceRole(String assemblyId, String deviceId, String role) {
+        String sql = "UPDATE assembly_devices SET device_role = ? WHERE assembly_id = ? AND device_id = ?";
+        Connection conn = database.getConnection();
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, role);
+            pstmt.setString(2, assemblyId);
+            pstmt.setString(3, deviceId);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("更新装置设备角色失败", e);
+            return false;
+        }
     }
 }
