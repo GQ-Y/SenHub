@@ -732,40 +732,59 @@ public class TiandySDK implements DeviceSDK {
         }
 
         try {
-            // 将命令字符串转换为控制码
-            int actionCode = getPtzControlCode(command);
-            if (actionCode == 0) {
-                logger.error("未知的云台控制命令: {}", command);
-                return false;
-            }
-
             // 天地伟业SDK的通道号从0开始，需要转换为0-based
             int channelNo = channel > 0 ? channel - 1 : 0;
+
+            // 获取控制码
+            int actionCode;
+            if ("stop".equalsIgnoreCase(action)) {
+                // ⚠️ 修复：处理停止动作
+                if ("zoom_in".equalsIgnoreCase(command)) {
+                    actionCode = NvssdkLibrary.ZOOM_BIG_STOP; // 32 - 放大停止
+                } else if ("zoom_out".equalsIgnoreCase(command)) {
+                    actionCode = NvssdkLibrary.ZOOM_SMALL_STOP; // 34 - 缩小停止
+                } else {
+                    actionCode = NvssdkLibrary.PROTOCOL_MOVE_STOP; // 9 - 通用移动停止
+                }
+                logger.debug("云台停止动作: command={}, channel={}, actionCode={}", command, channel, actionCode);
+            } else {
+                // 处理开始动作
+                actionCode = getPtzControlCode(command);
+            }
+
+            if (actionCode == 0) {
+                logger.error("未知的云台控制命令或动作: command={}, action={}", command, action);
+                return false;
+            }
 
             // ⚠️ 关键修复：使用DeviceCtrlEx API（协议模式），参考官方示例
             // 官方示例：JavaVideoCtrlDemo/src/src/VideoCtrl.java:466-487行
             int iRet;
+
+            // 停止动作通常速度设为0（或者SDK内部忽略）
+            int currentSpeed = "stop".equalsIgnoreCase(action) ? 0 : speed;
 
             // 根据官方示例，不同方向的速度参数位置不同
             if (actionCode == NvssdkLibrary.PROTOCOL_MOVE_UP ||
                     actionCode == NvssdkLibrary.PROTOCOL_MOVE_DOWN) {
                 // 上下移动：速度在param2（第5个参数）
                 // DeviceCtrlEx(logonID, channel, action, 0, speed, 0)
-                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, speed, 0);
-                logger.debug("云台上下移动: actionCode={}, speed在param2={}", actionCode, speed);
+                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, currentSpeed, 0);
+                logger.debug("云台上下控制: actionCode={}, speed在param2={}, action={}", actionCode, currentSpeed, action);
 
             } else if (actionCode == NvssdkLibrary.PROTOCOL_MOVE_LEFT ||
                     actionCode == NvssdkLibrary.PROTOCOL_MOVE_RIGHT) {
                 // 左右移动：速度在param1（第4个参数）
                 // DeviceCtrlEx(logonID, channel, action, speed, 0, 0)
-                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, speed, 0, 0);
-                logger.debug("云台左右移动: actionCode={}, speed在param1={}", actionCode, speed);
+                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, currentSpeed, 0, 0);
+                logger.debug("云台左右控制: actionCode={}, speed在param1={}, action={}", actionCode, currentSpeed, action);
 
             } else {
                 // 其他命令（停止、自动、缩放等）：所有参数为0
                 // DeviceCtrlEx(logonID, channel, action, 0, 0, 0)
+                // 变倍控制即使有速度通常也在 param2 或 param1，但官方示例提示中变倍并未提及速度，传0是最安全的
                 iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, 0, 0);
-                logger.debug("云台其他命令: actionCode={}", actionCode);
+                logger.debug("云台其他控制: actionCode={}, action={}", actionCode, action);
             }
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {

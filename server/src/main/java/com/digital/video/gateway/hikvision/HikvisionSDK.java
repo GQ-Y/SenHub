@@ -798,7 +798,9 @@ public class HikvisionSDK implements DeviceSDK {
 
             // action: start=0, stop=1
             int stopFlag = "stop".equalsIgnoreCase(action) ? 1 : 0;
-            boolean result = hCNetSDK.NET_DVR_PTZControl_Other(userId, channel, commandCode, stopFlag);
+
+            // 使用带速度参数的接口，使speed参数生效
+            boolean result = hCNetSDK.NET_DVR_PTZControlWithSpeed_Other(userId, channel, commandCode, stopFlag, speed);
 
             if (result) {
                 logger.info("海康云台控制成功: userId={}, channel={}, command={}, action={}, speed={}",
