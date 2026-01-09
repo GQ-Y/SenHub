@@ -8,6 +8,8 @@ import com.digital.video.gateway.tiandy.TiandySDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
+
 /**
  * SDK工厂类
  * 负责创建和管理不同品牌的SDK实例
@@ -99,23 +101,58 @@ public class SDKFactory {
     
     /**
      * 根据品牌获取SDK实例
+     * 只返回已初始化的SDK实例，未初始化的SDK返回null
      */
     public static DeviceSDK getSDK(String brand) {
         if (brand == null || brand.isEmpty() || "auto".equalsIgnoreCase(brand)) {
             return null; // 需要自动检测
         }
         
+        DeviceSDK sdk = null;
         switch (brand.toLowerCase()) {
             case "hikvision":
-                return hikvisionSDK;
+                sdk = hikvisionSDK;
+                break;
             case "tiandy":
-                return tiandySDK;
+                sdk = tiandySDK;
+                break;
             case "dahua":
-                return dahuaSDK;
+                sdk = dahuaSDK;
+                break;
             default:
                 logger.warn("未知的品牌: {}", brand);
                 return null;
         }
+        
+        // 检查SDK是否已初始化
+        if (sdk != null && sdk.isInitialized()) {
+            return sdk;
+        } else if (sdk != null) {
+            logger.warn("SDK未初始化: {} (可能原因：库文件不存在、架构不匹配或初始化失败)", brand);
+            return null;
+        } else {
+            logger.warn("SDK实例不存在: {} (可能原因：库文件不存在或架构不匹配)", brand);
+            return null;
+        }
+    }
+    
+    /**
+     * 检查指定品牌的SDK是否已初始化
+     */
+    public static boolean isSDKInitialized(String brand) {
+        DeviceSDK sdk = getSDK(brand);
+        return sdk != null && sdk.isInitialized();
+    }
+    
+    /**
+     * 获取所有已初始化的SDK状态信息
+     */
+    public static Map<String, Boolean> getAllSDKStatus() {
+        Map<String, Boolean> status = new java.util.HashMap<>();
+        status.put("hikvision", hikvisionSDK != null && hikvisionSDK.isInitialized());
+        status.put("tiandy", tiandySDK != null && tiandySDK.isInitialized());
+        status.put("dahua", dahuaSDK != null && dahuaSDK.isInitialized());
+        return status;
     }
     
     /**

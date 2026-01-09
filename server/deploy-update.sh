@@ -55,10 +55,23 @@ else
 fi
 echo ""
 
-# 4. 停止旧服务
-echo "[4/7] 停止旧服务..."
+# 4. 停止旧服务并杀掉8084端口进程
+echo "[4/7] 停止旧服务和8084端口进程..."
 sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
     cd /home/zyc/data/xwq/demo/server
+    
+    # 首先杀掉占用8084端口的进程
+    echo "检查8084端口占用情况..."
+    PID_8084=$(lsof -ti:8084 2>/dev/null || netstat -tlnp 2>/dev/null | grep ':8084' | awk '{print $7}' | cut -d'/' -f1 | head -1 || echo "")
+    
+    if [ -n "$PID_8084" ]; then
+        echo "发现占用8084端口的进程，PID: $PID_8084"
+        kill -9 $PID_8084 2>/dev/null || true
+        sleep 1
+        echo "✅ 8084端口进程已停止"
+    else
+        echo "ℹ️  8084端口未被占用"
+    fi
     
     # 查找并停止运行中的服务
     PID=$(ps aux | grep -E 'video-gateway-service|com.digital.video.gateway.Main' | grep -v grep | awk '{print $2}' | head -1)
@@ -70,6 +83,15 @@ sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_
         echo "✅ 旧服务已停止"
     else
         echo "ℹ️  没有运行中的服务"
+    fi
+    
+    # 再次确认8084端口已释放
+    sleep 1
+    PID_8084_CHECK=$(lsof -ti:8084 2>/dev/null || echo "")
+    if [ -n "$PID_8084_CHECK" ]; then
+        echo "⚠️  警告: 8084端口仍被占用，强制杀掉: $PID_8084_CHECK"
+        kill -9 $PID_8084_CHECK 2>/dev/null || true
+        sleep 1
     fi
 EOF
 echo ""
@@ -87,13 +109,21 @@ echo ""
 
 # 6. 重新编译
 echo "[6/7] 重新编译项目..."
-sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
+COMPILE_OUTPUT=$(sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
     cd /home/zyc/data/xwq/demo/server
     
     echo "开始编译..."
-    mvn clean package -DskipTests
+    echo "当前目录: $(pwd)"
+    echo "Maven版本: $(mvn -version 2>&1 | head -1)"
+    echo "Java版本: $(java -version 2>&1 | head -1)"
+    echo ""
     
-    if [ $? -eq 0 ]; then
+    # 执行编译并捕获输出
+    mvn clean package -DskipTests 2>&1
+    COMPILE_EXIT_CODE=$?
+    
+    if [ $COMPILE_EXIT_CODE -eq 0 ]; then
+        echo ""
         echo "✅ 编译成功"
         
         # 检查生成的jar文件
@@ -102,17 +132,43 @@ sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_
             ls -lh target/video-gateway-service-1.0.0.jar
         else
             echo "⚠️  警告: 未找到预期的JAR文件"
+            echo "target目录内容:"
             ls -lh target/*.jar 2>/dev/null || echo "target目录下没有jar文件"
         fi
+        exit 0
     else
-        echo "❌ 编译失败"
-        exit 1
+        echo ""
+        echo "❌ 编译失败，退出码: $COMPILE_EXIT_CODE"
+        echo ""
+        echo "=== 编译错误详情 ==="
+        echo "请检查以下可能的问题:"
+        echo "1. Java版本是否匹配 (需要Java 11)"
+        echo "2. Maven依赖是否完整"
+        echo "3. 源代码是否有语法错误"
+        echo "4. 磁盘空间是否充足"
+        exit $COMPILE_EXIT_CODE
     fi
 EOF
+)
 
-if [ $? -ne 0 ]; then
+COMPILE_EXIT_CODE=$?
+
+# 显示编译输出
+echo "$COMPILE_OUTPUT"
+
+if [ $COMPILE_EXIT_CODE -ne 0 ]; then
     echo ""
-    echo "❌ 编译失败，请检查错误信息"
+    echo "=========================================="
+    echo "❌ 编译失败，请检查上述错误信息"
+    echo "=========================================="
+    echo ""
+    echo "排查建议:"
+    echo "1. 检查远程服务器Java和Maven环境"
+    echo "2. 查看完整的编译日志"
+    echo "3. 确认源代码同步是否完整"
+    echo ""
+    echo "手动排查命令:"
+    echo "  ssh $SERVER_USER@$SERVER_IP 'cd $REMOTE_DIR/server && mvn clean package -DskipTests'"
     exit 1
 fi
 echo ""
@@ -165,15 +221,16 @@ sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_
         echo "✅ 大华SDK库文件已找到: lib/$ARCH_DIR/dahua/libdhnetsdk.so"
     fi
     
-    # 杀掉占用8084端口的进程（如果有）
-    # 尝试使用fuser（可能需要sudo）或lsof
-    PID_8084=$(lsof -ti:8084 2>/dev/null || fuser 8084/tcp 2>/dev/null | awk '{print $1}' || echo "")
+    # 再次确认杀掉占用8084端口的进程（启动前最后检查）
+    echo "启动前检查8084端口..."
+    PID_8084=$(lsof -ti:8084 2>/dev/null || netstat -tlnp 2>/dev/null | grep ':8084' | awk '{print $7}' | cut -d'/' -f1 | head -1 || echo "")
     if [ -n "$PID_8084" ]; then
-        echo "发现占用8084端口的进程: $PID_8084"
+        echo "⚠️  发现占用8084端口的进程: $PID_8084，正在杀掉..."
         kill -9 $PID_8084 2>/dev/null || true
-        echo "已尝试杀掉占用8084端口的进程"
+        sleep 1
+        echo "✅ 8084端口进程已清理"
     else
-        echo "8084端口未被占用"
+        echo "✅ 8084端口未被占用，可以启动服务"
     fi
     
     # 构建java.library.path（根据架构）

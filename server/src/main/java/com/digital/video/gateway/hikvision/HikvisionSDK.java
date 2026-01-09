@@ -89,10 +89,9 @@ public class HikvisionSDK implements DeviceSDK {
             // 设置日志
             if (config != null && config.getLogPath() != null) {
                 hCNetSDK.NET_DVR_SetLogToFile(
-                    config.getLogLevel(),
-                    config.getLogPath(),
-                    false
-                );
+                        config.getLogLevel(),
+                        config.getLogPath(),
+                        false);
             }
 
             initialized = true;
@@ -119,46 +118,46 @@ public class HikvisionSDK implements DeviceSDK {
             if (sdkConfig != null && sdkConfig.getLibPath() != null) {
                 // 如果配置中提供了路径，使用LibraryPathHelper处理
                 baseLibPath = LibraryPathHelper.getSDKLibPath(
-                    sdkConfig.getLibPath(), "hikvision");
+                        sdkConfig.getLibPath(), "hikvision");
             } else {
                 // 默认使用架构区分的路径
                 baseLibPath = LibraryPathHelper.getSDKLibPath("hikvision");
             }
-            
-            logger.debug("海康SDK库路径: {} (架构: {})", baseLibPath, 
-                LibraryPathHelper.getArchitectureDir());
+
+            logger.debug("海康SDK库路径: {} (架构: {})", baseLibPath,
+                    LibraryPathHelper.getArchitectureDir());
 
             // 查找库文件（优先查找架构特定文件，然后查找默认文件）
             File libFile = null;
             String libFileName = "libhcnetsdk.so";
-            
+
             // 首先尝试查找架构特定的库文件（如libhcnetsdk.so.x86_64）
             String osArch = System.getProperty("os.arch");
             if (osArch != null) {
                 String normalizedArch = normalizeArchitecture(osArch);
                 String archSpecificLib = baseLibPath + "/libhcnetsdk.so." + normalizedArch;
                 File archSpecificFile = new File(archSpecificLib);
-                
+
                 if (archSpecificFile.exists()) {
                     libFile = archSpecificFile;
                     libFileName = "libhcnetsdk.so." + normalizedArch;
                     logger.debug("检测到架构特定库文件: {}", libFileName);
                 }
             }
-            
+
             // 如果架构特定库不存在，尝试使用默认库文件
             if (libFile == null || !libFile.exists()) {
                 String defaultLibPath = baseLibPath + "/libhcnetsdk.so";
                 libFile = new File(defaultLibPath);
                 if (!libFile.exists()) {
-                    logger.error("SDK库文件不存在: {} (已尝试架构特定文件: {})", 
-                        defaultLibPath, baseLibPath + "/libhcnetsdk.so." + 
-                        (osArch != null ? normalizeArchitecture(osArch) : "unknown"));
+                    logger.error("SDK库文件不存在: {} (已尝试架构特定文件: {})",
+                            defaultLibPath, baseLibPath + "/libhcnetsdk.so." +
+                                    (osArch != null ? normalizeArchitecture(osArch) : "unknown"));
                     return false;
                 }
                 libFileName = "libhcnetsdk.so";
             }
-            
+
             // 检查库文件架构是否与系统架构匹配
             if (!ArchitectureChecker.checkArchitecture(libFile)) {
                 logger.warn("海康SDK库文件架构不匹配，跳过加载");
@@ -169,16 +168,16 @@ public class HikvisionSDK implements DeviceSDK {
             // 使用LibraryPathHelper构建完整的库路径
             String libDir = libFile.getParent();
             String hcNetSDKComDir = libDir + "/HCNetSDKCom";
-            
+
             // 使用LibraryPathHelper构建完整的库路径
             String newLibPath = LibraryPathHelper.buildLibraryPath();
             System.setProperty("java.library.path", newLibPath);
             logger.debug("设置java.library.path: {}", newLibPath);
-            
+
             // 使用绝对路径直接加载库文件，确保能找到正确的架构版本
             // 这样可以避免JNA在java.library.path中查找时的问题
             String absoluteLibPath = libFile.getAbsolutePath();
-            
+
             // 如果使用的是架构特定的库文件（如libhcnetsdk.so.x86_64），
             // 需要确保libhcnetsdk.so符号链接指向它，或者直接使用绝对路径加载
             try {
@@ -210,7 +209,7 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     /**
      * 标准化架构名称
      */
@@ -218,9 +217,9 @@ public class HikvisionSDK implements DeviceSDK {
         if (arch == null) {
             return "unknown";
         }
-        
+
         arch = arch.toLowerCase().trim();
-        
+
         // ARM架构
         if (arch.contains("aarch64") || arch.equals("arm64")) {
             return "aarch64";
@@ -228,7 +227,7 @@ public class HikvisionSDK implements DeviceSDK {
         if (arch.contains("arm")) {
             return "arm";
         }
-        
+
         // x86架构
         if (arch.contains("x86_64") || arch.contains("x86-64") || arch.equals("amd64")) {
             return "x86_64";
@@ -236,7 +235,7 @@ public class HikvisionSDK implements DeviceSDK {
         if (arch.contains("x86") || arch.contains("i386") || arch.contains("i686")) {
             return "x86";
         }
-        
+
         return arch;
     }
 
@@ -249,23 +248,23 @@ public class HikvisionSDK implements DeviceSDK {
             String libPath;
             if (config.getLibPath() != null) {
                 libPath = LibraryPathHelper.getSDKLibPath(
-                    config.getLibPath(), "hikvision");
+                        config.getLibPath(), "hikvision");
             } else {
                 libPath = LibraryPathHelper.getSDKLibPath("hikvision");
             }
-            
+
             // 确保路径是绝对路径
             File libPathFile = new File(libPath);
             if (!libPathFile.isAbsolute()) {
                 libPath = libPathFile.getAbsolutePath();
             }
-            
+
             logger.debug("设置海康SDK库路径: {}", libPath);
 
             // 设置crypto和ssl库路径
             String cryptoPath = libPath + "/libcrypto.so.1.1";
             String sslPath = libPath + "/libssl.so.1.1";
-            
+
             // 检查文件是否存在
             File cryptoFile = new File(cryptoPath);
             File sslFile = new File(sslPath);
@@ -291,12 +290,12 @@ public class HikvisionSDK implements DeviceSDK {
             // 根据海康SDK文档：NET_SDK_INIT_CFG_SDK_PATH应该设置为包含HCNetSDKCom目录的父目录
             // 例如：如果HCNetSDKCom在 /path/to/lib/hikvision/HCNetSDKCom
             // 则应该设置为 /path/to/lib/hikvision
-            String strPathCom = libPath;  // lib/hikvision目录
+            String strPathCom = libPath; // lib/hikvision目录
             HCNetSDK.NET_DVR_LOCAL_SDK_PATH struComPath = new HCNetSDK.NET_DVR_LOCAL_SDK_PATH();
             byte[] pathBytes = strPathCom.getBytes();
             int copyLen = Math.min(pathBytes.length, struComPath.sPath.length - 1);
             System.arraycopy(pathBytes, 0, struComPath.sPath, 0, copyLen);
-            struComPath.sPath[copyLen] = 0;  // 确保以null结尾
+            struComPath.sPath[copyLen] = 0; // 确保以null结尾
             struComPath.write();
             hCNetSDK.NET_DVR_SetSDKInitCfg(HCNetSDK.NET_SDK_INIT_CFG_SDK_PATH, struComPath.getPointer());
 
@@ -330,7 +329,7 @@ public class HikvisionSDK implements DeviceSDK {
         }
         return hCNetSDK.NET_DVR_GetLastError();
     }
-    
+
     /**
      * 获取最后错误信息（字符串描述）
      */
@@ -365,7 +364,7 @@ public class HikvisionSDK implements DeviceSDK {
                 return "未知错误，错误码: " + errorCode;
         }
     }
-    
+
     /**
      * 获取品牌名称
      */
@@ -374,11 +373,16 @@ public class HikvisionSDK implements DeviceSDK {
         return "hikvision";
     }
 
+    @Override
+    public boolean isInitialized() {
+        return initialized;
+    }
+
     /**
      * 登录设备
      */
     @Override
-    public int login(String ip, short port, String username, String password) {
+    public int login(String ip, int port, String username, String password) {
         if (!initialized || hCNetSDK == null) {
             logger.error("SDK未初始化");
             return -1;
@@ -401,16 +405,17 @@ public class HikvisionSDK implements DeviceSDK {
 
         // 设置密码（按照示例代码的方式）
         byte[] passwordBytes = password.getBytes();
-        System.arraycopy(passwordBytes, 0, loginInfo.sPassword, 0, Math.min(passwordBytes.length, loginInfo.sPassword.length));
+        System.arraycopy(passwordBytes, 0, loginInfo.sPassword, 0,
+                Math.min(passwordBytes.length, loginInfo.sPassword.length));
 
-        // 设置端口和登录模式
-        loginInfo.wPort = port;
+        // 设置端口和登录模式（注意：wPort是short类型，需要转换）
+        loginInfo.wPort = (short) port;
         loginInfo.bUseAsynLogin = false; // 同步登录
         loginInfo.byLoginMode = 0; // 使用SDK私有协议
         loginInfo.byUseTransport = 0; // 不使用传输层协议
         loginInfo.byProxyType = 0; // 不使用代理
         loginInfo.byHttps = 0; // 不使用HTTPS
-        
+
         // 设置连接超时（可选，默认可能较短）
         // NET_DVR_SetConnectTime(等待时间ms, 重试次数)
         hCNetSDK.NET_DVR_SetConnectTime(10000, 3); // 等待10秒，重试3次
@@ -421,28 +426,28 @@ public class HikvisionSDK implements DeviceSDK {
 
         // 执行登录
         logger.info("开始登录设备: {}:{}, 用户: {}", ip, port, username);
-        logger.debug("登录参数详情: IP={}, Port={}, Username={}, Password长度={}, LoginMode={}", 
-            ip, port, username, password != null ? password.length() : 0, loginInfo.byLoginMode);
-        
+        logger.debug("登录参数详情: IP={}, Port={}, Username={}, Password长度={}, LoginMode={}",
+                ip, port, username, password != null ? password.length() : 0, loginInfo.byLoginMode);
+
         int userID = hCNetSDK.NET_DVR_Login_V40(loginInfo, deviceInfo);
-        
+
         // 读取设备信息（登录成功后设备信息会被填充）
         deviceInfo.read();
-        
+
         logger.debug("登录调用返回: userID={}", userID);
-        
+
         // 检查设备信息（登录成功后设备信息会被填充）
         if (deviceInfo.struDeviceV30 != null) {
             int chanNum = deviceInfo.struDeviceV30.byChanNum & 0xFF; // 转换为无符号
             int startDChan = deviceInfo.struDeviceV30.byStartDChan & 0xFF;
             logger.debug("设备信息: 通道数={}, 起始通道={}", chanNum, startDChan);
         }
-        
+
         // 按照示例代码的逻辑：只要 userID != -1 就认为登录成功（包括 userID=0）
         if (userID == -1) {
             int errorCode = hCNetSDK.NET_DVR_GetLastError();
             logger.error("登录失败，错误码: {} (IP: {}:{}, 用户: {})", errorCode, ip, port, username);
-            
+
             // 输出常见错误码的含义
             if (errorCode == HCNetSDK.NET_DVR_PASSWORD_ERROR) {
                 logger.error("错误原因: 用户名或密码错误");
@@ -451,7 +456,8 @@ public class HikvisionSDK implements DeviceSDK {
                 logger.error("可能原因: 1)设备不在线或网络不通 2)端口错误 3)防火墙阻止连接");
                 logger.error("         4)设备不是海康品牌，无法使用海康SDK连接 (如天地伟业、大华等品牌需要使用对应的SDK)");
                 logger.error("         5)设备不支持海康SDK的私有协议");
-            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_SEND_ERROR || errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_ERROR) {
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_SEND_ERROR
+                    || errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_ERROR) {
                 logger.error("错误原因: 网络通信错误，请检查网络连接和端口");
             } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_TIMEOUT) {
                 logger.error("错误原因: 网络接收超时，设备可能未响应");
@@ -499,7 +505,7 @@ public class HikvisionSDK implements DeviceSDK {
         }
         logger.debug("已设置状态回调：DeviceManager和MqttClient");
     }
-    
+
     /**
      * 设置报警服务（用于报警自动抓图）
      */
@@ -512,27 +518,29 @@ public class HikvisionSDK implements DeviceSDK {
             logger.info("海康SDK报警回调已设置");
         }
     }
-    
+
     /**
      * 海康SDK报警消息回调实现
      */
     class AlarmMessageCallback implements HCNetSDK.FMSGCallBack {
         @Override
-        public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen, Pointer pUser) {
+        public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen,
+                Pointer pUser) {
             try {
                 // 处理报警消息
                 // 常见的报警类型：COMM_ALARM (0x1100), COMM_ALARM_V30 (0x4000), COMM_ALARM_V40 (0x4007)
-                if (lCommand == HCNetSDK.COMM_ALARM || 
-                    lCommand == HCNetSDK.COMM_ALARM_V30 || 
-                    lCommand == HCNetSDK.COMM_ALARM_V40 ||
-                    lCommand == HCNetSDK.COMM_ALARM_RULE ||
-                    lCommand == HCNetSDK.COMM_SWITCH_ALARM) {
-                    
+                if (lCommand == HCNetSDK.COMM_ALARM ||
+                        lCommand == HCNetSDK.COMM_ALARM_V30 ||
+                        lCommand == HCNetSDK.COMM_ALARM_V40 ||
+                        lCommand == HCNetSDK.COMM_ALARM_RULE ||
+                        lCommand == HCNetSDK.COMM_SWITCH_ALARM) {
+
                     // 从pAlarmer中提取设备信息
                     if (pAlarmer != null && pAlarmer.byDeviceIPValid == 1) {
-                        String deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8).trim();
+                        String deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8)
+                                .trim();
                         int channel = 1; // 默认通道1，通道信息需要从报警信息中解析
-                        
+
                         // 通过IP和端口查找设备
                         if (deviceManager != null && alarmService != null) {
                             // 尝试通过userId查找设备（如果pAlarmer中有userId信息）
@@ -541,12 +549,12 @@ public class HikvisionSDK implements DeviceSDK {
                             if (pAlarmer.byUserIDValid == 1) {
                                 userId = pAlarmer.lUserID;
                             }
-                            
+
                             String deviceId = null;
                             if (userId > 0) {
                                 deviceId = deviceManager.getDeviceIdByUserId(userId);
                             }
-                            
+
                             // 如果通过userId找不到，尝试通过IP查找
                             if (deviceId == null) {
                                 // 获取所有设备，查找匹配的IP
@@ -558,7 +566,7 @@ public class HikvisionSDK implements DeviceSDK {
                                     }
                                 }
                             }
-                            
+
                             if (deviceId != null) {
                                 String alarmType = "COMM_ALARM_" + Integer.toHexString(lCommand);
                                 String alarmMessage = "报警类型: " + alarmType;
@@ -581,55 +589,55 @@ public class HikvisionSDK implements DeviceSDK {
     public HCNetSDK getSDK() {
         return hCNetSDK;
     }
-    
+
     // ========== 功能方法实现 ==========
-    
+
     @Override
     public int startRealPlay(int userId, int channel, int streamType) {
         if (!initialized || hCNetSDK == null) {
             logger.error("海康SDK未初始化");
             return -1;
         }
-        
+
         try {
             // 参考Recorder.java:260-278的实现
             HCNetSDK.NET_DVR_PREVIEWINFO previewInfo = new HCNetSDK.NET_DVR_PREVIEWINFO();
             previewInfo.lChannel = channel;
-            previewInfo.dwStreamType = streamType;  // 0=主码流, 1=子码流
-            previewInfo.dwLinkMode = 0;  // TCP方式
-            previewInfo.bBlocked = 1;  // 阻塞取流
-            previewInfo.byProtoType = 0;  // 私有协议
+            previewInfo.dwStreamType = streamType; // 0=主码流, 1=子码流
+            previewInfo.dwLinkMode = 0; // TCP方式
+            previewInfo.bBlocked = 1; // 阻塞取流
+            previewInfo.byProtoType = 0; // 私有协议
             previewInfo.write();
-            
+
             // 创建回调函数（可以为null）
             HCNetSDK.FRealDataCallBack_V30 realDataCallback = null;
-            
+
             // 启动预览
             int realPlayHandle = hCNetSDK.NET_DVR_RealPlay_V40(userId, previewInfo, realDataCallback, null);
             if (realPlayHandle == -1) {
                 logger.error("海康预览启动失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
                 return -1;
             }
-            
-            logger.info("海康预览启动成功: userId={}, channel={}, streamType={}, handle={}", 
-                userId, channel, streamType, realPlayHandle);
+
+            logger.info("海康预览启动成功: userId={}, channel={}, streamType={}, handle={}",
+                    userId, channel, streamType, realPlayHandle);
             return realPlayHandle;
         } catch (Exception e) {
             logger.error("海康预览启动异常: userId={}, channel={}", userId, channel, e);
             return -1;
         }
     }
-    
+
     @Override
     public boolean stopRealPlay(int connectId) {
         if (!initialized || hCNetSDK == null) {
             return false;
         }
-        
+
         if (connectId < 0) {
             return false;
         }
-        
+
         try {
             boolean result = hCNetSDK.NET_DVR_StopRealPlay(connectId);
             if (result) {
@@ -644,19 +652,19 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     @Override
     public boolean startRecording(int connectId, String filePath) {
         if (!initialized || hCNetSDK == null) {
             logger.error("海康SDK未初始化");
             return false;
         }
-        
+
         if (connectId < 0) {
             logger.error("无效的预览连接ID: {}", connectId);
             return false;
         }
-        
+
         try {
             // 参考Recorder.java:289的实现
             // 使用NET_DVR_SaveRealData，直接传文件路径字符串
@@ -673,22 +681,22 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     @Override
     public boolean stopRecording(int connectId) {
         if (!initialized || hCNetSDK == null) {
             return false;
         }
-        
+
         if (connectId < 0) {
             return false;
         }
-        
+
         try {
             // 参考Recorder.java:309-320的实现
             // 先停止保存数据，再停止预览
             hCNetSDK.NET_DVR_StopSaveRealData(connectId);
-            Thread.sleep(500);  // 等待数据写入完成
+            Thread.sleep(500); // 等待数据写入完成
             boolean result = hCNetSDK.NET_DVR_StopRealPlay(connectId);
             if (result) {
                 logger.info("海康录制停止成功: handle={}", connectId);
@@ -702,14 +710,14 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     @Override
     public boolean capturePicture(int connectId, int userId, int channel, String filePath, int pictureType) {
         if (!initialized || hCNetSDK == null) {
             logger.error("海康SDK未初始化");
             return false;
         }
-        
+
         try {
             // 确保目录存在
             File file = new File(filePath);
@@ -717,7 +725,7 @@ public class HikvisionSDK implements DeviceSDK {
             if (parentDir != null && !parentDir.exists()) {
                 parentDir.mkdirs();
             }
-            
+
             // 使用绝对路径（海康SDK要求绝对路径）
             // 规范化路径，移除 ./ 和 ../
             String absolutePath = file.getAbsolutePath();
@@ -726,16 +734,16 @@ public class HikvisionSDK implements DeviceSDK {
             } catch (java.io.IOException e) {
                 logger.warn("无法规范化路径，使用原始路径: {}", e.getMessage());
             }
-            logger.debug("海康抓图参数: userId={}, channel={}, filePath={}, absolutePath={}", 
-                userId, channel, filePath, absolutePath);
-            
+            logger.debug("海康抓图参数: userId={}, channel={}, filePath={}, absolutePath={}",
+                    userId, channel, filePath, absolutePath);
+
             // 参考DeviceController.java:448-518的实现
             // 海康SDK的抓图使用NET_DVR_CaptureJPEGPicture，需要userId和channel，不需要connectId
             HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
-            jpegPara.wPicSize = 0;  // 0=CIF, 使用当前分辨率
-            jpegPara.wPicQuality = 2;  // 图片质量：0-最好 1-较好 2-一般
+            jpegPara.wPicSize = 0; // 0=CIF, 使用当前分辨率
+            jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
             jpegPara.write();
-            
+
             // 海康SDK要求使用GBK编码（中文SDK）
             // 如果使用UTF-8可能导致路径解析错误
             byte[] fileNameBytes;
@@ -746,16 +754,16 @@ public class HikvisionSDK implements DeviceSDK {
                 logger.warn("GBK编码不支持，使用UTF-8: {}", e.getMessage());
                 fileNameBytes = absolutePath.getBytes("UTF-8");
             }
-            
+
             byte[] fileNameArray = new byte[256];
             int copyLength = Math.min(fileNameBytes.length, fileNameArray.length - 1);
             System.arraycopy(fileNameBytes, 0, fileNameArray, 0, copyLength);
             // 确保字符串以null结尾
             fileNameArray[copyLength] = 0;
-            
+
             // 海康SDK的通道号从1开始，确保channel >= 1
             int actualChannel = channel > 0 ? channel : 1;
-            
+
             boolean result = hCNetSDK.NET_DVR_CaptureJPEGPicture(userId, actualChannel, jpegPara, fileNameArray);
             if (result) {
                 logger.info("海康抓图成功: userId={}, channel={}, filePath={}", userId, actualChannel, absolutePath);
@@ -763,8 +771,8 @@ public class HikvisionSDK implements DeviceSDK {
             } else {
                 int errorCode = getLastError();
                 String errorMsg = getLastErrorString();
-                logger.error("海康抓图失败: userId={}, channel={}, filePath={}, 错误码={}, 错误信息={}", 
-                    userId, actualChannel, absolutePath, errorCode, errorMsg);
+                logger.error("海康抓图失败: userId={}, channel={}, filePath={}, 错误码={}, 错误信息={}",
+                        userId, actualChannel, absolutePath, errorCode, errorMsg);
                 return false;
             }
         } catch (Exception e) {
@@ -772,14 +780,14 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     @Override
     public boolean ptzControl(int userId, int channel, String command, String action, int speed) {
         if (!initialized || hCNetSDK == null) {
             logger.error("海康SDK未初始化");
             return false;
         }
-        
+
         try {
             // 参考DeviceController.java:620-636的实现
             int commandCode = getPtzCommandCode(command);
@@ -787,18 +795,18 @@ public class HikvisionSDK implements DeviceSDK {
                 logger.error("未知的云台控制命令: {}", command);
                 return false;
             }
-            
+
             // action: start=0, stop=1
             int stopFlag = "stop".equalsIgnoreCase(action) ? 1 : 0;
             boolean result = hCNetSDK.NET_DVR_PTZControl_Other(userId, channel, commandCode, stopFlag);
-            
+
             if (result) {
-                logger.info("海康云台控制成功: userId={}, channel={}, command={}, action={}, speed={}", 
-                    userId, channel, command, action, speed);
+                logger.info("海康云台控制成功: userId={}, channel={}, command={}, action={}, speed={}",
+                        userId, channel, command, action, speed);
                 return true;
             } else {
-                logger.error("海康云台控制失败: userId={}, channel={}, command={}, 错误码={}", 
-                    userId, channel, command, getLastError());
+                logger.error("海康云台控制失败: userId={}, channel={}, command={}, 错误码={}",
+                        userId, channel, command, getLastError());
                 return false;
             }
         } catch (Exception e) {
@@ -806,7 +814,7 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     /**
      * 获取PTZ命令码
      */
@@ -828,25 +836,25 @@ public class HikvisionSDK implements DeviceSDK {
                 return -1;
         }
     }
-    
+
     @Override
     public List<DeviceSDK.PlaybackFile> queryPlaybackFiles(int userId, int channel, Date startTime, Date endTime) {
         List<DeviceSDK.PlaybackFile> files = new ArrayList<>();
-        
+
         if (!initialized || hCNetSDK == null) {
             logger.error("海康SDK未初始化");
             return files;
         }
-        
+
         try {
             // 参考VideoDemo.java:403-536的实现
             // 使用NET_DVR_FindFile_V40查询文件列表
             HCNetSDK.NET_DVR_FILECOND_V40 struFileCond = new HCNetSDK.NET_DVR_FILECOND_V40();
             struFileCond.read();
-            struFileCond.lChannel = channel;  // 通道号
-            struFileCond.dwFileType = 0xFF;  // 所有文件类型
-            struFileCond.byFindType = 0;  // 0=定时录像
-            
+            struFileCond.lChannel = channel; // 通道号
+            struFileCond.dwFileType = 0xFF; // 所有文件类型
+            struFileCond.byFindType = 0; // 0=定时录像
+
             // 设置开始时间
             HCNetSDK.NET_DVR_TIME startTimeStruct = convertToDvrTime(startTime);
             struFileCond.struStartTime.dwYear = startTimeStruct.dwYear;
@@ -855,7 +863,7 @@ public class HikvisionSDK implements DeviceSDK {
             struFileCond.struStartTime.dwHour = startTimeStruct.dwHour;
             struFileCond.struStartTime.dwMinute = startTimeStruct.dwMinute;
             struFileCond.struStartTime.dwSecond = startTimeStruct.dwSecond;
-            
+
             // 设置结束时间
             HCNetSDK.NET_DVR_TIME endTimeStruct = convertToDvrTime(endTime);
             struFileCond.struStopTime.dwYear = endTimeStruct.dwYear;
@@ -864,21 +872,21 @@ public class HikvisionSDK implements DeviceSDK {
             struFileCond.struStopTime.dwHour = endTimeStruct.dwHour;
             struFileCond.struStopTime.dwMinute = endTimeStruct.dwMinute;
             struFileCond.struStopTime.dwSecond = endTimeStruct.dwSecond;
-            
+
             struFileCond.write();
-            
+
             // 建立查询
             int findHandle = hCNetSDK.NET_DVR_FindFile_V40(userId, struFileCond);
             if (findHandle <= -1) {
                 logger.error("海康回放查询建立失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
                 return files;
             }
-            
+
             // 循环查询文件
             while (true) {
                 HCNetSDK.NET_DVR_FINDDATA_V40 struFindData = new HCNetSDK.NET_DVR_FINDDATA_V40();
                 long state = hCNetSDK.NET_DVR_FindNextFile_V40(findHandle, struFindData);
-                
+
                 if (state <= -1) {
                     // 查询失败
                     logger.error("海康回放查询失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
@@ -892,29 +900,29 @@ public class HikvisionSDK implements DeviceSDK {
                             // 转换文件时间
                             Calendar fileStartCal = Calendar.getInstance();
                             fileStartCal.set(struFindData.struStartTime.dwYear,
-                                struFindData.struStartTime.dwMonth - 1,
-                                struFindData.struStartTime.dwDay,
-                                struFindData.struStartTime.dwHour,
-                                struFindData.struStartTime.dwMinute,
-                                struFindData.struStartTime.dwSecond);
+                                    struFindData.struStartTime.dwMonth - 1,
+                                    struFindData.struStartTime.dwDay,
+                                    struFindData.struStartTime.dwHour,
+                                    struFindData.struStartTime.dwMinute,
+                                    struFindData.struStartTime.dwSecond);
                             Date fileStartTime = fileStartCal.getTime();
-                            
+
                             Calendar fileEndCal = Calendar.getInstance();
                             fileEndCal.set(struFindData.struStopTime.dwYear,
-                                struFindData.struStopTime.dwMonth - 1,
-                                struFindData.struStopTime.dwDay,
-                                struFindData.struStopTime.dwHour,
-                                struFindData.struStopTime.dwMinute,
-                                struFindData.struStopTime.dwSecond);
+                                    struFindData.struStopTime.dwMonth - 1,
+                                    struFindData.struStopTime.dwDay,
+                                    struFindData.struStopTime.dwHour,
+                                    struFindData.struStopTime.dwMinute,
+                                    struFindData.struStopTime.dwSecond);
                             Date fileEndTime = fileEndCal.getTime();
-                            
+
                             DeviceSDK.PlaybackFile playbackFile = new DeviceSDK.PlaybackFile(
-                                fileName, fileStartTime, fileEndTime, 
-                                struFindData.dwFileSize, channel);
+                                    fileName, fileStartTime, fileEndTime,
+                                    struFindData.dwFileSize, channel);
                             files.add(playbackFile);
-                            
-                            logger.debug("找到回放文件: fileName={}, size={}, startTime={}, endTime={}", 
-                                fileName, struFindData.dwFileSize, fileStartTime, fileEndTime);
+
+                            logger.debug("找到回放文件: fileName={}, size={}, startTime={}, endTime={}",
+                                    fileName, struFindData.dwFileSize, fileStartTime, fileEndTime);
                         }
                     } catch (Exception e) {
                         logger.warn("解析文件信息失败", e);
@@ -926,7 +934,7 @@ public class HikvisionSDK implements DeviceSDK {
                 } else if (state == 1002) {
                     // 正在查找，请等待
                     try {
-                        Thread.sleep(100);  // 等待100ms后继续查询
+                        Thread.sleep(100); // 等待100ms后继续查询
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
@@ -950,13 +958,13 @@ public class HikvisionSDK implements DeviceSDK {
                     break;
                 }
             }
-            
+
             // 关闭查询
             boolean closeResult = hCNetSDK.NET_DVR_FindClose_V30(findHandle);
             if (!closeResult) {
                 logger.warn("关闭回放查询失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
             }
-            
+
             logger.info("海康回放查询成功: userId={}, channel={}, 文件数={}", userId, channel, files.size());
             return files;
         } catch (Exception e) {
@@ -964,14 +972,14 @@ public class HikvisionSDK implements DeviceSDK {
             return files;
         }
     }
-    
+
     /**
      * 转换Date为NET_DVR_TIME结构体
      */
     private HCNetSDK.NET_DVR_TIME convertToDvrTime(Date date) {
         Calendar cal = Calendar.getInstance();
         cal.setTime(date);
-        
+
         HCNetSDK.NET_DVR_TIME dvrTime = new HCNetSDK.NET_DVR_TIME();
         dvrTime.dwYear = cal.get(Calendar.YEAR);
         dvrTime.dwMonth = cal.get(Calendar.MONTH) + 1;
@@ -979,7 +987,7 @@ public class HikvisionSDK implements DeviceSDK {
         dvrTime.dwHour = cal.get(Calendar.HOUR_OF_DAY);
         dvrTime.dwMinute = cal.get(Calendar.MINUTE);
         dvrTime.dwSecond = cal.get(Calendar.SECOND);
-        
+
         return dvrTime;
     }
 
@@ -992,19 +1000,19 @@ public class HikvisionSDK implements DeviceSDK {
         @Override
         public void invoke(int dwType, int lUserID, int lHandle, Pointer pUser) {
             logger.warn("SDK异常事件 - 类型: 0x{}, 用户ID: {}, 句柄: {}", Integer.toHexString(dwType), lUserID, lHandle);
-            
+
             // 处理设备离线事件
             // 海康SDK的异常类型：
             // EXCEPTION_EXCHANGE = 0x8000 (用户交互时异常，可能包括设备离线)
             // EXCEPTION_PREVIEW = 0x8003 (网络预览异常，可能包括设备离线)
             // EXCEPTION_RECONNECT = 0x8005 (预览时重连，可能表示设备离线后重连)
-            if (dwType == HCNetSDK.EXCEPTION_EXCHANGE || 
-                dwType == HCNetSDK.EXCEPTION_PREVIEW || 
-                dwType == HCNetSDK.EXCEPTION_RECONNECT) {
+            if (dwType == HCNetSDK.EXCEPTION_EXCHANGE ||
+                    dwType == HCNetSDK.EXCEPTION_PREVIEW ||
+                    dwType == HCNetSDK.EXCEPTION_RECONNECT) {
                 handleDeviceOffline(lUserID, dwType);
             }
         }
-        
+
         /**
          * 处理设备离线事件
          */
@@ -1013,7 +1021,7 @@ public class HikvisionSDK implements DeviceSDK {
                 logger.debug("DeviceManager未设置，跳过设备离线处理");
                 return;
             }
-            
+
             try {
                 // 通过userId查找deviceId
                 String deviceId = deviceManager.getDeviceIdByUserId(userId);
@@ -1021,43 +1029,43 @@ public class HikvisionSDK implements DeviceSDK {
                     logger.debug("无法通过userId找到deviceId: {}", userId);
                     return;
                 }
-                
+
                 // 获取设备信息
                 DeviceInfo device = deviceManager.getDevice(deviceId);
                 if (device == null) {
                     logger.warn("设备不存在: {}", deviceId);
                     return;
                 }
-                
+
                 // 检查设备当前状态
                 String currentStatus = device.getStatus();
                 if ("offline".equals(currentStatus)) {
                     logger.debug("设备已经是离线状态，跳过更新: {}", deviceId);
                     return;
                 }
-                
+
                 // 更新设备状态为离线并发送MQTT通知
                 deviceManager.updateDeviceStatusWithNotification(deviceId, "offline");
-                logger.info("设备离线事件已处理: {} (userId: {}, 异常类型: 0x{})", 
-                    deviceId, userId, Integer.toHexString(exceptionType));
+                logger.info("设备离线事件已处理: {} (userId: {}, 异常类型: 0x{})",
+                        deviceId, userId, Integer.toHexString(exceptionType));
             } catch (Exception e) {
                 logger.error("处理设备离线事件失败: userId={}", userId, e);
             }
         }
     }
-    
+
     @Override
     public boolean rebootDevice(int userId) {
         if (!initialized || hCNetSDK == null) {
             logger.error("海康SDK未初始化");
             return false;
         }
-        
+
         if (userId < 0) {
             logger.error("无效的登录句柄: {}", userId);
             return false;
         }
-        
+
         try {
             // 参考DeviceController.java:302-310的实现
             // 优先使用NET_DVR_RebootDVR，如果不可用则使用NET_DVR_RemoteControl
@@ -1069,7 +1077,7 @@ public class HikvisionSDK implements DeviceSDK {
                 logger.debug("NET_DVR_RebootDVR不可用，尝试使用NET_DVR_RemoteControl: {}", e.getMessage());
                 result = hCNetSDK.NET_DVR_RemoteControl(userId, HCNetSDK.MINOR_REMOTE_REBOOT, null, 0);
             }
-            
+
             if (result) {
                 logger.info("海康设备重启命令已发送: userId={}", userId);
                 return true;

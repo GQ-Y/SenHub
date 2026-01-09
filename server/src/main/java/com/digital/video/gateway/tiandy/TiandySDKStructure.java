@@ -368,4 +368,19 @@ public class TiandySDKStructure {
                                 "m_iFileFlag", "m_iSaveFileType", "m_iStreamNo", "m_iFileAttr", "m_iCryptType", "m_cCryptKey");
         }
     }
+    
+    /**
+     * 本地SDK库路径结构体
+     * 用于NetClient_SetSDKInitConfig设置本地库路径
+     */
+    public static class LocalSDKPath extends Structure {
+        public int iSize;
+        public int iType;
+        public byte[] cPath = new byte[256];  // 本地库路径
+        
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("iSize", "iType", "cPath");
+        }
+    }
 }
