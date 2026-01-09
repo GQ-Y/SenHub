@@ -36,31 +36,30 @@ public class DashboardController {
     public String getStats(Request request, Response response) {
         try {
             List<DeviceInfo> devices = deviceManager.getAllDevices();
-            
+
             int totalDevices = devices.size();
             int onlineDevices = 0;
-            
+
             for (DeviceInfo device : devices) {
-                String status = device.getStatus();
-                if ("online".equalsIgnoreCase(status)) {
+                if (device.getStatus() == 1) {
                     onlineDevices++;
                 }
             }
-            
+
             double onlinePercentage = totalDevices > 0 ? (onlineDevices * 100.0 / totalDevices) : 0;
-            
+
             // 获取24小时告警数量
             int alerts24h = database.getAlarmCount24h();
-            
+
             // 计算存储用量
             String storageUsed = calculateStorageUsed();
-            
+
             Map<String, Object> stats = new HashMap<>();
             stats.put("activeDevices", totalDevices);
             stats.put("onlineStatus", String.format("%.1f%%", onlinePercentage));
             stats.put("alerts24h", alerts24h);
             stats.put("storageUsed", storageUsed);
-            
+
             response.status(200);
             response.type("application/json");
             return createSuccessResponse(stats);
@@ -77,7 +76,7 @@ public class DashboardController {
     private String calculateStorageUsed() {
         try {
             long totalBytes = 0;
-            
+
             // 计算录制文件大小
             if (config.getRecorder() != null && config.getRecorder().getRecordPath() != null) {
                 File recordDir = new File(config.getRecorder().getRecordPath());
@@ -85,13 +84,13 @@ public class DashboardController {
                     totalBytes += getDirectorySize(recordDir);
                 }
             }
-            
+
             // 计算下载文件大小
             File downloadsDir = new File("./storage/downloads");
             if (downloadsDir.exists() && downloadsDir.isDirectory()) {
                 totalBytes += getDirectorySize(downloadsDir);
             }
-            
+
             // 转换为可读格式
             return formatBytes(totalBytes);
         } catch (Exception e) {
@@ -143,19 +142,19 @@ public class DashboardController {
         try {
             // 从数据库获取24小时连接趋势数据
             List<Map<String, Object>> chartData = database.getDeviceConnectivityTrend24h();
-            
+
             // 如果历史数据不足，使用当前设备状态作为补充
             if (chartData.isEmpty() || chartData.size() < 7) {
                 List<DeviceInfo> devices = deviceManager.getAllDevices();
                 int onlineDevices = 0;
                 for (DeviceInfo device : devices) {
-                    if ("online".equalsIgnoreCase(device.getStatus())) {
+                    if (device.getStatus() == 1) {
                         onlineDevices++;
                     }
                 }
-                
+
                 // 生成默认数据
-                String[] timePoints = {"00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"};
+                String[] timePoints = { "00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00" };
                 chartData = new ArrayList<>();
                 for (String time : timePoints) {
                     Map<String, Object> dataPoint = new HashMap<>();
@@ -164,7 +163,7 @@ public class DashboardController {
                     chartData.add(dataPoint);
                 }
             }
-            
+
             response.status(200);
             response.type("application/json");
             return createSuccessResponse(chartData);

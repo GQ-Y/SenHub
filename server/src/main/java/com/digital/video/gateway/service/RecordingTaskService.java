@@ -33,10 +33,10 @@ public class RecordingTaskService {
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     // 任务状态常量
-    public static final String STATUS_PENDING = "pending";
-    public static final String STATUS_DOWNLOADING = "downloading";
-    public static final String STATUS_COMPLETED = "completed";
-    public static final String STATUS_FAILED = "failed";
+    public static final int STATUS_PENDING = 0;
+    public static final int STATUS_DOWNLOADING = 1;
+    public static final int STATUS_COMPLETED = 2;
+    public static final int STATUS_FAILED = 3;
 
     public RecordingTaskService(Database database, DeviceManager deviceManager, OssService ossService) {
         this.database = database;
@@ -58,7 +58,7 @@ public class RecordingTaskService {
      * 轮询处在下载中的任务进度
      */
     private void pollTasksProgress() {
-        List<RecordingTask> downloadingTasks = getRecordingTasks(null, STATUS_DOWNLOADING);
+        List<RecordingTask> downloadingTasks = getRecordingTasks(null, String.valueOf(STATUS_DOWNLOADING));
         for (RecordingTask task : downloadingTasks) {
             if (task.getDownloadHandle() == null)
                 continue;
@@ -137,14 +137,19 @@ public class RecordingTaskService {
         }
 
         if (status != null && !status.isEmpty()) {
-            sql.append(" AND status = ?");
-            params.add(status);
+            try {
+                int statusInt = Integer.parseInt(status);
+                sql.append(" AND status = ?");
+                params.add(statusInt);
+            } catch (NumberFormatException e) {
+                logger.warn("无效的状态参数: {}", status);
+            }
         }
 
         sql.append(" ORDER BY created_at DESC");
 
-        try (Connection conn = database.getConnection();
-                PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+        Connection conn = database.getConnection();
+        try (PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             for (int i = 0; i < params.size(); i++) {
                 pstmt.setObject(i + 1, params.get(i));
             }
@@ -163,7 +168,7 @@ public class RecordingTaskService {
      */
     public RecordingTask getRecordingTask(String taskId) {
         String sql = "SELECT * FROM recording_tasks WHERE task_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, taskId);
             ResultSet rs = pstmt.executeQuery();
@@ -184,14 +189,14 @@ public class RecordingTaskService {
             task.setTaskId(UUID.randomUUID().toString());
         }
         String sql = "INSERT INTO recording_tasks (task_id, device_id, channel, start_time, end_time, status, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, task.getTaskId());
             pstmt.setString(2, task.getDeviceId());
             pstmt.setInt(3, task.getChannel());
             pstmt.setString(4, task.getStartTime());
             pstmt.setString(5, task.getEndTime());
-            pstmt.setString(6, task.getStatus() != null ? task.getStatus() : STATUS_PENDING);
+            pstmt.setInt(6, task.getStatus());
             pstmt.setInt(7, task.getProgress());
             pstmt.executeUpdate();
             return getRecordingTask(task.getTaskId());
@@ -206,11 +211,11 @@ public class RecordingTaskService {
      */
     public RecordingTask updateRecordingTask(String taskId, RecordingTask task) {
         String sql = "UPDATE recording_tasks SET local_file_path = ?, oss_url = ?, status = ?, progress = ?, download_handle = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, task.getLocalFilePath());
             pstmt.setString(2, task.getOssUrl());
-            pstmt.setString(3, task.getStatus());
+            pstmt.setInt(3, task.getStatus());
             pstmt.setInt(4, task.getProgress());
             if (task.getDownloadHandle() != null) {
                 pstmt.setInt(5, task.getDownloadHandle());

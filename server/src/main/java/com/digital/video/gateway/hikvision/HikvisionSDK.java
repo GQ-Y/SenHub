@@ -1178,14 +1178,14 @@ public class HikvisionSDK implements DeviceSDK {
                 }
 
                 // 检查设备当前状态
-                String currentStatus = device.getStatus();
-                if ("offline".equals(currentStatus)) {
+                int currentStatus = device.getStatus();
+                if (currentStatus == 0) {
                     logger.debug("设备已经是离线状态，跳过更新: {}", deviceId);
                     return;
                 }
 
                 // 更新设备状态为离线并发送MQTT通知
-                deviceManager.updateDeviceStatusWithNotification(deviceId, "offline");
+                deviceManager.updateDeviceStatusWithNotification(deviceId, 0);
                 logger.info("设备离线事件已处理: {} (userId: {}, 异常类型: 0x{})",
                         deviceId, userId, Integer.toHexString(exceptionType));
             } catch (Exception e) {

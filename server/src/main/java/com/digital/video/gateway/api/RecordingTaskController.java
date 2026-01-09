@@ -37,9 +37,9 @@ public class RecordingTaskController {
             String status = request.queryParams("status");
             List<RecordingTask> tasks = recordingTaskService.getRecordingTasks(deviceId, status);
             List<Map<String, Object>> result = tasks.stream()
-                .map(RecordingTask::toMap)
-                .collect(java.util.stream.Collectors.toList());
-            
+                    .map(RecordingTask::toMap)
+                    .collect(java.util.stream.Collectors.toList());
+
             response.status(200);
             return createSuccessResponse(result);
         } catch (Exception e) {
@@ -61,7 +61,7 @@ public class RecordingTaskController {
                 response.status(404);
                 return createErrorResponse(404, "录像任务不存在");
             }
-            
+
             response.status(200);
             return createSuccessResponse(task.toMap());
         } catch (Exception e) {
@@ -83,15 +83,29 @@ public class RecordingTaskController {
             task.setChannel((Integer) body.getOrDefault("channel", 1));
             task.setStartTime((String) body.get("startTime"));
             task.setEndTime((String) body.get("endTime"));
-            task.setStatus((String) body.getOrDefault("status", "pending"));
+
+            Object statusObj = body.getOrDefault("status", 0);
+            if (statusObj instanceof Number) {
+                task.setStatus(((Number) statusObj).intValue());
+            } else if ("pending".equals(statusObj)) {
+                task.setStatus(0);
+            } else if ("downloading".equals(statusObj)) {
+                task.setStatus(1);
+            } else if ("completed".equals(statusObj)) {
+                task.setStatus(2);
+            } else if ("failed".equals(statusObj)) {
+                task.setStatus(3);
+            } else {
+                task.setStatus(0);
+            }
             task.setProgress((Integer) body.getOrDefault("progress", 0));
-            
+
             RecordingTask created = recordingTaskService.createRecordingTask(task);
             if (created == null) {
                 response.status(500);
                 return createErrorResponse(500, "创建录像任务失败");
             }
-            
+
             response.status(201);
             return createSuccessResponse(created.toMap());
         } catch (Exception e) {
@@ -112,19 +126,31 @@ public class RecordingTaskController {
             RecordingTask task = new RecordingTask();
             task.setLocalFilePath((String) body.get("localFilePath"));
             task.setOssUrl((String) body.get("ossUrl"));
-            task.setStatus((String) body.get("status"));
+
+            Object statusObj = body.get("status");
+            if (statusObj instanceof Number) {
+                task.setStatus(((Number) statusObj).intValue());
+            } else if ("pending".equals(statusObj)) {
+                task.setStatus(0);
+            } else if ("downloading".equals(statusObj)) {
+                task.setStatus(1);
+            } else if ("completed".equals(statusObj)) {
+                task.setStatus(2);
+            } else if ("failed".equals(statusObj)) {
+                task.setStatus(3);
+            }
             task.setProgress((Integer) body.get("progress"));
             if (body.get("downloadHandle") != null) {
                 task.setDownloadHandle(((Number) body.get("downloadHandle")).intValue());
             }
             task.setErrorMessage((String) body.get("errorMessage"));
-            
+
             RecordingTask updated = recordingTaskService.updateRecordingTask(taskId, task);
             if (updated == null) {
                 response.status(404);
                 return createErrorResponse(404, "录像任务不存在");
             }
-            
+
             response.status(200);
             return createSuccessResponse(updated.toMap());
         } catch (Exception e) {
@@ -145,18 +171,18 @@ public class RecordingTaskController {
             Integer channel = (Integer) body.getOrDefault("channel", 1);
             String startTime = (String) body.get("startTime");
             String endTime = (String) body.get("endTime");
-            
+
             if (deviceId == null || startTime == null || endTime == null) {
                 response.status(400);
                 return createErrorResponse(400, "参数不完整");
             }
-            
+
             RecordingTask task = recordingTaskService.downloadRecording(deviceId, channel, startTime, endTime);
             if (task == null) {
                 response.status(500);
                 return createErrorResponse(500, "创建下载任务失败");
             }
-            
+
             response.status(201);
             return createSuccessResponse(task.toMap());
         } catch (Exception e) {
@@ -178,23 +204,23 @@ public class RecordingTaskController {
                 response.status(404);
                 return createErrorResponse(404, "录像任务不存在");
             }
-            
+
             String filePath = task.getLocalFilePath();
             if (filePath == null || filePath.isEmpty()) {
                 response.status(404);
                 return createErrorResponse(404, "录像文件不存在");
             }
-            
+
             File file = new File(filePath);
             if (!file.exists()) {
                 response.status(404);
                 return createErrorResponse(404, "录像文件不存在");
             }
-            
+
             response.type("video/mp4");
             response.header("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
             response.raw().setContentLengthLong(file.length());
-            
+
             Files.copy(Paths.get(filePath), response.raw().getOutputStream());
             return "";
         } catch (Exception e) {

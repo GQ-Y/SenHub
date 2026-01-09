@@ -68,10 +68,15 @@ public class RadarService {
 
     private void receiveLoop() {
         byte[] buffer = new byte[BUFFER_SIZE];
+        long packetCount = 0;
         while (running) {
             try {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
+                packetCount++;
+                if (packetCount % 500 == 0) {
+                    logger.info("已累计接收到 {} 个雷达数据包", packetCount);
+                }
                 parsePacket(packet.getData(), packet.getLength());
             } catch (Exception e) {
                 if (running) {

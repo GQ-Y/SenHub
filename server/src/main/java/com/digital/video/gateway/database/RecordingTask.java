@@ -18,7 +18,7 @@ public class RecordingTask {
     private String endTime;
     private String localFilePath;
     private String ossUrl;
-    private String status; // pending, downloading, completed, failed
+    private int status; // 0: pending, 1: downloading, 2: completed, 3: failed
     private int progress;
     private Integer downloadHandle;
     private String errorMessage;
@@ -26,47 +26,117 @@ public class RecordingTask {
     private Timestamp updatedAt;
 
     // Getters and Setters
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
+    public int getId() {
+        return id;
+    }
 
-    public String getTaskId() { return taskId; }
-    public void setTaskId(String taskId) { this.taskId = taskId; }
+    public void setId(int id) {
+        this.id = id;
+    }
 
-    public String getDeviceId() { return deviceId; }
-    public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
+    public String getTaskId() {
+        return taskId;
+    }
 
-    public int getChannel() { return channel; }
-    public void setChannel(int channel) { this.channel = channel; }
+    public void setTaskId(String taskId) {
+        this.taskId = taskId;
+    }
 
-    public String getStartTime() { return startTime; }
-    public void setStartTime(String startTime) { this.startTime = startTime; }
+    public String getDeviceId() {
+        return deviceId;
+    }
 
-    public String getEndTime() { return endTime; }
-    public void setEndTime(String endTime) { this.endTime = endTime; }
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
 
-    public String getLocalFilePath() { return localFilePath; }
-    public void setLocalFilePath(String localFilePath) { this.localFilePath = localFilePath; }
+    public int getChannel() {
+        return channel;
+    }
 
-    public String getOssUrl() { return ossUrl; }
-    public void setOssUrl(String ossUrl) { this.ossUrl = ossUrl; }
+    public void setChannel(int channel) {
+        this.channel = channel;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public String getStartTime() {
+        return startTime;
+    }
 
-    public int getProgress() { return progress; }
-    public void setProgress(int progress) { this.progress = progress; }
+    public void setStartTime(String startTime) {
+        this.startTime = startTime;
+    }
 
-    public Integer getDownloadHandle() { return downloadHandle; }
-    public void setDownloadHandle(Integer downloadHandle) { this.downloadHandle = downloadHandle; }
+    public String getEndTime() {
+        return endTime;
+    }
 
-    public String getErrorMessage() { return errorMessage; }
-    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+    public void setEndTime(String endTime) {
+        this.endTime = endTime;
+    }
 
-    public Timestamp getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
+    public String getLocalFilePath() {
+        return localFilePath;
+    }
 
-    public Timestamp getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Timestamp updatedAt) { this.updatedAt = updatedAt; }
+    public void setLocalFilePath(String localFilePath) {
+        this.localFilePath = localFilePath;
+    }
+
+    public String getOssUrl() {
+        return ossUrl;
+    }
+
+    public void setOssUrl(String ossUrl) {
+        this.ossUrl = ossUrl;
+    }
+
+    public int getStatus() {
+        return status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public int getProgress() {
+        return progress;
+    }
+
+    public void setProgress(int progress) {
+        this.progress = progress;
+    }
+
+    public Integer getDownloadHandle() {
+        return downloadHandle;
+    }
+
+    public void setDownloadHandle(Integer downloadHandle) {
+        this.downloadHandle = downloadHandle;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
+    }
+
+    public Timestamp getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Timestamp createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Timestamp getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Timestamp updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 
     /**
      * 从ResultSet构建对象
@@ -81,7 +151,7 @@ public class RecordingTask {
         task.setEndTime(rs.getString("end_time"));
         task.setLocalFilePath(rs.getString("local_file_path"));
         task.setOssUrl(rs.getString("oss_url"));
-        task.setStatus(rs.getString("status"));
+        task.setStatus(rs.getInt("status"));
         task.setProgress(rs.getInt("progress"));
         Integer handle = rs.getInt("download_handle");
         task.setDownloadHandle(rs.wasNull() ? null : handle);
@@ -108,8 +178,10 @@ public class RecordingTask {
         map.put("progress", progress);
         map.put("downloadHandle", downloadHandle);
         map.put("errorMessage", errorMessage);
-        if (createdAt != null) map.put("createdAt", createdAt.toString());
-        if (updatedAt != null) map.put("updatedAt", updatedAt.toString());
+        if (createdAt != null)
+            map.put("createdAt", createdAt.toString());
+        if (updatedAt != null)
+            map.put("updatedAt", updatedAt.toString());
         return map;
     }
 }

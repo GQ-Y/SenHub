@@ -1,14 +1,11 @@
 package com.digital.video.gateway.dahua;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.Common.ArchitectureChecker;
 import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.device.DeviceManager;
 import com.digital.video.gateway.device.DeviceSDK;
 import com.digital.video.gateway.dahua.lib.NetSDKLib;
 import com.digital.video.gateway.dahua.lib.ToolKits;
-import com.digital.video.gateway.dahua.lib.LastError;
-import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.mqtt.MqttClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +13,6 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 
 import java.io.File;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -350,7 +346,7 @@ public class DahuaSDK implements DeviceSDK {
                 }
 
                 // 更新设备状态为离线并发送MQTT通知
-                deviceManager.updateDeviceStatusWithNotification(deviceId, "offline");
+                deviceManager.updateDeviceStatusWithNotification(deviceId, 0);
                 logger.info("设备离线事件已处理: {} (userId: {})", deviceId, userId);
             } catch (Exception e) {
                 logger.error("处理设备离线事件失败: userId={}", userId, e);

@@ -27,7 +27,7 @@ public class SpeakerService {
     public List<Speaker> getSpeakers() {
         List<Speaker> speakers = new ArrayList<>();
         String sql = "SELECT * FROM speakers ORDER BY created_at DESC";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -44,7 +44,7 @@ public class SpeakerService {
      */
     public Speaker getSpeaker(String deviceId) {
         String sql = "SELECT * FROM speakers WHERE device_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             ResultSet rs = pstmt.executeQuery();
@@ -62,7 +62,7 @@ public class SpeakerService {
      */
     public Speaker createSpeaker(Speaker speaker) {
         String sql = "INSERT INTO speakers (device_id, name, api_endpoint, api_type, api_config, status) VALUES (?, ?, ?, ?, ?, ?)";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, speaker.getDeviceId());
             pstmt.setString(2, speaker.getName());
@@ -83,7 +83,7 @@ public class SpeakerService {
      */
     public Speaker updateSpeaker(String deviceId, Speaker speaker) {
         String sql = "UPDATE speakers SET name = ?, api_endpoint = ?, api_type = ?, api_config = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, speaker.getName());
             pstmt.setString(2, speaker.getApiEndpoint());
@@ -104,7 +104,7 @@ public class SpeakerService {
      */
     public boolean deleteSpeaker(String deviceId) {
         String sql = "DELETE FROM speakers WHERE device_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             return pstmt.executeUpdate() > 0;

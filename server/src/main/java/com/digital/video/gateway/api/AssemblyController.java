@@ -34,7 +34,7 @@ public class AssemblyController {
             String search = request.queryParams("search");
             String status = request.queryParams("status");
             List<Assembly> assemblies = assemblyService.getAssemblies(search, status);
-            
+
             // 转换为Map列表
             List<Map<String, Object>> result = new java.util.ArrayList<>();
             for (Assembly assembly : assemblies) {
@@ -44,7 +44,7 @@ public class AssemblyController {
                 map.put("deviceCount", devices.size());
                 result.add(map);
             }
-            
+
             response.status(200);
             return createSuccessResponse(result);
         } catch (Exception e) {
@@ -66,11 +66,12 @@ public class AssemblyController {
                 response.status(404);
                 return createErrorResponse(404, "装置不存在");
             }
-            
+
             Map<String, Object> map = assembly.toMap();
             List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assemblyId);
-            map.put("devices", devices.stream().map(AssemblyDevice::toMap).collect(java.util.stream.Collectors.toList()));
-            
+            map.put("devices",
+                    devices.stream().map(AssemblyDevice::toMap).collect(java.util.stream.Collectors.toList()));
+
             response.status(200);
             return createSuccessResponse(map);
         } catch (Exception e) {
@@ -91,14 +92,22 @@ public class AssemblyController {
             assembly.setName((String) body.get("name"));
             assembly.setDescription((String) body.get("description"));
             assembly.setLocation((String) body.get("location"));
-            assembly.setStatus((String) body.getOrDefault("status", "active"));
-            
+
+            Object statusObj = body.getOrDefault("status", 1);
+            if (statusObj instanceof Number) {
+                assembly.setStatus(((Number) statusObj).intValue());
+            } else if ("active".equals(statusObj)) {
+                assembly.setStatus(1);
+            } else {
+                assembly.setStatus(0);
+            }
+
             Assembly created = assemblyService.createAssembly(assembly);
             if (created == null) {
                 response.status(500);
                 return createErrorResponse(500, "创建装置失败");
             }
-            
+
             response.status(201);
             return createSuccessResponse(created.toMap());
         } catch (Exception e) {
@@ -120,14 +129,22 @@ public class AssemblyController {
             assembly.setName((String) body.get("name"));
             assembly.setDescription((String) body.get("description"));
             assembly.setLocation((String) body.get("location"));
-            assembly.setStatus((String) body.get("status"));
-            
+
+            Object statusObj = body.get("status");
+            if (statusObj instanceof Number) {
+                assembly.setStatus(((Number) statusObj).intValue());
+            } else if ("active".equals(statusObj)) {
+                assembly.setStatus(1);
+            } else if (statusObj != null) {
+                assembly.setStatus(0);
+            }
+
             Assembly updated = assemblyService.updateAssembly(assemblyId, assembly);
             if (updated == null) {
                 response.status(404);
                 return createErrorResponse(404, "装置不存在");
             }
-            
+
             response.status(200);
             return createSuccessResponse(updated.toMap());
         } catch (Exception e) {
@@ -149,7 +166,7 @@ public class AssemblyController {
                 response.status(404);
                 return createErrorResponse(404, "装置不存在");
             }
-            
+
             response.status(200);
             return createSuccessResponse(Map.of("message", "删除成功"));
         } catch (Exception e) {
@@ -170,13 +187,13 @@ public class AssemblyController {
             String deviceId = (String) body.get("deviceId");
             String role = (String) body.get("role");
             String positionInfo = (String) body.get("positionInfo");
-            
+
             AssemblyDevice ad = assemblyService.addDeviceToAssembly(assemblyId, deviceId, role, positionInfo);
             if (ad == null) {
                 response.status(500);
                 return createErrorResponse(500, "添加设备到装置失败");
             }
-            
+
             response.status(201);
             return createSuccessResponse(ad.toMap());
         } catch (Exception e) {
@@ -199,7 +216,7 @@ public class AssemblyController {
                 response.status(404);
                 return createErrorResponse(404, "设备不在装置中");
             }
-            
+
             response.status(200);
             return createSuccessResponse(Map.of("message", "移除成功"));
         } catch (Exception e) {
@@ -218,9 +235,9 @@ public class AssemblyController {
             String assemblyId = request.params(":id");
             List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assemblyId);
             List<Map<String, Object>> result = devices.stream()
-                .map(AssemblyDevice::toMap)
-                .collect(java.util.stream.Collectors.toList());
-            
+                    .map(AssemblyDevice::toMap)
+                    .collect(java.util.stream.Collectors.toList());
+
             response.status(200);
             return createSuccessResponse(result);
         } catch (Exception e) {
@@ -239,9 +256,9 @@ public class AssemblyController {
             String deviceId = request.params(":deviceId");
             List<Assembly> assemblies = assemblyService.getAssembliesByDevice(deviceId);
             List<Map<String, Object>> result = assemblies.stream()
-                .map(Assembly::toMap)
-                .collect(java.util.stream.Collectors.toList());
-            
+                    .map(Assembly::toMap)
+                    .collect(java.util.stream.Collectors.toList());
+
             response.status(200);
             return createSuccessResponse(result);
         } catch (Exception e) {

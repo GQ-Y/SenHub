@@ -32,7 +32,7 @@ public class ConfigService {
         try {
             // 从数据库加载配置
             Map<String, String> dbConfigs = database.getAllConfigs();
-            
+
             // 如果数据库为空，将YAML配置写入数据库
             if (dbConfigs.isEmpty()) {
                 logger.info("数据库配置为空，从YAML初始化配置到数据库");
@@ -73,6 +73,7 @@ public class ConfigService {
                 saveConfig("scanner.interval", String.valueOf(config.getScanner().getInterval()));
                 saveConfig("scanner.listen_port", String.valueOf(config.getScanner().getListenPort()));
                 saveConfig("scanner.listen_ip", config.getScanner().getListenIp());
+                saveConfig("scanner.scan_segment", config.getScanner().getScanSegment());
             }
 
             // Device配置
@@ -138,7 +139,7 @@ public class ConfigService {
     private Config restoreConfigFromDatabase(Map<String, String> dbConfigs, Config defaultConfig) {
         try {
             Config config = new Config();
-            
+
             // 创建新的配置对象，从数据库恢复，如果不存在则使用默认值
             if (defaultConfig.getMqtt() != null) {
                 Config.MqttConfig mqtt = new Config.MqttConfig();
@@ -146,9 +147,12 @@ public class ConfigService {
                 mqtt.setClientId(getConfig(dbConfigs, "mqtt.client_id", defaultConfig.getMqtt().getClientId()));
                 mqtt.setUsername(getConfig(dbConfigs, "mqtt.username", defaultConfig.getMqtt().getUsername()));
                 mqtt.setPassword(getConfig(dbConfigs, "mqtt.password", defaultConfig.getMqtt().getPassword()));
-                mqtt.setStatusTopic(getConfig(dbConfigs, "mqtt.status_topic", defaultConfig.getMqtt().getStatusTopic()));
-                mqtt.setCommandTopic(getConfig(dbConfigs, "mqtt.command_topic", defaultConfig.getMqtt().getCommandTopic()));
-                mqtt.setResponseTopic(getConfig(dbConfigs, "mqtt.response_topic", defaultConfig.getMqtt().getResponseTopic()));
+                mqtt.setStatusTopic(
+                        getConfig(dbConfigs, "mqtt.status_topic", defaultConfig.getMqtt().getStatusTopic()));
+                mqtt.setCommandTopic(
+                        getConfig(dbConfigs, "mqtt.command_topic", defaultConfig.getMqtt().getCommandTopic()));
+                mqtt.setResponseTopic(
+                        getConfig(dbConfigs, "mqtt.response_topic", defaultConfig.getMqtt().getResponseTopic()));
                 mqtt.setQos(getIntConfig(dbConfigs, "mqtt.qos", defaultConfig.getMqtt().getQos()));
                 mqtt.setKeepAlive(getIntConfig(dbConfigs, "mqtt.keep_alive", defaultConfig.getMqtt().getKeepAlive()));
                 config.setMqtt(mqtt);
@@ -157,29 +161,43 @@ public class ConfigService {
             if (defaultConfig.getScanner() != null) {
                 Config.ScannerConfig scanner = new Config.ScannerConfig();
                 scanner.setEnabled(getBoolConfig(dbConfigs, "scanner.enabled", defaultConfig.getScanner().isEnabled()));
-                scanner.setInterval(getIntConfig(dbConfigs, "scanner.interval", defaultConfig.getScanner().getInterval()));
-                scanner.setListenPort(getIntConfig(dbConfigs, "scanner.listen_port", defaultConfig.getScanner().getListenPort()));
-                scanner.setListenIp(getConfig(dbConfigs, "scanner.listen_ip", defaultConfig.getScanner().getListenIp()));
+                scanner.setInterval(
+                        getIntConfig(dbConfigs, "scanner.interval", defaultConfig.getScanner().getInterval()));
+                scanner.setListenPort(
+                        getIntConfig(dbConfigs, "scanner.listen_port", defaultConfig.getScanner().getListenPort()));
+                scanner.setListenIp(
+                        getConfig(dbConfigs, "scanner.listen_ip", defaultConfig.getScanner().getListenIp()));
+                scanner.setScanSegment(
+                        getConfig(dbConfigs, "scanner.scan_segment", defaultConfig.getScanner().getScanSegment()));
                 config.setScanner(scanner);
             }
 
             if (defaultConfig.getDevice() != null) {
                 Config.DeviceConfig device = new Config.DeviceConfig();
-                device.setDefaultUsername(getConfig(dbConfigs, "device.default_username", defaultConfig.getDevice().getDefaultUsername()));
-                device.setDefaultPassword(getConfig(dbConfigs, "device.default_password", defaultConfig.getDevice().getDefaultPassword()));
-                device.setDefaultPort(getIntConfig(dbConfigs, "device.default_port", defaultConfig.getDevice().getDefaultPort()));
-                device.setHttpPort(getIntConfig(dbConfigs, "device.http_port", defaultConfig.getDevice().getHttpPort()));
-                device.setRtspPort(getIntConfig(dbConfigs, "device.rtsp_port", defaultConfig.getDevice().getRtspPort()));
-                device.setLoginTimeout(getIntConfig(dbConfigs, "device.login_timeout", defaultConfig.getDevice().getLoginTimeout()));
-                device.setReconnectInterval(getIntConfig(dbConfigs, "device.reconnect_interval", defaultConfig.getDevice().getReconnectInterval()));
+                device.setDefaultUsername(getConfig(dbConfigs, "device.default_username",
+                        defaultConfig.getDevice().getDefaultUsername()));
+                device.setDefaultPassword(getConfig(dbConfigs, "device.default_password",
+                        defaultConfig.getDevice().getDefaultPassword()));
+                device.setDefaultPort(
+                        getIntConfig(dbConfigs, "device.default_port", defaultConfig.getDevice().getDefaultPort()));
+                device.setHttpPort(
+                        getIntConfig(dbConfigs, "device.http_port", defaultConfig.getDevice().getHttpPort()));
+                device.setRtspPort(
+                        getIntConfig(dbConfigs, "device.rtsp_port", defaultConfig.getDevice().getRtspPort()));
+                device.setLoginTimeout(
+                        getIntConfig(dbConfigs, "device.login_timeout", defaultConfig.getDevice().getLoginTimeout()));
+                device.setReconnectInterval(getIntConfig(dbConfigs, "device.reconnect_interval",
+                        defaultConfig.getDevice().getReconnectInterval()));
                 config.setDevice(device);
             }
 
             if (defaultConfig.getKeeper() != null) {
                 Config.KeeperConfig keeper = new Config.KeeperConfig();
                 keeper.setEnabled(getBoolConfig(dbConfigs, "keeper.enabled", defaultConfig.getKeeper().isEnabled()));
-                keeper.setCheckInterval(getIntConfig(dbConfigs, "keeper.check_interval", defaultConfig.getKeeper().getCheckInterval()));
-                keeper.setOfflineThreshold(getIntConfig(dbConfigs, "keeper.offline_threshold", defaultConfig.getKeeper().getOfflineThreshold()));
+                keeper.setCheckInterval(
+                        getIntConfig(dbConfigs, "keeper.check_interval", defaultConfig.getKeeper().getCheckInterval()));
+                keeper.setOfflineThreshold(getIntConfig(dbConfigs, "keeper.offline_threshold",
+                        defaultConfig.getKeeper().getOfflineThreshold()));
                 config.setKeeper(keeper);
             }
 
@@ -188,7 +206,8 @@ public class ConfigService {
                 oss.setEnabled(getBoolConfig(dbConfigs, "oss.enabled", defaultConfig.getOss().isEnabled()));
                 oss.setEndpoint(getConfig(dbConfigs, "oss.endpoint", defaultConfig.getOss().getEndpoint()));
                 oss.setAccessKeyId(getConfig(dbConfigs, "oss.access_key_id", defaultConfig.getOss().getAccessKeyId()));
-                oss.setAccessKeySecret(getConfig(dbConfigs, "oss.access_key_secret", defaultConfig.getOss().getAccessKeySecret()));
+                oss.setAccessKeySecret(
+                        getConfig(dbConfigs, "oss.access_key_secret", defaultConfig.getOss().getAccessKeySecret()));
                 oss.setBucketName(getConfig(dbConfigs, "oss.bucket_name", defaultConfig.getOss().getBucketName()));
                 oss.setRegion(getConfig(dbConfigs, "oss.region", defaultConfig.getOss().getRegion()));
                 config.setOss(oss);
@@ -214,9 +233,12 @@ public class ConfigService {
 
             if (defaultConfig.getRecorder() != null) {
                 Config.RecorderConfig recorder = new Config.RecorderConfig();
-                recorder.setEnabled(getBoolConfig(dbConfigs, "recorder.enabled", defaultConfig.getRecorder().isEnabled()));
-                recorder.setRecordPath(getConfig(dbConfigs, "recorder.record_path", defaultConfig.getRecorder().getRecordPath()));
-                recorder.setRetentionMinutes(getIntConfig(dbConfigs, "recorder.retention_minutes", defaultConfig.getRecorder().getRetentionMinutes()));
+                recorder.setEnabled(
+                        getBoolConfig(dbConfigs, "recorder.enabled", defaultConfig.getRecorder().isEnabled()));
+                recorder.setRecordPath(
+                        getConfig(dbConfigs, "recorder.record_path", defaultConfig.getRecorder().getRecordPath()));
+                recorder.setRetentionMinutes(getIntConfig(dbConfigs, "recorder.retention_minutes",
+                        defaultConfig.getRecorder().getRetentionMinutes()));
                 config.setRecorder(recorder);
             }
 

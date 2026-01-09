@@ -64,6 +64,8 @@ public class Main {
     private SpeakerService speakerService;
     private RecordingTaskService recordingTaskService;
     private RadarService radarService;
+    private RadarTestService radarTestService;
+    private RadarController radarController;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -143,6 +145,7 @@ public class Main {
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
             radarService = new RadarService(ptzService);
             radarService.start();
+            radarTestService = new RadarTestService();
             logger.info("新增服务初始化成功");
 
             // 5.8. 注入依赖到AlarmService
@@ -273,8 +276,8 @@ public class Main {
             for (DeviceInfo device : devices) {
                 String deviceId = device.getDeviceId();
 
-                // 确保设备在线（status == "online" 且已登录）
-                boolean isOnline = "online".equals(device.getStatus()) &&
+                // 确保设备在线（status == 1 且已登录）
+                boolean isOnline = (device.getStatus() == 1) &&
                         deviceManager.isDeviceLoggedIn(deviceId);
 
                 if (isOnline) {
@@ -290,7 +293,7 @@ public class Main {
                     if (deviceManager.loginDevice(device)) {
                         // 登录成功后，再次检查设备状态
                         device = deviceManager.getDevice(deviceId); // 重新获取最新状态
-                        if ("online".equals(device.getStatus()) && deviceManager.isDeviceLoggedIn(deviceId)) {
+                        if (device.getStatus() == 1 && deviceManager.isDeviceLoggedIn(deviceId)) {
                             if (recorder.startRecording(deviceId)) {
                                 logger.info("设备登录成功并启动录制: {}", deviceId);
                             } else {
@@ -320,16 +323,16 @@ public class Main {
 
             // 尝试自动登录
             if (deviceManager.loginDevice(device)) {
-                // 发布设备上线状态
-                publishDeviceStatus(device, "online");
+                // 发布设备上线状态 (1: 在线)
+                publishDeviceStatus(device, 1);
 
                 // 如果录制功能启用，自动启动录制
                 if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
                     recorder.startRecording(device.getDeviceId());
                 }
             } else {
-                // 发布设备离线状态
-                publishDeviceStatus(device, "offline");
+                // 发布设备离线状态 (0: 离线)
+                publishDeviceStatus(device, 0);
             }
         } catch (Exception e) {
             logger.error("处理设备发现失败", e);
@@ -339,7 +342,7 @@ public class Main {
     /**
      * 发布设备状态
      */
-    private void publishDeviceStatus(DeviceInfo device, String status) {
+    private void publishDeviceStatus(DeviceInfo device, int status) {
         try {
             Map<String, Object> statusMessage = new HashMap<>();
             statusMessage.put("device_id", device.getDeviceId());
@@ -409,6 +412,7 @@ public class Main {
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
+        radarController = new RadarController(radarTestService);
 
         // 注册路由
         // 认证路由
@@ -468,6 +472,9 @@ public class Main {
         Spark.delete("/api/assemblies/:id/devices/:deviceId", assemblyController::removeDeviceFromAssembly);
         Spark.get("/api/assemblies/:id/devices", assemblyController::getAssemblyDevices);
         Spark.get("/api/devices/:deviceId/assemblies", assemblyController::getAssembliesByDevice);
+
+        // 雷达路由
+        Spark.post("/api/radar/test", radarController::testConnection);
 
         // 报警规则路由
         Spark.get("/api/alarm-rules", alarmRuleController::getAlarmRules);

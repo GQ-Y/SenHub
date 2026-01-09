@@ -12,13 +12,11 @@ import com.digital.video.gateway.service.PTZService;
 import com.digital.video.gateway.service.PlaybackService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.File;
+import java.text.SimpleDateFormat;
 import spark.Request;
 import spark.Response;
 
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 /**
@@ -73,7 +71,8 @@ public class DeviceController {
 
                 // 状态过滤
                 if (statusFilter != null && !statusFilter.isEmpty() && !statusFilter.equals("ALL")) {
-                    if (!device.getStatus().equalsIgnoreCase(statusFilter)) {
+                    String deviceStatusStr = device.getStatus() == 1 ? "online" : "offline";
+                    if (!deviceStatusStr.equalsIgnoreCase(statusFilter)) {
                         continue;
                     }
                 }
@@ -130,7 +129,7 @@ public class DeviceController {
             device.setName((String) body.get("name"));
             device.setUsername((String) body.getOrDefault("username", "admin"));
             device.setPassword((String) body.getOrDefault("password", ""));
-            device.setStatus("offline");
+            device.setStatus(0);
             device.setChannel(((Number) body.getOrDefault("channel", 1)).intValue());
             // 设置品牌，如果未指定则使用auto（自动检测）
             String brand = (String) body.getOrDefault("brand", DeviceInfo.BRAND_AUTO);
@@ -354,7 +353,7 @@ public class DeviceController {
         }
         map.put("brand", brand);
         map.put("model", ""); // 可以从设备信息中获取
-        map.put("status", device.getStatus().toUpperCase());
+        map.put("status", device.getStatus() == 1 ? "ONLINE" : "OFFLINE");
         map.put("lastSeen", formatLastSeen(device.getLastSeen()));
         map.put("firmware", ""); // 可以从设备信息中获取
 

@@ -57,77 +57,77 @@ public class Database {
      */
     private void createTables() throws SQLException {
         String createDevicesTable = "CREATE TABLE IF NOT EXISTS devices (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "device_id TEXT UNIQUE NOT NULL, " +
-            "ip TEXT NOT NULL, " +
-            "port INTEGER NOT NULL, " +
-            "name TEXT, " +
-            "username TEXT, " +
-            "password TEXT, " +
-            "rtsp_url TEXT, " +
-            "status TEXT DEFAULT 'offline', " +
-            "user_id INTEGER DEFAULT -1, " +
-            "channel INTEGER DEFAULT 1, " +
-            "brand TEXT DEFAULT 'auto', " +
-            "last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-            ")";
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "device_id TEXT UNIQUE NOT NULL, " +
+                "ip TEXT NOT NULL, " +
+                "port INTEGER NOT NULL, " +
+                "name TEXT, " +
+                "username TEXT, " +
+                "password TEXT, " +
+                "rtsp_url TEXT, " +
+                "status INTEGER DEFAULT 0, " + // 0: offline, 1: online
+                "user_id INTEGER DEFAULT -1, " +
+                "channel INTEGER DEFAULT 1, " +
+                "brand TEXT DEFAULT 'auto', " +
+                "last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
 
         String createUsersTable = "CREATE TABLE IF NOT EXISTS users (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "username TEXT UNIQUE NOT NULL, " +
-            "password TEXT NOT NULL, " +
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-            ")";
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "username TEXT UNIQUE NOT NULL, " +
+                "password TEXT NOT NULL, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
 
         String createConfigsTable = "CREATE TABLE IF NOT EXISTS configs (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "config_key TEXT UNIQUE NOT NULL, " +
-            "config_value TEXT, " +
-            "config_type TEXT DEFAULT 'string', " +
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-            ")";
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "config_key TEXT UNIQUE NOT NULL, " +
+                "config_value TEXT, " +
+                "config_type TEXT DEFAULT 'string', " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
 
         String createDriversTable = "CREATE TABLE IF NOT EXISTS drivers (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "driver_id TEXT UNIQUE NOT NULL, " +
-            "name TEXT NOT NULL, " +
-            "version TEXT, " +
-            "lib_path TEXT, " +
-            "log_path TEXT, " +
-            "log_level INTEGER DEFAULT 1, " +
-            "status TEXT DEFAULT 'INACTIVE', " +
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-            ")";
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "driver_id TEXT UNIQUE NOT NULL, " +
+                "name TEXT NOT NULL, " +
+                "version TEXT, " +
+                "lib_path TEXT, " +
+                "log_path TEXT, " +
+                "log_level INTEGER DEFAULT 1, " +
+                "status TEXT DEFAULT 'INACTIVE', " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
 
         String createDeviceHistoryTable = "CREATE TABLE IF NOT EXISTS device_history (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "device_id TEXT NOT NULL, " +
-            "status TEXT NOT NULL, " +
-            "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-            ")";
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "device_id TEXT NOT NULL, " +
+                "status TEXT NOT NULL, " +
+                "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
 
         String createAlarmHistoryTable = "CREATE TABLE IF NOT EXISTS alarm_history (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "device_id TEXT, " +
-            "alarm_type TEXT NOT NULL, " +
-            "alarm_level TEXT DEFAULT 'warning', " +
-            "message TEXT, " +
-            "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-            ")";
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "device_id TEXT, " +
+                "alarm_type TEXT NOT NULL, " +
+                "alarm_level TEXT DEFAULT 'warning', " +
+                "message TEXT, " +
+                "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
 
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
-            "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port); " +
-            "CREATE INDEX IF NOT EXISTS idx_brand ON devices(brand); " +
-            "CREATE INDEX IF NOT EXISTS idx_config_key ON configs(config_key); " +
-            "CREATE INDEX IF NOT EXISTS idx_driver_id ON drivers(driver_id); " +
-            "CREATE INDEX IF NOT EXISTS idx_device_history_device_id ON device_history(device_id); " +
-            "CREATE INDEX IF NOT EXISTS idx_device_history_recorded_at ON device_history(recorded_at); " +
-            "CREATE INDEX IF NOT EXISTS idx_alarm_history_recorded_at ON alarm_history(recorded_at);";
+                "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port); " +
+                "CREATE INDEX IF NOT EXISTS idx_brand ON devices(brand); " +
+                "CREATE INDEX IF NOT EXISTS idx_config_key ON configs(config_key); " +
+                "CREATE INDEX IF NOT EXISTS idx_driver_id ON drivers(driver_id); " +
+                "CREATE INDEX IF NOT EXISTS idx_device_history_device_id ON device_history(device_id); " +
+                "CREATE INDEX IF NOT EXISTS idx_device_history_recorded_at ON device_history(recorded_at); " +
+                "CREATE INDEX IF NOT EXISTS idx_alarm_history_recorded_at ON alarm_history(recorded_at);";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
@@ -137,7 +137,7 @@ public class Database {
             stmt.execute(createDeviceHistoryTable);
             stmt.execute(createAlarmHistoryTable);
             stmt.execute(createIndex);
-            
+
             // 检查并添加channel列（如果表已存在但缺少该列）
             try {
                 stmt.executeQuery("SELECT channel FROM devices LIMIT 1");
@@ -152,7 +152,7 @@ public class Database {
                     logger.debug("添加channel列失败（可能已存在）: {}", ex.getMessage());
                 }
             }
-            
+
             // 检查并添加brand列（如果表已存在但缺少该列）
             try {
                 stmt.executeQuery("SELECT brand FROM devices LIMIT 1");
@@ -167,14 +167,14 @@ public class Database {
                     logger.debug("添加brand列失败（可能已存在）: {}", ex.getMessage());
                 }
             }
-            
+
             // 创建新增的表
             AssemblyTable.createTables(connection);
             AlarmRuleTable.createTables(connection);
             AlarmRecordTable.createTables(connection);
             SpeakerTable.createTables(connection);
             RecordingTaskTable.createTables(connection);
-            
+
             logger.info("数据库表创建成功");
         }
     }
@@ -184,8 +184,9 @@ public class Database {
      */
     public boolean saveOrUpdateDevice(DeviceInfo device) {
         String sql = "INSERT OR REPLACE INTO devices " +
-            "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, brand, last_seen, updated_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+                "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, brand, last_seen, updated_at) "
+                +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
@@ -195,7 +196,7 @@ public class Database {
             pstmt.setString(5, device.getUsername());
             pstmt.setString(6, device.getPassword());
             pstmt.setString(7, device.getRtspUrl());
-            pstmt.setString(8, device.getStatus());
+            pstmt.setInt(8, device.getStatus());
             pstmt.setInt(9, device.getUserId());
             pstmt.setInt(10, device.getChannel() > 0 ? device.getChannel() : 1);
             pstmt.setString(11, device.getBrand() != null ? device.getBrand() : "auto");
@@ -251,7 +252,7 @@ public class Database {
         List<DeviceInfo> devices = new ArrayList<>();
         String sql = "SELECT * FROM devices ORDER BY created_at DESC";
         try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 devices.add(mapResultSetToDevice(rs));
             }
@@ -264,19 +265,19 @@ public class Database {
     /**
      * 更新设备状态
      */
-    public boolean updateDeviceStatus(String deviceId, String status, int userId) {
+    public boolean updateDeviceStatus(String deviceId, int status, int userId) {
         String sql = "UPDATE devices SET status = ?, user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, status);
+            pstmt.setInt(1, status);
             pstmt.setInt(2, userId);
             pstmt.setString(3, deviceId);
             int rows = pstmt.executeUpdate();
-            
+
             // 记录设备状态历史
             if (rows > 0) {
                 recordDeviceHistory(deviceId, status);
             }
-            
+
             return rows > 0;
         } catch (SQLException e) {
             logger.error("更新设备状态失败: {}", deviceId, e);
@@ -320,10 +321,11 @@ public class Database {
     private void initDefaultUser() {
         String defaultUsername = "admin";
         String defaultPassword = "123456";
-        
+
         if (!userExists(defaultUsername)) {
             // 使用BCrypt加密密码
-            String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(defaultPassword, org.mindrot.jbcrypt.BCrypt.gensalt());
+            String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(defaultPassword,
+                    org.mindrot.jbcrypt.BCrypt.gensalt());
             if (createUser(defaultUsername, passwordHash)) {
                 logger.info("默认管理员用户已创建: {}", defaultUsername);
             } else {
@@ -340,28 +342,28 @@ public class Database {
     private void initDefaultDriver() {
         // 使用默认配置值（SDK库已复制到项目目录）
         initDefaultDriverWithConfig(
-            "hikvision_sdk",
-            "Hikvision SDK",
-            "6.1.9.45",
-            "./lib/hikvision",
-            "./sdkLog",
-            3,
-            "ACTIVE"
-        );
+                "hikvision_sdk",
+                "Hikvision SDK",
+                "6.1.9.45",
+                "./lib/hikvision",
+                "./sdkLog",
+                3,
+                "ACTIVE");
     }
 
     /**
      * 使用指定配置初始化默认SDK驱动
+     * 
      * @param driverId 驱动ID
-     * @param name 驱动名称
-     * @param version 版本号
-     * @param libPath SDK库路径
-     * @param logPath 日志路径
+     * @param name     驱动名称
+     * @param version  版本号
+     * @param libPath  SDK库路径
+     * @param logPath  日志路径
      * @param logLevel 日志级别
-     * @param status 状态
+     * @param status   状态
      */
-    public void initDefaultDriverWithConfig(String driverId, String name, String version, 
-                                           String libPath, String logPath, int logLevel, String status) {
+    public void initDefaultDriverWithConfig(String driverId, String name, String version,
+            String libPath, String logPath, int logLevel, String status) {
         // 检查驱动是否已存在
         if (getDriver(driverId) == null) {
             if (saveOrUpdateDriver(driverId, name, version, libPath, logPath, logLevel, status)) {
@@ -387,7 +389,7 @@ public class Database {
         device.setUsername(rs.getString("username"));
         device.setPassword(rs.getString("password"));
         device.setRtspUrl(rs.getString("rtsp_url"));
-        device.setStatus(rs.getString("status"));
+        device.setStatus(rs.getInt("status"));
         device.setUserId(rs.getInt("user_id"));
         device.setChannel(rs.getInt("channel"));
         // 处理brand字段，如果不存在则使用默认值
@@ -515,7 +517,7 @@ public class Database {
         java.util.Map<String, String> configs = new java.util.HashMap<>();
         String sql = "SELECT config_key, config_value FROM configs";
         try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 configs.put(rs.getString("config_key"), rs.getString("config_value"));
             }
@@ -545,9 +547,11 @@ public class Database {
     /**
      * 保存或更新驱动配置
      */
-    public boolean saveOrUpdateDriver(String driverId, String name, String version, String libPath, String logPath, int logLevel, String status) {
-        String sql = "INSERT OR REPLACE INTO drivers (driver_id, name, version, lib_path, log_path, log_level, status, updated_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+    public boolean saveOrUpdateDriver(String driverId, String name, String version, String libPath, String logPath,
+            int logLevel, String status) {
+        String sql = "INSERT OR REPLACE INTO drivers (driver_id, name, version, lib_path, log_path, log_level, status, updated_at) "
+                +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, driverId);
             pstmt.setString(2, name);
@@ -597,7 +601,7 @@ public class Database {
         List<java.util.Map<String, Object>> drivers = new ArrayList<>();
         String sql = "SELECT * FROM drivers ORDER BY created_at DESC";
         try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 java.util.Map<String, Object> driver = new java.util.HashMap<>();
                 driver.put("id", rs.getString("driver_id"));
@@ -635,11 +639,11 @@ public class Database {
     /**
      * 记录设备状态历史
      */
-    public boolean recordDeviceHistory(String deviceId, String status) {
+    public boolean recordDeviceHistory(String deviceId, int status) {
         String sql = "INSERT INTO device_history (device_id, status, recorded_at) VALUES (?, ?, CURRENT_TIMESTAMP)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
-            pstmt.setString(2, status);
+            pstmt.setInt(2, status);
             pstmt.executeUpdate();
             return true;
         } catch (SQLException e) {
@@ -672,24 +676,24 @@ public class Database {
     public List<Map<String, Object>> getDeviceConnectivityTrend24h() {
         List<Map<String, Object>> trendData = new ArrayList<>();
         String sql = "SELECT " +
-            "strftime('%H', recorded_at) as hour, " +
-            "COUNT(DISTINCT CASE WHEN status = 'online' THEN device_id END) as online_count " +
-            "FROM device_history " +
-            "WHERE recorded_at >= datetime('now', '-24 hours') " +
-            "GROUP BY strftime('%H', recorded_at) " +
-            "ORDER BY hour";
-        
+                "strftime('%H', recorded_at) as hour, " +
+                "COUNT(DISTINCT CASE WHEN status = 1 THEN device_id END) as online_count " +
+                "FROM device_history " +
+                "WHERE recorded_at >= datetime('now', '-24 hours') " +
+                "GROUP BY strftime('%H', recorded_at) " +
+                "ORDER BY hour";
+
         try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSet rs = stmt.executeQuery(sql)) {
             Map<String, Integer> hourData = new HashMap<>();
             while (rs.next()) {
                 String hour = rs.getString("hour");
                 int onlineCount = rs.getInt("online_count");
                 hourData.put(hour, onlineCount);
             }
-            
+
             // 生成24小时数据点（每4小时一个点）
-            String[] timePoints = {"00", "04", "08", "12", "16", "20", "24"};
+            String[] timePoints = { "00", "04", "08", "12", "16", "20", "24" };
             for (String time : timePoints) {
                 Map<String, Object> dataPoint = new HashMap<>();
                 dataPoint.put("name", time + ":00");
@@ -709,7 +713,7 @@ public class Database {
     public int getAlarmCount24h() {
         String sql = "SELECT COUNT(*) as count FROM alarm_history WHERE recorded_at >= datetime('now', '-24 hours')";
         try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSet rs = stmt.executeQuery(sql)) {
             if (rs.next()) {
                 return rs.getInt("count");
             }
@@ -724,8 +728,10 @@ public class Database {
      */
     public void cleanupOldHistory() {
         try (Statement stmt = connection.createStatement()) {
-            int deleted1 = stmt.executeUpdate("DELETE FROM device_history WHERE recorded_at < datetime('now', '-30 days')");
-            int deleted2 = stmt.executeUpdate("DELETE FROM alarm_history WHERE recorded_at < datetime('now', '-30 days')");
+            int deleted1 = stmt
+                    .executeUpdate("DELETE FROM device_history WHERE recorded_at < datetime('now', '-30 days')");
+            int deleted2 = stmt
+                    .executeUpdate("DELETE FROM alarm_history WHERE recorded_at < datetime('now', '-30 days')");
             if (deleted1 > 0 || deleted2 > 0) {
                 logger.info("清理旧历史数据完成: device_history={}, alarm_history={}", deleted1, deleted2);
             }
@@ -735,7 +741,7 @@ public class Database {
     }
 
     /**
-     * 获取数据库连接
+     * 获取数据库连接（返回代理连接，防止被误关闭）
      */
     public Connection getConnection() {
         return connection;

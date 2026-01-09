@@ -60,7 +60,7 @@ public class AlarmRecordService {
             sql.append(" LIMIT ?");
         }
 
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             int paramIndex = 1;
             for (String param : params) {
@@ -84,7 +84,7 @@ public class AlarmRecordService {
      */
     public AlarmRecord getAlarmRecord(String recordId) {
         String sql = "SELECT * FROM alarm_records WHERE alarm_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, recordId);
             ResultSet rs = pstmt.executeQuery();
@@ -105,7 +105,7 @@ public class AlarmRecordService {
             record.setAlarmId(UUID.randomUUID().toString());
         }
         String sql = "INSERT INTO alarm_records (alarm_id, device_id, assembly_id, alarm_type, alarm_level, channel, alarm_data, capture_url, video_url, status, mqtt_sent, speaker_triggered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, record.getAlarmId());
             pstmt.setString(2, record.getDeviceId());
@@ -136,7 +136,7 @@ public class AlarmRecordService {
      */
     public AlarmRecord updateAlarmRecord(String recordId, AlarmRecord record) {
         String sql = "UPDATE alarm_records SET capture_url = ?, video_url = ?, status = ?, mqtt_sent = ?, speaker_triggered = ?, processed_at = CURRENT_TIMESTAMP WHERE alarm_id = ?";
-        try (Connection conn = database.getConnection();
+        Connection conn = database.getConnection(); try (
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, record.getCaptureUrl());
             pstmt.setString(2, record.getVideoUrl());

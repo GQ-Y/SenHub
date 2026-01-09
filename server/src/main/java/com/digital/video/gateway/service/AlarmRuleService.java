@@ -53,8 +53,8 @@ public class AlarmRuleService {
 
         sql.append(" ORDER BY priority DESC, created_at ASC");
 
-        try (Connection conn = database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+        Connection conn = database.getConnection();
+        try (PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             for (int i = 0; i < params.size(); i++) {
                 Object param = params.get(i);
                 if (param instanceof String) {
@@ -78,8 +78,8 @@ public class AlarmRuleService {
      */
     public AlarmRule getAlarmRule(String ruleId) {
         String sql = "SELECT * FROM alarm_rules WHERE rule_id = ?";
-        try (Connection conn = database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        Connection conn = database.getConnection(); try (
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, ruleId);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
@@ -99,8 +99,8 @@ public class AlarmRuleService {
             rule.setRuleId(UUID.randomUUID().toString());
         }
         String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        Connection conn = database.getConnection(); try (
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getRuleId());
             pstmt.setString(2, rule.getName());
             pstmt.setString(3, rule.getAlarmType());
@@ -124,8 +124,8 @@ public class AlarmRuleService {
      */
     public AlarmRule updateAlarmRule(String ruleId, AlarmRule rule) {
         String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
-        try (Connection conn = database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        Connection conn = database.getConnection(); try (
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getName());
             pstmt.setString(2, rule.getAlarmType());
             pstmt.setString(3, rule.getScope());
@@ -149,8 +149,8 @@ public class AlarmRuleService {
      */
     public boolean deleteAlarmRule(String ruleId) {
         String sql = "DELETE FROM alarm_rules WHERE rule_id = ?";
-        try (Connection conn = database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        Connection conn = database.getConnection(); try (
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, ruleId);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
@@ -164,8 +164,8 @@ public class AlarmRuleService {
      */
     public AlarmRule toggleRule(String ruleId, boolean enabled) {
         String sql = "UPDATE alarm_rules SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
-        try (Connection conn = database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        Connection conn = database.getConnection(); try (
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, enabled ? 1 : 0);
             pstmt.setString(2, ruleId);
             pstmt.executeUpdate();
@@ -194,7 +194,8 @@ public class AlarmRuleService {
      * 匹配规则（核心方法）
      * 根据设备ID、装置ID、报警类型和报警数据匹配规则
      */
-    public List<AlarmRule> matchRules(String deviceId, String assemblyId, String alarmType, Map<String, Object> alarmData) {
+    public List<AlarmRule> matchRules(String deviceId, String assemblyId, String alarmType,
+            Map<String, Object> alarmData) {
         List<AlarmRule> matchedRules = new ArrayList<>();
 
         // 1. 查询相关规则
@@ -234,7 +235,9 @@ public class AlarmRuleService {
         }
 
         try {
-            Map<String, Object> conditions = objectMapper.readValue(rule.getConditions(), new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> conditions = objectMapper.readValue(rule.getConditions(),
+                    new TypeReference<Map<String, Object>>() {
+                    });
 
             // 检查区域限制
             if (conditions.containsKey("area")) {

@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -40,7 +39,8 @@ public class DeviceScanner {
     private static final int NET_DVR_DEVICE_ADD = 0x1000; // 设备上线
     private static final int NET_DVR_DEVICE_OFFLINE = 0x1001; // 设备离线
 
-    public DeviceScanner(HikvisionSDK sdk, Database database, Config.ScannerConfig scannerConfig, Config.DeviceConfig deviceConfig) {
+    public DeviceScanner(HikvisionSDK sdk, Database database, Config.ScannerConfig scannerConfig,
+            Config.DeviceConfig deviceConfig) {
         this.sdk = sdk;
         this.database = database;
         this.config = scannerConfig;
@@ -70,14 +70,13 @@ public class DeviceScanner {
 
             // 创建消息回调
             DeviceMessageCallback callback = new DeviceMessageCallback();
-            
+
             // 启动监听
             listenHandle = hcNetSDK.NET_DVR_StartListen_V30(
-                config.getListenIp(),
-                (short) config.getListenPort(),
-                callback,
-                null
-            );
+                    config.getListenIp(),
+                    (short) config.getListenPort(),
+                    callback,
+                    null);
 
             if (listenHandle < 0) {
                 logger.error("启动设备监听失败，错误码: {}", sdk.getLastError());
@@ -86,10 +85,10 @@ public class DeviceScanner {
 
             running = true;
             logger.info("设备扫描器已启动 - 监听地址: {}:{}", config.getListenIp(), config.getListenPort());
-            
+
             // 启动主动扫描
             startActiveScanning();
-            
+
             return true;
 
         } catch (Exception e) {
@@ -153,7 +152,7 @@ public class DeviceScanner {
             device.setName(deviceName != null ? deviceName : "未知设备");
             device.setUsername(deviceConfig.getDefaultUsername());
             device.setPassword(deviceConfig.getDefaultPassword());
-            device.setStatus("offline");
+            device.setStatus(0);
             device.setUserId(-1);
 
             // 生成RTSP URL（使用RTSP端口，不是SDK端口）
@@ -179,7 +178,8 @@ public class DeviceScanner {
      */
     private class DeviceMessageCallback implements HCNetSDK.FMSGCallBack {
         @Override
-        public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen, Pointer pUser) {
+        public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen,
+                Pointer pUser) {
             try {
                 if (lCommand == NET_DVR_DEVICE_ADD) {
                     // 设备上线
@@ -189,11 +189,11 @@ public class DeviceScanner {
                         // 这里是一个简化的实现
                         byte[] buffer = pAlarmInfo.getByteArray(0, Math.min(dwBufLen, 256));
                         String message = new String(buffer, StandardCharsets.UTF_8).trim();
-                        
+
                         // 解析设备信息（简化处理，实际需要根据SDK消息格式解析）
                         // 通常消息包含IP、端口等信息
                         logger.debug("收到设备上线消息: {}", message);
-                        
+
                         // 从pAlarmer中提取设备信息
                         if (pAlarmer != null && pAlarmer.byDeviceIPValid == 1) {
                             String deviceIP = new String(pAlarmer.sDeviceIP, StandardCharsets.UTF_8).trim();
@@ -229,10 +229,10 @@ public class DeviceScanner {
         if (scanExecutor == null) {
             scanExecutor = Executors.newFixedThreadPool(10); // 使用10个线程并发扫描
         }
-        
+
         // 立即执行一次扫描
         scanNetwork();
-        
+
         // 如果配置了扫描间隔，定期执行扫描
         if (config.getInterval() > 0) {
             Thread scanThread = new Thread(() -> {
@@ -262,7 +262,7 @@ public class DeviceScanner {
             logger.debug("扫描正在进行中，跳过本次扫描");
             return;
         }
-        
+
         try {
             scanning = true;
             String networkSegment = getCurrentNetworkSegment();
@@ -270,21 +270,21 @@ public class DeviceScanner {
                 logger.warn("无法获取当前网段，跳过主动扫描");
                 return;
             }
-            
-            logger.info("开始主动扫描局域网设备，网段: {}，IP范围: {}.{}-{}", 
-                networkSegment, networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
-            
+
+            logger.info("开始主动扫描局域网设备，网段: {}，IP范围: {}.{}-{}",
+                    networkSegment, networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
+
             // 扫描IP范围：10-100
             for (int i = config.getScanRangeStart(); i <= config.getScanRangeEnd(); i++) {
                 final String ip = networkSegment + "." + i;
                 final int port = deviceConfig.getDefaultPort();
-                
+
                 // 使用线程池并发扫描
                 scanExecutor.submit(() -> scanDevice(ip, port));
             }
-            
-            logger.info("主动扫描任务已提交，IP范围: {}.{}-{}", 
-                networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
+
+            logger.info("主动扫描任务已提交，IP范围: {}.{}-{}",
+                    networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
         } catch (Exception e) {
             logger.error("启动主动扫描失败", e);
         } finally {
@@ -302,24 +302,32 @@ public class DeviceScanner {
 
     /**
      * 获取当前主网段（例如：192.168.1）
+     * 
      * @return 网段字符串，如果无法获取则返回null
      */
     private String getCurrentNetworkSegment() {
+        // 优先使用配置中指定的网段
+        String configSegment = config.getScanSegment();
+        if (configSegment != null && !configSegment.isEmpty()) {
+            logger.info("使用配置指定的扫描网段: {}", configSegment);
+            return configSegment;
+        }
+
         try {
             Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
-            
+
             while (networkInterfaces.hasMoreElements()) {
                 NetworkInterface networkInterface = networkInterfaces.nextElement();
-                
+
                 // 跳过回环接口和未启用的接口
                 if (networkInterface.isLoopback() || !networkInterface.isUp()) {
                     continue;
                 }
-                
+
                 Enumeration<InetAddress> inetAddresses = networkInterface.getInetAddresses();
                 while (inetAddresses.hasMoreElements()) {
                     InetAddress inetAddress = inetAddresses.nextElement();
-                    
+
                     // 只处理IPv4地址
                     if (inetAddress instanceof Inet4Address && !inetAddress.isLoopbackAddress()) {
                         String hostAddress = inetAddress.getHostAddress();
@@ -336,7 +344,7 @@ public class DeviceScanner {
         } catch (SocketException e) {
             logger.error("获取网络接口失败", e);
         }
-        
+
         logger.warn("无法获取当前网段，使用默认网段: 192.168.1");
         return "192.168.1"; // 默认网段
     }
@@ -351,7 +359,7 @@ public class DeviceScanner {
             java.net.Socket socket = new java.net.Socket();
             socket.setSoTimeout(2000); // 2秒超时
             boolean connected = false;
-            
+
             try {
                 socket.connect(new java.net.InetSocketAddress(ip, port), 2000);
                 connected = true;
@@ -365,7 +373,7 @@ public class DeviceScanner {
                     // Ignore
                 }
             }
-            
+
             if (connected) {
                 logger.debug("发现设备在线: {}:{}", ip, port);
                 // 设备在线，保存到数据库并触发登录
@@ -382,5 +390,5 @@ public class DeviceScanner {
     public boolean isRunning() {
         return running;
     }
-    
+
 }

@@ -54,11 +54,10 @@ public class Keeper {
 
         scheduler = Executors.newScheduledThreadPool(1);
         scheduler.scheduleWithFixedDelay(
-            this::checkDevices,
-            0,
-            config.getCheckInterval(),
-            TimeUnit.SECONDS
-        );
+                this::checkDevices,
+                0,
+                config.getCheckInterval(),
+                TimeUnit.SECONDS);
 
         running = true;
         logger.info("保活系统已启动 - 检查间隔: {}秒", config.getCheckInterval());
@@ -114,19 +113,19 @@ public class Keeper {
         if (isLoggedIn) {
             // 设备已登录，重置失败计数
             failureCountMap.remove(deviceId);
-            if (!"online".equals(device.getStatus())) {
-                deviceManager.updateDeviceStatus(deviceId, "online");
+            if (device.getStatus() != 1) {
+                deviceManager.updateDeviceStatus(deviceId, 1);
                 logger.debug("设备状态更新为在线: {}", deviceId);
             }
         } else {
             // 设备未登录，尝试登录
             int failureCount = failureCountMap.getOrDefault(deviceId, 0);
-            
+
             if (deviceManager.loginDevice(device)) {
                 // 登录成功
                 failureCountMap.remove(deviceId);
                 logger.info("设备自动登录成功: {}", deviceId);
-                
+
                 // 如果录制功能启用，自动启动录制
                 if (recorder != null && config != null) {
                     try {
@@ -139,11 +138,11 @@ public class Keeper {
                 // 登录失败
                 failureCount++;
                 failureCountMap.put(deviceId, failureCount);
-                
+
                 if (failureCount >= config.getOfflineThreshold()) {
                     // 达到离线阈值，更新状态为离线
-                    if (!"offline".equals(device.getStatus())) {
-                        deviceManager.updateDeviceStatus(deviceId, "offline");
+                    if (device.getStatus() != 0) {
+                        deviceManager.updateDeviceStatus(deviceId, 0);
                         logger.warn("设备判定为离线: {} (连续失败{}次)", deviceId, failureCount);
                     }
                 } else {

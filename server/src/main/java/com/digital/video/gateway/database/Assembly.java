@@ -15,34 +15,74 @@ public class Assembly {
     private String name;
     private String description;
     private String location;
-    private String status; // active, inactive
+    private int status; // 0: 禁用, 1: 启用
     private Timestamp createdAt;
     private Timestamp updatedAt;
 
     // Getters and Setters
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
+    public int getId() {
+        return id;
+    }
 
-    public String getAssemblyId() { return assemblyId; }
-    public void setAssemblyId(String assemblyId) { this.assemblyId = assemblyId; }
+    public void setId(int id) {
+        this.id = id;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public String getAssemblyId() {
+        return assemblyId;
+    }
 
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public void setAssemblyId(String assemblyId) {
+        this.assemblyId = assemblyId;
+    }
 
-    public String getLocation() { return location; }
-    public void setLocation(String location) { this.location = location; }
+    public String getName() {
+        return name;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public Timestamp getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
+    public String getDescription() {
+        return description;
+    }
 
-    public Timestamp getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Timestamp updatedAt) { this.updatedAt = updatedAt; }
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+    public int getStatus() {
+        return status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public Timestamp getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Timestamp createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Timestamp getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Timestamp updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 
     /**
      * 从ResultSet构建对象
@@ -54,7 +94,7 @@ public class Assembly {
         assembly.setName(rs.getString("name"));
         assembly.setDescription(rs.getString("description"));
         assembly.setLocation(rs.getString("location"));
-        assembly.setStatus(rs.getString("status"));
+        assembly.setStatus(rs.getInt("status"));
         assembly.setCreatedAt(rs.getTimestamp("created_at"));
         assembly.setUpdatedAt(rs.getTimestamp("updated_at"));
         return assembly;
@@ -71,8 +111,10 @@ public class Assembly {
         map.put("description", description);
         map.put("location", location);
         map.put("status", status);
-        if (createdAt != null) map.put("createdAt", createdAt.toString());
-        if (updatedAt != null) map.put("updatedAt", updatedAt.toString());
+        if (createdAt != null)
+            map.put("createdAt", createdAt.toString());
+        if (updatedAt != null)
+            map.put("updatedAt", updatedAt.toString());
         return map;
     }
 }

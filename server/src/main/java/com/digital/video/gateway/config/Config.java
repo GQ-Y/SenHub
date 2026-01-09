@@ -207,6 +207,8 @@ public class Config {
         private int scanRangeStart = 10; // 扫描IP范围起始值，默认10
         @JsonProperty("scan_range_end")
         private int scanRangeEnd = 100; // 扫描IP范围结束值，默认100
+        @JsonProperty("scan_segment")
+        private String scanSegment; // 扫描网段（例如：192.168.1）
 
         // Getters and Setters
         public boolean isEnabled() {
@@ -255,6 +257,14 @@ public class Config {
 
         public void setScanRangeEnd(int scanRangeEnd) {
             this.scanRangeEnd = scanRangeEnd;
+        }
+
+        public String getScanSegment() {
+            return scanSegment;
+        }
+
+        public void setScanSegment(String scanSegment) {
+            this.scanSegment = scanSegment;
         }
     }
 
