@@ -817,6 +817,144 @@ public class HikvisionSDK implements DeviceSDK {
         }
     }
 
+    @Override
+    public boolean gotoAngle(int userId, int channel, float pan, float tilt, float zoom) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return false;
+        }
+
+        try {
+            HCNetSDK.NET_DVR_PTZPOS struPos = new HCNetSDK.NET_DVR_PTZPOS();
+            // 海康绝对定位参数：角度*10。例如水平 36.5 度传 365
+            struPos.wPanPos = (short) (pan * 10);
+            struPos.wTiltPos = (short) (tilt * 10);
+            struPos.wZoomPos = (short) (zoom * 10);
+            struPos.write();
+
+            boolean result = hCNetSDK.NET_DVR_SetDVRConfig(userId, HCNetSDK.NET_DVR_SET_PTZPOS, channel,
+                    struPos.getPointer(), struPos.size());
+            if (!result) {
+                logger.error("海康云台绝对定位失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
+                return false;
+            }
+
+            logger.info("海康云台绝对定位成功: userId={}, channel={}, pan={}, tilt={}, zoom={}",
+                    userId, channel, pan, tilt, zoom);
+            return true;
+        } catch (Exception e) {
+            logger.error("海康云台绝对定位异常: userId={}, channel={}", userId, channel, e);
+            return false;
+        }
+    }
+
+    @Override
+    public int downloadPlaybackByTimeRange(int userId, int channel, Date startTime, Date endTime,
+            String localFilePath, int streamType) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return -1;
+        }
+
+        try {
+            // 确保目录存在
+            File file = new File(localFilePath);
+            File parentDir = file.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs();
+            }
+
+            HCNetSDK.NET_DVR_PLAYCOND downloadCond = new HCNetSDK.NET_DVR_PLAYCOND();
+            downloadCond.dwChannel = channel;
+            downloadCond.byStreamType = (byte) streamType;
+
+            // 填充开始时间
+            downloadCond.struStartTime = new HCNetSDK.NET_DVR_TIME();
+            Calendar calendarStart = Calendar.getInstance();
+            calendarStart.setTime(startTime);
+            downloadCond.struStartTime.dwYear = calendarStart.get(Calendar.YEAR);
+            downloadCond.struStartTime.dwMonth = calendarStart.get(Calendar.MONTH) + 1;
+            downloadCond.struStartTime.dwDay = calendarStart.get(Calendar.DAY_OF_MONTH);
+            downloadCond.struStartTime.dwHour = calendarStart.get(Calendar.HOUR_OF_DAY);
+            downloadCond.struStartTime.dwMinute = calendarStart.get(Calendar.MINUTE);
+            downloadCond.struStartTime.dwSecond = calendarStart.get(Calendar.SECOND);
+
+            // 填充结束时间
+            downloadCond.struStopTime = new HCNetSDK.NET_DVR_TIME();
+            Calendar calendarEnd = Calendar.getInstance();
+            calendarEnd.setTime(endTime);
+            downloadCond.struStopTime.dwYear = calendarEnd.get(Calendar.YEAR);
+            downloadCond.struStopTime.dwMonth = calendarEnd.get(Calendar.MONTH) + 1;
+            downloadCond.struStopTime.dwDay = calendarEnd.get(Calendar.DAY_OF_MONTH);
+            downloadCond.struStopTime.dwHour = calendarEnd.get(Calendar.HOUR_OF_DAY);
+            downloadCond.struStopTime.dwMinute = calendarEnd.get(Calendar.MINUTE);
+            downloadCond.struStopTime.dwSecond = calendarEnd.get(Calendar.SECOND);
+
+            downloadCond.write();
+
+            // 执行下载
+            int downloadHandle = hCNetSDK.NET_DVR_GetFileByTime_V40(userId, localFilePath, downloadCond);
+            if (downloadHandle == -1) {
+                logger.error("海康录像下载启动失败: userId={}, channel={}, 路径={}, 错误码={}",
+                        userId, channel, localFilePath, getLastError());
+                return -1;
+            }
+
+            // 启动下载控制码
+            boolean playBackControl = hCNetSDK.NET_DVR_PlayBackControl(downloadHandle, HCNetSDK.NET_DVR_PLAYSTART, 0,
+                    null);
+            if (!playBackControl) {
+                logger.error("海康录像下载控制启动失败: handle={}, 错误码={}", downloadHandle, getLastError());
+                hCNetSDK.NET_DVR_StopGetFile(downloadHandle);
+                return -1;
+            }
+
+            logger.info("海康录像下载已启动: handle={}, channel={}, file={}", downloadHandle, channel, localFilePath);
+            return downloadHandle;
+        } catch (Exception e) {
+            logger.error("海康录像下载启动异常: userId={}, channel={}", userId, channel, e);
+            return -1;
+        }
+    }
+
+    @Override
+    public boolean stopDownload(int downloadId) {
+        if (!initialized || hCNetSDK == null) {
+            return false;
+        }
+        if (downloadId < 0)
+            return false;
+
+        boolean result = hCNetSDK.NET_DVR_StopGetFile(downloadId);
+        if (result) {
+            logger.info("海康录像下载已停止: handle={}", downloadId);
+        } else {
+            logger.error("海康录像下载停止失败: handle={}, 错误码={}", downloadId, getLastError());
+        }
+        return result;
+    }
+
+    @Override
+    public int getDownloadProgress(int downloadId) {
+        if (!initialized || hCNetSDK == null) {
+            return -1;
+        }
+        if (downloadId < 0)
+            return -1;
+
+        int progress = hCNetSDK.NET_DVR_GetDownloadPos(downloadId);
+        if (progress < 0 || progress > 100) {
+            // progress = 100 表示完成，在某些情况下返回可能是别的
+            if (progress == 100)
+                return 100;
+            if (progress == 200) {
+                logger.error("海康下载异常: handle={}, 返回进度 200", downloadId);
+                return -1;
+            }
+        }
+        return progress;
+    }
+
     /**
      * 获取PTZ命令码
      */

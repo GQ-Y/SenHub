@@ -802,6 +802,13 @@ public class TiandySDK implements DeviceSDK {
         }
     }
 
+    @Override
+    public boolean gotoAngle(int userId, int channel, float pan, float tilt, float zoom) {
+        // 目前天地伟业 SDK 暂未实现该接口，仅作存根
+        logger.warn("天地伟业 SDK 暂不支持绝对定位接口: userId={}, channel={}, pan={}, tilt={}", userId, channel, pan, tilt);
+        return false;
+    }
+
     /**
      * 获取云台控制码
      * 根据官方示例代码（NVSSDK.java和VideoCtrl.java）确认的控制码值

@@ -168,6 +168,13 @@ public class Database {
                 }
             }
             
+            // 创建新增的表
+            AssemblyTable.createTables(connection);
+            AlarmRuleTable.createTables(connection);
+            AlarmRecordTable.createTables(connection);
+            SpeakerTable.createTables(connection);
+            RecordingTaskTable.createTables(connection);
+            
             logger.info("数据库表创建成功");
         }
     }
@@ -725,6 +732,13 @@ public class Database {
         } catch (SQLException e) {
             logger.error("清理旧历史数据失败", e);
         }
+    }
+
+    /**
+     * 获取数据库连接
+     */
+    public Connection getConnection() {
+        return connection;
     }
 
     /**

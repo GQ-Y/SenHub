@@ -123,24 +123,77 @@ public class Config {
         private int keepAlive;
 
         // Getters and Setters
-        public String getBroker() { return broker; }
-        public void setBroker(String broker) { this.broker = broker; }
-        public String getClientId() { return clientId; }
-        public void setClientId(String clientId) { this.clientId = clientId; }
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
-        public String getStatusTopic() { return statusTopic; }
-        public void setStatusTopic(String statusTopic) { this.statusTopic = statusTopic; }
-        public String getCommandTopic() { return commandTopic; }
-        public void setCommandTopic(String commandTopic) { this.commandTopic = commandTopic; }
-        public String getResponseTopic() { return responseTopic; }
-        public void setResponseTopic(String responseTopic) { this.responseTopic = responseTopic; }
-        public int getQos() { return qos; }
-        public void setQos(int qos) { this.qos = qos; }
-        public int getKeepAlive() { return keepAlive; }
-        public void setKeepAlive(int keepAlive) { this.keepAlive = keepAlive; }
+        public String getBroker() {
+            return broker;
+        }
+
+        public void setBroker(String broker) {
+            this.broker = broker;
+        }
+
+        public String getClientId() {
+            return clientId;
+        }
+
+        public void setClientId(String clientId) {
+            this.clientId = clientId;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public String getStatusTopic() {
+            return statusTopic;
+        }
+
+        public void setStatusTopic(String statusTopic) {
+            this.statusTopic = statusTopic;
+        }
+
+        public String getCommandTopic() {
+            return commandTopic;
+        }
+
+        public void setCommandTopic(String commandTopic) {
+            this.commandTopic = commandTopic;
+        }
+
+        public String getResponseTopic() {
+            return responseTopic;
+        }
+
+        public void setResponseTopic(String responseTopic) {
+            this.responseTopic = responseTopic;
+        }
+
+        public int getQos() {
+            return qos;
+        }
+
+        public void setQos(int qos) {
+            this.qos = qos;
+        }
+
+        public int getKeepAlive() {
+            return keepAlive;
+        }
+
+        public void setKeepAlive(int keepAlive) {
+            this.keepAlive = keepAlive;
+        }
     }
 
     public static class ScannerConfig {
@@ -151,23 +204,58 @@ public class Config {
         @JsonProperty("listen_ip")
         private String listenIp;
         @JsonProperty("scan_range_start")
-        private int scanRangeStart = 10;  // 扫描IP范围起始值，默认10
+        private int scanRangeStart = 10; // 扫描IP范围起始值，默认10
         @JsonProperty("scan_range_end")
-        private int scanRangeEnd = 100;   // 扫描IP范围结束值，默认100
+        private int scanRangeEnd = 100; // 扫描IP范围结束值，默认100
 
         // Getters and Setters
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public int getInterval() { return interval; }
-        public void setInterval(int interval) { this.interval = interval; }
-        public int getListenPort() { return listenPort; }
-        public void setListenPort(int listenPort) { this.listenPort = listenPort; }
-        public String getListenIp() { return listenIp; }
-        public void setListenIp(String listenIp) { this.listenIp = listenIp; }
-        public int getScanRangeStart() { return scanRangeStart; }
-        public void setScanRangeStart(int scanRangeStart) { this.scanRangeStart = scanRangeStart; }
-        public int getScanRangeEnd() { return scanRangeEnd; }
-        public void setScanRangeEnd(int scanRangeEnd) { this.scanRangeEnd = scanRangeEnd; }
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getInterval() {
+            return interval;
+        }
+
+        public void setInterval(int interval) {
+            this.interval = interval;
+        }
+
+        public int getListenPort() {
+            return listenPort;
+        }
+
+        public void setListenPort(int listenPort) {
+            this.listenPort = listenPort;
+        }
+
+        public String getListenIp() {
+            return listenIp;
+        }
+
+        public void setListenIp(String listenIp) {
+            this.listenIp = listenIp;
+        }
+
+        public int getScanRangeStart() {
+            return scanRangeStart;
+        }
+
+        public void setScanRangeStart(int scanRangeStart) {
+            this.scanRangeStart = scanRangeStart;
+        }
+
+        public int getScanRangeEnd() {
+            return scanRangeEnd;
+        }
+
+        public void setScanRangeEnd(int scanRangeEnd) {
+            this.scanRangeEnd = scanRangeEnd;
+        }
     }
 
     public static class DeviceConfig {
@@ -176,31 +264,72 @@ public class Config {
         @JsonProperty("default_password")
         private String defaultPassword;
         @JsonProperty("default_port")
-        private int defaultPort;  // SDK端口，默认8000
+        private int defaultPort; // SDK端口，默认8000
         @JsonProperty("http_port")
-        private int httpPort = 80;  // HTTP端口，默认80
+        private int httpPort = 80; // HTTP端口，默认80
         @JsonProperty("rtsp_port")
-        private int rtspPort = 554;  // RTSP端口，默认554
+        private int rtspPort = 554; // RTSP端口，默认554
         @JsonProperty("login_timeout")
         private int loginTimeout;
         @JsonProperty("reconnect_interval")
         private int reconnectInterval;
 
         // Getters and Setters
-        public String getDefaultUsername() { return defaultUsername; }
-        public void setDefaultUsername(String defaultUsername) { this.defaultUsername = defaultUsername; }
-        public String getDefaultPassword() { return defaultPassword; }
-        public void setDefaultPassword(String defaultPassword) { this.defaultPassword = defaultPassword; }
-        public int getDefaultPort() { return defaultPort; }
-        public void setDefaultPort(int defaultPort) { this.defaultPort = defaultPort; }
-        public int getHttpPort() { return httpPort; }
-        public void setHttpPort(int httpPort) { this.httpPort = httpPort; }
-        public int getRtspPort() { return rtspPort; }
-        public void setRtspPort(int rtspPort) { this.rtspPort = rtspPort; }
-        public int getLoginTimeout() { return loginTimeout; }
-        public void setLoginTimeout(int loginTimeout) { this.loginTimeout = loginTimeout; }
-        public int getReconnectInterval() { return reconnectInterval; }
-        public void setReconnectInterval(int reconnectInterval) { this.reconnectInterval = reconnectInterval; }
+        public String getDefaultUsername() {
+            return defaultUsername;
+        }
+
+        public void setDefaultUsername(String defaultUsername) {
+            this.defaultUsername = defaultUsername;
+        }
+
+        public String getDefaultPassword() {
+            return defaultPassword;
+        }
+
+        public void setDefaultPassword(String defaultPassword) {
+            this.defaultPassword = defaultPassword;
+        }
+
+        public int getDefaultPort() {
+            return defaultPort;
+        }
+
+        public void setDefaultPort(int defaultPort) {
+            this.defaultPort = defaultPort;
+        }
+
+        public int getHttpPort() {
+            return httpPort;
+        }
+
+        public void setHttpPort(int httpPort) {
+            this.httpPort = httpPort;
+        }
+
+        public int getRtspPort() {
+            return rtspPort;
+        }
+
+        public void setRtspPort(int rtspPort) {
+            this.rtspPort = rtspPort;
+        }
+
+        public int getLoginTimeout() {
+            return loginTimeout;
+        }
+
+        public void setLoginTimeout(int loginTimeout) {
+            this.loginTimeout = loginTimeout;
+        }
+
+        public int getReconnectInterval() {
+            return reconnectInterval;
+        }
+
+        public void setReconnectInterval(int reconnectInterval) {
+            this.reconnectInterval = reconnectInterval;
+        }
     }
 
     public static class KeeperConfig {
@@ -211,16 +340,34 @@ public class Config {
         private int offlineThreshold;
 
         // Getters and Setters
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public int getCheckInterval() { return checkInterval; }
-        public void setCheckInterval(int checkInterval) { this.checkInterval = checkInterval; }
-        public int getOfflineThreshold() { return offlineThreshold; }
-        public void setOfflineThreshold(int offlineThreshold) { this.offlineThreshold = offlineThreshold; }
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getCheckInterval() {
+            return checkInterval;
+        }
+
+        public void setCheckInterval(int checkInterval) {
+            this.checkInterval = checkInterval;
+        }
+
+        public int getOfflineThreshold() {
+            return offlineThreshold;
+        }
+
+        public void setOfflineThreshold(int offlineThreshold) {
+            this.offlineThreshold = offlineThreshold;
+        }
     }
 
     public static class OssConfig {
         private boolean enabled;
+        private String type; // aliyun or minio
         private String endpoint;
         @JsonProperty("access_key_id")
         private String accessKeyId;
@@ -231,26 +378,74 @@ public class Config {
         private String region;
 
         // Getters and Setters
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getEndpoint() { return endpoint; }
-        public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
-        public String getAccessKeyId() { return accessKeyId; }
-        public void setAccessKeyId(String accessKeyId) { this.accessKeyId = accessKeyId; }
-        public String getAccessKeySecret() { return accessKeySecret; }
-        public void setAccessKeySecret(String accessKeySecret) { this.accessKeySecret = accessKeySecret; }
-        public String getBucketName() { return bucketName; }
-        public void setBucketName(String bucketName) { this.bucketName = bucketName; }
-        public String getRegion() { return region; }
-        public void setRegion(String region) { this.region = region; }
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getType() {
+            return type != null ? type : "aliyun";
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        public String getAccessKeyId() {
+            return accessKeyId;
+        }
+
+        public void setAccessKeyId(String accessKeyId) {
+            this.accessKeyId = accessKeyId;
+        }
+
+        public String getAccessKeySecret() {
+            return accessKeySecret;
+        }
+
+        public void setAccessKeySecret(String accessKeySecret) {
+            this.accessKeySecret = accessKeySecret;
+        }
+
+        public String getBucketName() {
+            return bucketName;
+        }
+
+        public void setBucketName(String bucketName) {
+            this.bucketName = bucketName;
+        }
+
+        public String getRegion() {
+            return region;
+        }
+
+        public void setRegion(String region) {
+            this.region = region;
+        }
     }
 
     public static class DatabaseConfig {
         private String path;
 
         // Getters and Setters
-        public String getPath() { return path; }
-        public void setPath(String path) { this.path = path; }
+        public String getPath() {
+            return path;
+        }
+
+        public void setPath(String path) {
+            this.path = path;
+        }
     }
 
     public static class LogConfig {
@@ -264,16 +459,45 @@ public class Config {
         private int maxAge;
 
         // Getters and Setters
-        public String getLevel() { return level; }
-        public void setLevel(String level) { this.level = level; }
-        public String getFile() { return file; }
-        public void setFile(String file) { this.file = file; }
-        public int getMaxSize() { return maxSize; }
-        public void setMaxSize(int maxSize) { this.maxSize = maxSize; }
-        public int getMaxBackups() { return maxBackups; }
-        public void setMaxBackups(int maxBackups) { this.maxBackups = maxBackups; }
-        public int getMaxAge() { return maxAge; }
-        public void setMaxAge(int maxAge) { this.maxAge = maxAge; }
+        public String getLevel() {
+            return level;
+        }
+
+        public void setLevel(String level) {
+            this.level = level;
+        }
+
+        public String getFile() {
+            return file;
+        }
+
+        public void setFile(String file) {
+            this.file = file;
+        }
+
+        public int getMaxSize() {
+            return maxSize;
+        }
+
+        public void setMaxSize(int maxSize) {
+            this.maxSize = maxSize;
+        }
+
+        public int getMaxBackups() {
+            return maxBackups;
+        }
+
+        public void setMaxBackups(int maxBackups) {
+            this.maxBackups = maxBackups;
+        }
+
+        public int getMaxAge() {
+            return maxAge;
+        }
+
+        public void setMaxAge(int maxAge) {
+            this.maxAge = maxAge;
+        }
     }
 
     public static class SdkConfig {
@@ -285,12 +509,29 @@ public class Config {
         private int logLevel;
 
         // Getters and Setters
-        public String getLibPath() { return libPath; }
-        public void setLibPath(String libPath) { this.libPath = libPath; }
-        public String getLogPath() { return logPath; }
-        public void setLogPath(String logPath) { this.logPath = logPath; }
-        public int getLogLevel() { return logLevel; }
-        public void setLogLevel(int logLevel) { this.logLevel = logLevel; }
+        public String getLibPath() {
+            return libPath;
+        }
+
+        public void setLibPath(String libPath) {
+            this.libPath = libPath;
+        }
+
+        public String getLogPath() {
+            return logPath;
+        }
+
+        public void setLogPath(String logPath) {
+            this.logPath = logPath;
+        }
+
+        public int getLogLevel() {
+            return logLevel;
+        }
+
+        public void setLogLevel(int logLevel) {
+            this.logLevel = logLevel;
+        }
     }
 
     public static class RecorderConfig {
@@ -301,11 +542,28 @@ public class Config {
         private int retentionMinutes; // 保留时长（分钟）
 
         // Getters and Setters
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getRecordPath() { return recordPath; }
-        public void setRecordPath(String recordPath) { this.recordPath = recordPath; }
-        public int getRetentionMinutes() { return retentionMinutes; }
-        public void setRetentionMinutes(int retentionMinutes) { this.retentionMinutes = retentionMinutes; }
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getRecordPath() {
+            return recordPath;
+        }
+
+        public void setRecordPath(String recordPath) {
+            this.recordPath = recordPath;
+        }
+
+        public int getRetentionMinutes() {
+            return retentionMinutes;
+        }
+
+        public void setRetentionMinutes(int retentionMinutes) {
+            this.retentionMinutes = retentionMinutes;
+        }
     }
 }

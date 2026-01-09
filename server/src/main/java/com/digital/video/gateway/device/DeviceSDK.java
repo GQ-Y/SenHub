@@ -144,6 +144,20 @@ public interface DeviceSDK {
     }
 
     /**
+     * 云台绝对定位 (雷达联动核心接口)
+     * 
+     * @param userId  登录句柄
+     * @param channel 通道号
+     * @param pan     水平角度 (0-3600, 实际为角度*10)
+     * @param tilt    垂直角度 (0-900, 实际为角度*10)
+     * @param zoom    变倍 (1-40, 实际为倍数*10)
+     * @return 是否成功
+     */
+    default boolean gotoAngle(int userId, int channel, float pan, float tilt, float zoom) {
+        return false; // 默认不支持，子类可重写
+    }
+
+    /**
      * 查询回放文件
      * 
      * @param userId    登录句柄

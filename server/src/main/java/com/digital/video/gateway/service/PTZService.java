@@ -107,6 +107,51 @@ public class PTZService {
     }
 
     /**
+     * 云台绝对定位
+     * 
+     * @param deviceId 设备ID
+     * @param channel  通道号
+     * @param pan      水平角度
+     * @param tilt     垂直角度
+     * @param zoom     变倍
+     * @return 是否成功
+     */
+    public boolean gotoAngle(String deviceId, int channel, float pan, float tilt, float zoom) {
+        DeviceInfo device = deviceManager.getDevice(deviceId);
+        if (device == null) {
+            logger.warn("设备不存在: {}", deviceId);
+            return false;
+        }
+
+        // 确保设备已登录
+        if (!deviceManager.isDeviceLoggedIn(deviceId)) {
+            if (!deviceManager.loginDevice(device)) {
+                logger.warn("设备未登录，无法定位云台: {}", deviceId);
+                return false;
+            }
+        }
+
+        DeviceSDK sdk = deviceManager.getDeviceSDK(deviceId);
+        if (sdk == null) {
+            return false;
+        }
+
+        int userId = deviceManager.getDeviceUserId(deviceId);
+        int actualChannel = channel > 0 ? channel : device.getChannel();
+
+        try {
+            boolean result = sdk.gotoAngle(userId, actualChannel, pan, tilt, zoom);
+            if (result) {
+                logger.debug("云台绝对定位成功: deviceId={}, pan={}, tilt={}", deviceId, pan, tilt);
+            }
+            return result;
+        } catch (Exception e) {
+            logger.error("云台绝对定位异常: deviceId={}", deviceId, e);
+            return false;
+        }
+    }
+
+    /**
      * 验证命令是否有效
      */
     private boolean isValidCommand(String command) {
