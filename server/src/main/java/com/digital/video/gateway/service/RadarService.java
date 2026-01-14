@@ -2,6 +2,7 @@ package com.digital.video.gateway.service;
 
 import com.digital.video.gateway.driver.livox.LivoxDriver;
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
+import com.digital.video.gateway.database.Database;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,25 +10,36 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 览沃 (Livox) Mid-360 雷达服务
  * 负责接收 UDP 点云数据，解析目标位置，并驱动摄像头 PTZ 联动。
- * Updated to use Netty-based LivoxDriver.
+ * Updated to use JNI-based LivoxDriver.
  */
 public class RadarService {
     private static final Logger logger = LoggerFactory.getLogger(RadarService.class);
 
     private final PTZService ptzService;
-    private final LivoxDriver livoxDriver; // Netty Driver
+    private final LivoxDriver livoxDriver; // JNI Driver
 
     // 联动配置（示例：将雷达目标映射到特定摄像头）
     private String targetDeviceId;
     private int targetChannel = 1;
 
-    public RadarService(PTZService ptzService) {
+    // 点云数据统计
+    private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
+    private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
+    private final AtomicLong lastSecondFrames = new AtomicLong(0);
+    private final AtomicLong lastSecondPoints = new AtomicLong(0);
+    private ScheduledExecutorService statsExecutor;
+
+    public RadarService(PTZService ptzService, Database database) {
         this.ptzService = ptzService;
-        this.livoxDriver = new LivoxDriver(); // Should ideally be injected
+        this.livoxDriver = new LivoxDriver(database);
     }
 
     /**
@@ -37,16 +49,63 @@ public class RadarService {
         try {
             livoxDriver.start();
             livoxDriver.setPointCloudCallback(this::handlePacket);
-            logger.info("雷达监听服务已启动 (Netty Driver)");
+            logger.info("雷达监听服务已启动 (JNI Driver)");
+            
+            // 启动统计信息打印任务（每秒打印一次）
+            startStatsReporter();
         } catch (Exception e) {
             logger.error("启动雷达监听服务失败", e);
         }
+    }
+    
+    /**
+     * 启动统计信息报告器（每秒打印一次）
+     */
+    private void startStatsReporter() {
+        statsExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "RadarService-StatsReporter");
+            t.setDaemon(true);
+            return t;
+        });
+        
+        final AtomicLong lastTotalFrames = new AtomicLong(0);
+        final AtomicLong lastTotalPoints = new AtomicLong(0);
+        
+        statsExecutor.scheduleAtFixedRate(() -> {
+            long currentFrames = totalPointCloudFrames.get();
+            long currentPoints = totalPointCloudPoints.get();
+            
+            long framesThisSecond = currentFrames - lastTotalFrames.get();
+            long pointsThisSecond = currentPoints - lastTotalPoints.get();
+            
+            lastTotalFrames.set(currentFrames);
+            lastTotalPoints.set(currentPoints);
+            
+            // 每秒都打印，即使没有新数据也显示累计统计
+            logger.info("[点云统计] 本秒接收: {} 帧, {} 点 | 累计: {} 帧, {} 点", 
+                framesThisSecond, pointsThisSecond, currentFrames, currentPoints);
+        }, 1, 1, TimeUnit.SECONDS);
+        
+        logger.info("点云统计报告器已启动（每秒打印一次）");
     }
 
     /**
      * 停止雷达监听
      */
     public synchronized void stop() {
+        // 停止统计报告器
+        if (statsExecutor != null) {
+            statsExecutor.shutdown();
+            try {
+                if (!statsExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    statsExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                statsExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        
         livoxDriver.stop();
         logger.info("雷达监听服务已停止");
     }
@@ -67,16 +126,25 @@ public class RadarService {
 
         // Mid-360 常见的笛卡尔坐标数据类型 0x01
         if (dataType == 0x01) {
-            parseCartesianPoints(bb);
+            int pointCount = parseCartesianPoints(bb);
+            
+            // 更新统计信息
+            if (pointCount > 0) {
+                totalPointCloudFrames.incrementAndGet();
+                totalPointCloudPoints.addAndGet(pointCount);
+            }
         }
     }
 
     /**
      * 解析笛卡尔坐标点云 (Type 0x01)
      * 每个点 13 字节: x(4), y(4), z(4), reflectivity(1)
+     * @return 解析的点数
      */
-    private void parseCartesianPoints(ByteBuffer bb) {
+    private int parseCartesianPoints(ByteBuffer bb) {
         List<Point> points = new ArrayList<>();
+        int totalPoints = 0;
+        
         while (bb.remaining() >= 13) {
             int xInt = bb.getInt();
             int yInt = bb.getInt();
@@ -86,6 +154,7 @@ public class RadarService {
             float y = yInt / 1000.0f;
             float z = zInt / 1000.0f;
             bb.get(); // reflectivity
+            totalPoints++;
 
             // 简单过滤：只保留 0.5m 到 30m 范围内的目标
             float distance = (float) Math.sqrt(x * x + y * y + z * z);
@@ -97,6 +166,8 @@ public class RadarService {
         if (!points.isEmpty()) {
             processPoints(points);
         }
+        
+        return totalPoints;
     }
 
     /**

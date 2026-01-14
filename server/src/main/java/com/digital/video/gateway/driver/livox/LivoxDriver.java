@@ -1,160 +1,367 @@
 package com.digital.video.gateway.driver.livox;
 
-import com.digital.video.gateway.driver.livox.codec.PacketDecoder;
-import com.digital.video.gateway.driver.livox.protocol.PacketCRC;
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
-import com.digital.video.gateway.driver.livox.protocol.SdkProtocol;
-import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.nio.NioDatagramChannel;
+import com.digital.video.gateway.database.Database;
+import com.livox.demo.LivoxJNI;
+import com.livox.demo.PointCloudCallback;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.concurrent.ConcurrentHashMap;
+import java.io.File;
+import java.io.FileWriter;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
 
 /**
- * Livox Driver - Manages UDP connections to Lidars
+ * Livox Driver - 基于官方 SDK (JNI) 的驱动实现
  */
 public class LivoxDriver {
 
     private static final Logger log = LoggerFactory.getLogger(LivoxDriver.class);
 
-    private static final int DISCOVERY_PORT = 55000;
-    private static final int CMD_PORT = 56000; // Port on Lidar to send commands to
+    private Database database;
+    private LegacyPointCloudCallback legacyCallback; // 兼容旧接口
+    private PointCloudCallback jniCallback; // JNI 回调
+    private String configFilePath;
+    private boolean started = false;
 
-    private EventLoopGroup workerGroup;
-    private Channel discoveryChannel;
+    // 默认配置值
+    private static final String DEFAULT_MULTICAST_IP = "224.1.1.5";
+    private static final int DEFAULT_CMD_DATA_PORT = 56101;
+    private static final int DEFAULT_PUSH_MSG_PORT = 56201;
+    private static final int DEFAULT_POINT_DATA_PORT = 56301;
+    private static final int DEFAULT_IMU_DATA_PORT = 56401;
+    private static final int DEFAULT_LOG_DATA_PORT = 56501;
 
-    // Track connected devices?
-    private final ConcurrentHashMap<String, InetSocketAddress> devices = new ConcurrentHashMap<>();
-
-    public void start() {
-        log.info("Starting Livox Driver (Netty)...");
-        workerGroup = new NioEventLoopGroup();
-
-        try {
-            Bootstrap b = new Bootstrap();
-            b.group(workerGroup)
-                    .channel(NioDatagramChannel.class)
-                    .handler(new ChannelInitializer<NioDatagramChannel>() {
-                        @Override
-                        protected void initChannel(NioDatagramChannel ch) throws Exception {
-                            ch.pipeline().addLast(new PacketDecoder());
-                            ch.pipeline().addLast(new SimpleChannelInboundHandler<SdkPacket>() {
-                                @Override
-                                protected void channelRead0(ChannelHandlerContext ctx, SdkPacket packet)
-                                        throws Exception {
-                                    handlePacket(ctx, packet);
-                                }
-                            });
-                        }
-                    });
-
-            // Bind to 55000 to listen for Broadcasts
-            discoveryChannel = b.bind(DISCOVERY_PORT).sync().channel();
-            log.info("Listening for Livox Broadcasts on port {}", DISCOVERY_PORT);
-
-            // Allow sending from this channel too (to Lidar:56000)
-
-        } catch (InterruptedException e) {
-            log.error("Driver interrupted", e);
-            Thread.currentThread().interrupt();
-        }
+    public LivoxDriver() {
+        // 默认构造函数，需要后续注入 Database
     }
 
-    public void stop() {
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-        }
+    public LivoxDriver(Database database) {
+        this.database = database;
     }
 
-    // Callback interface
-    public interface PointCloudCallback {
-        void onPointCloud(SdkPacket packet);
-    }
-
-    private PointCloudCallback pointCloudCallback;
-
-    public void setPointCloudCallback(PointCloudCallback callback) {
-        this.pointCloudCallback = callback;
-    }
-
-    private void handlePacket(ChannelHandlerContext ctx, SdkPacket packet) {
-        // log.debug("RX Packet: Type={}, CmdId={}", packet.cmdType, packet.cmdId);
-
-        // Check if it's data
-        if (packet.cmdType == SdkProtocol.CMD_TYPE_MSG) {
-            // Should check specific CmdId for Point Cloud?
-            // In SDK2, Point Cloud is usually Msg?
-            // Or Payload inside Msg.
-            if (pointCloudCallback != null) {
-                pointCloudCallback.onPointCloud(packet);
-            }
-        }
-
-        // Handle Discovery / Broadcasts
-        // TODO: Map logic
+    public void setDatabase(Database database) {
+        this.database = database;
     }
 
     /**
-     * Send a Command to a specific Lidar
+     * 启动驱动
      */
-    public void sendCommand(String ip, int cmdId, byte[] payload) {
-        if (discoveryChannel == null)
+    public void start() {
+        if (started) {
+            log.warn("Livox Driver 已经启动");
             return;
-
-        // Construct Packet
-        ByteBuf buf = buildPacketBuff(cmdId, payload);
-        InetSocketAddress target = new InetSocketAddress(ip, CMD_PORT);
-
-        discoveryChannel.writeAndFlush(new DatagramPacket(buf, target));
-    }
-
-    private ByteBuf buildPacketBuff(int cmdId, byte[] payload) {
-        int payloadLen = (payload != null) ? payload.length : 0;
-        int totalLen = SdkProtocol.WRAPPER_LEN + payloadLen;
-
-        byte[] buf = new byte[totalLen];
-        ByteBuffer bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN);
-
-        // Header
-        bb.put(SdkProtocol.SOF);
-        bb.put(SdkProtocol.VER_MID360); // Use 0x00 for Mid-360
-        bb.putShort((short) totalLen);
-        bb.putInt(getNextSeq()); // Seq
-        bb.putShort((short) cmdId);
-        bb.put(SdkProtocol.CMD_TYPE_REQ);
-        bb.put(SdkProtocol.SENDER_HOST);
-        bb.put(new byte[6]); // Rsvd
-
-        // CRC16
-        bb.putShort((short) PacketCRC.crc16(buf, 0, SdkProtocol.HEADER_LEN));
-
-        // CRC32
-        int crc32 = 0;
-        if (payloadLen > 0) {
-            crc32 = PacketCRC.crc32(payload, 0, payloadLen);
-        }
-        bb.putInt(crc32);
-
-        // Payload
-        if (payloadLen > 0) {
-            bb.put(payload);
         }
 
-        return Unpooled.wrappedBuffer(buf);
+        log.info("启动 Livox Driver (JNI)...");
+
+        try {
+            // 1. 生成配置文件
+            configFilePath = generateLivoxConfig();
+            if (configFilePath == null) {
+                log.error("生成 Livox 配置文件失败");
+                return;
+            }
+
+            // 2. 初始化 SDK
+            try {
+                log.debug("准备初始化 Livox SDK，配置文件: {}", configFilePath);
+                boolean initResult = LivoxJNI.init(configFilePath);
+                if (!initResult) {
+                    log.error("Livox SDK 初始化失败，返回 false");
+                    return;
+                }
+                log.info("Livox SDK 初始化成功");
+            } catch (UnsatisfiedLinkError e) {
+                log.error("Livox SDK 初始化时发生链接错误: {}", e.getMessage(), e);
+                return;
+            } catch (Exception e) {
+                log.error("Livox SDK 初始化时发生异常", e);
+                return;
+            }
+
+            // 3. 设置点云回调
+            if (jniCallback != null) {
+                LivoxJNI.setPointCloudCallback(jniCallback);
+            } else if (legacyCallback != null) {
+                // 如果有旧接口回调，创建适配器
+                jniCallback = createLegacyAdapter(legacyCallback);
+                LivoxJNI.setPointCloudCallback(jniCallback);
+            }
+
+            // 4. 启动 SDK
+            try {
+                log.debug("准备启动 Livox SDK");
+                boolean startResult = LivoxJNI.start();
+                if (!startResult) {
+                    log.error("Livox SDK 启动失败，返回 false");
+                    return;
+                }
+                log.info("Livox SDK 启动成功");
+            } catch (Exception e) {
+                log.error("Livox SDK 启动时发生异常", e);
+                return;
+            }
+
+            started = true;
+            log.info("Livox Driver 启动成功");
+
+        } catch (Exception e) {
+            log.error("启动 Livox Driver 时出错", e);
+        }
     }
 
-    private int seqCounter = 0;
+    /**
+     * 停止驱动
+     */
+    public void stop() {
+        if (!started) {
+            return;
+        }
 
-    private synchronized int getNextSeq() {
-        return seqCounter++;
+        log.info("停止 Livox Driver...");
+        try {
+            LivoxJNI.stop();
+            started = false;
+            log.info("Livox Driver 已停止");
+        } catch (Exception e) {
+            log.error("停止 Livox Driver 时出错", e);
+        }
+    }
+
+    /**
+     * 设置点云数据回调（JNI 接口）
+     */
+    public void setPointCloudCallback(PointCloudCallback callback) {
+        this.jniCallback = callback;
+        // 如果已经启动，需要重新设置回调
+        if (started) {
+            LivoxJNI.setPointCloudCallback(callback);
+        }
+    }
+
+    /**
+     * 生成 Livox 配置文件
+     * @return 配置文件路径，失败返回 null
+     */
+    private String generateLivoxConfig() {
+        try {
+            // 从数据库读取配置
+            String hostIp = getConfig("livox.host_ip");
+            String multicastIp = getConfig("livox.multicast_ip", DEFAULT_MULTICAST_IP);
+            int cmdDataPort = getIntConfig("livox.cmd_data_port", DEFAULT_CMD_DATA_PORT);
+            int pushMsgPort = getIntConfig("livox.push_msg_port", DEFAULT_PUSH_MSG_PORT);
+            int pointDataPort = getIntConfig("livox.point_data_port", DEFAULT_POINT_DATA_PORT);
+            int imuDataPort = getIntConfig("livox.imu_data_port", DEFAULT_IMU_DATA_PORT);
+            int logDataPort = getIntConfig("livox.log_data_port", DEFAULT_LOG_DATA_PORT);
+
+            // 如果 host_ip 为空，自动检测
+            if (hostIp == null || hostIp.trim().isEmpty()) {
+                hostIp = getLocalHostIp();
+                if (hostIp == null) {
+                    log.error("无法获取本地 IP 地址，且数据库未配置 livox.host_ip");
+                    return null;
+                }
+                log.info("自动检测到本地 IP: {}", hostIp);
+            }
+
+            // 创建 JSON 配置
+            ObjectMapper mapper = new ObjectMapper();
+            ObjectNode root = mapper.createObjectNode();
+            ObjectNode mid360 = mapper.createObjectNode();
+            root.set("MID360", mid360);
+
+            // lidar_net_info (雷达端端口)
+            ObjectNode lidarNetInfo = mapper.createObjectNode();
+            lidarNetInfo.put("cmd_data_port", 56100);
+            lidarNetInfo.put("push_msg_port", 56200);
+            lidarNetInfo.put("point_data_port", 56300);
+            lidarNetInfo.put("imu_data_port", 56400);
+            lidarNetInfo.put("log_data_port", 56500);
+            mid360.set("lidar_net_info", lidarNetInfo);
+
+            // host_net_info (主机端端口)
+            ArrayNode hostNetInfoArray = mapper.createArrayNode();
+            ObjectNode hostNetInfo = mapper.createObjectNode();
+            hostNetInfo.put("host_ip", hostIp);
+            hostNetInfo.put("multicast_ip", multicastIp);
+            hostNetInfo.put("cmd_data_port", cmdDataPort);
+            hostNetInfo.put("push_msg_port", pushMsgPort);
+            hostNetInfo.put("point_data_port", pointDataPort);
+            hostNetInfo.put("imu_data_port", imuDataPort);
+            hostNetInfo.put("log_data_port", logDataPort);
+            hostNetInfoArray.add(hostNetInfo);
+            mid360.set("host_net_info", hostNetInfoArray);
+
+            // 写入配置文件
+            String configDir = "./config";
+            File configDirFile = new File(configDir);
+            if (!configDirFile.exists()) {
+                configDirFile.mkdirs();
+            }
+
+            String configPath = configDir + "/livox-config.json";
+            File configFile = new File(configPath);
+            
+            try (FileWriter writer = new FileWriter(configFile)) {
+                mapper.writerWithDefaultPrettyPrinter().writeValue(writer, root);
+            }
+
+            log.info("Livox 配置文件已生成: {}", configPath);
+            return configPath;
+
+        } catch (Exception e) {
+            log.error("生成 Livox 配置文件失败", e);
+            return null;
+        }
+    }
+
+    /**
+     * 获取本地主机 IP 地址
+     * 优先选择 192.168.x.x 网段的 IP（局域网 IP）
+     * @return IP 地址字符串，失败返回 null
+     */
+    private String getLocalHostIp() {
+        String preferredIp = null; // 优先的 IP（192.168.x.x）
+        String fallbackIp = null;  // 备选 IP（其他非回环 IP）
+        
+        try {
+            Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
+
+            while (networkInterfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = networkInterfaces.nextElement();
+
+                // 跳过回环接口和未启用的接口
+                if (networkInterface.isLoopback() || !networkInterface.isUp()) {
+                    continue;
+                }
+
+                Enumeration<InetAddress> inetAddresses = networkInterface.getInetAddresses();
+                while (inetAddresses.hasMoreElements()) {
+                    InetAddress inetAddress = inetAddresses.nextElement();
+
+                    // 只处理 IPv4 地址，跳过回环和链路本地地址
+                    if (inetAddress instanceof Inet4Address 
+                            && !inetAddress.isLoopbackAddress()
+                            && !inetAddress.isLinkLocalAddress()) {
+                        String hostAddress = inetAddress.getHostAddress();
+                        log.debug("检测到本地 IP: {}", hostAddress);
+                        
+                        // 优先选择 192.168.x.x 网段（局域网 IP）
+                        if (hostAddress.startsWith("192.168.")) {
+                            preferredIp = hostAddress;
+                            log.debug("找到优先 IP (192.168.x.x): {}", preferredIp);
+                            // 继续查找，看是否有更合适的（但通常第一个 192.168.x.x 就足够了）
+                        } else if (fallbackIp == null) {
+                            // 保存第一个非 192.168 的 IP 作为备选
+                            fallbackIp = hostAddress;
+                        }
+                    }
+                }
+            }
+        } catch (SocketException e) {
+            log.error("获取网络接口失败", e);
+        }
+
+        // 优先返回 192.168.x.x 网段的 IP
+        if (preferredIp != null) {
+            log.info("使用优先 IP (192.168.x.x): {}", preferredIp);
+            return preferredIp;
+        }
+        
+        // 如果没有 192.168.x.x，使用备选 IP
+        if (fallbackIp != null) {
+            log.warn("未找到 192.168.x.x 网段 IP，使用备选 IP: {}", fallbackIp);
+            return fallbackIp;
+        }
+
+        log.warn("无法获取本地 IP 地址");
+        return null;
+    }
+
+    /**
+     * 从数据库获取配置值
+     */
+    private String getConfig(String key) {
+        if (database == null) {
+            log.warn("Database 未设置，无法读取配置: {}", key);
+            return null;
+        }
+        return database.getConfig(key);
+    }
+
+    /**
+     * 从数据库获取配置值，如果不存在则返回默认值
+     */
+    private String getConfig(String key, String defaultValue) {
+        String value = getConfig(key);
+        return value != null ? value : defaultValue;
+    }
+
+    /**
+     * 从数据库获取整数配置值，如果不存在则返回默认值
+     */
+    private int getIntConfig(String key, int defaultValue) {
+        String value = getConfig(key);
+        if (value != null) {
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                log.warn("配置值格式错误: {} = {}，使用默认值: {}", key, value, defaultValue);
+            }
+        }
+        return defaultValue;
+    }
+
+    // ==================== 兼容旧接口 ====================
+
+    /**
+     * 兼容旧的 PointCloudCallback 接口（使用 SdkPacket）
+     */
+    public interface LegacyPointCloudCallback {
+        void onPointCloud(SdkPacket packet);
+    }
+
+    /**
+     * 设置点云回调（兼容旧接口）
+     */
+    public void setPointCloudCallback(LegacyPointCloudCallback callback) {
+        this.legacyCallback = callback;
+        // 创建适配器
+        if (callback != null) {
+            jniCallback = createLegacyAdapter(callback);
+        } else {
+            jniCallback = null;
+        }
+        // 如果已经启动，需要重新设置回调
+        if (started && jniCallback != null) {
+            LivoxJNI.setPointCloudCallback(jniCallback);
+        }
+    }
+
+    /**
+     * 创建旧接口适配器
+     */
+    private PointCloudCallback createLegacyAdapter(
+            LegacyPointCloudCallback legacyCallback) {
+        return new PointCloudCallback() {
+            @Override
+            public void onPointCloud(int handle, int devType, int pointCount, int dataType, byte[] data) {
+                // 创建 SdkPacket 对象
+                SdkPacket packet = new SdkPacket();
+                packet.cmdType = 0x01; // MSG type
+                packet.cmdId = dataType;
+                packet.payload = data;
+                // 调用旧接口
+                legacyCallback.onPointCloud(packet);
+            }
+        };
     }
 }

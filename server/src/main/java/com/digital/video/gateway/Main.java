@@ -143,7 +143,7 @@ public class Main {
             alarmRecordService = new AlarmRecordService(database);
             speakerService = new SpeakerService(database);
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
-            radarService = new RadarService(ptzService);
+            radarService = new RadarService(ptzService, database);
             radarService.start();
             radarTestService = new RadarTestService();
             logger.info("新增服务初始化成功");

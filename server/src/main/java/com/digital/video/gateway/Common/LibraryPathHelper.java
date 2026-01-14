@@ -142,4 +142,14 @@ public class LibraryPathHelper {
         File libDir = new File(libPath);
         return libDir.exists() && libDir.isDirectory();
     }
+    
+    /**
+     * 获取 Livox SDK 库路径（根据操作系统）
+     * @param osType 操作系统类型："macos" 或 "linux"
+     * @return 库文件目录路径，例如：/path/to/lib/macos 或 /path/to/lib/linux
+     */
+    public static String getLivoxLibPath(String osType) {
+        String userDir = System.getProperty("user.dir");
+        return userDir + "/lib/" + osType;
+    }
 }
