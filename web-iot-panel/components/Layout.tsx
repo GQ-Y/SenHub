@@ -13,7 +13,8 @@ import {
   X,
   Check,
   Package,
-  Shield
+  Shield,
+  Radar
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useAppContext } from '../contexts/AppContext';
@@ -86,6 +87,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
         break;
       case 'SYSTEM_CONFIG':
         navigate('/settings');
+        break;
+      case 'RADAR':
+        navigate('/radar');
         break;
       default:
         navigate('/');
@@ -203,6 +207,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               isActive={currentView === 'ASSEMBLY_MANAGEMENT' || currentView === 'ASSEMBLY_DETAIL'} 
               onClick={() => handleNavigate('ASSEMBLY_MANAGEMENT')}
             />
+            <SidebarItem 
+              icon={Radar} 
+              label="雷达管理" 
+              isActive={currentView === 'RADAR'} 
+              onClick={() => handleNavigate('RADAR')}
+            />
              <div className="pt-4 pb-2">
               <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('integration')}</p>
             </div>
@@ -262,6 +272,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
                 currentView === 'DEVICE_DETAIL' ? t('live_view') :
                 currentView === 'ASSEMBLY_MANAGEMENT' ? t('assembly_management') :
                 currentView === 'ASSEMBLY_DETAIL' ? t('assembly_management') :
+                currentView === 'RADAR' ? '雷达管理' :
                 currentView === 'DRIVER_CONFIG' ? t('drivers') :
                 currentView === 'MQTT_CONFIG' ? t('mqtt_broker') :
                 currentView === 'ALARM_RULES' ? t('alarm_rules') :

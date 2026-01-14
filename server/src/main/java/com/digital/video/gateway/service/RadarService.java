@@ -2,7 +2,10 @@ package com.digital.video.gateway.service;
 
 import com.digital.video.gateway.driver.livox.LivoxDriver;
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
+import com.digital.video.gateway.driver.livox.model.*;
+import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
 import com.digital.video.gateway.database.Database;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +13,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -18,28 +23,37 @@ import java.util.concurrent.TimeUnit;
 /**
  * 览沃 (Livox) Mid-360 雷达服务
  * 负责接收 UDP 点云数据，解析目标位置，并驱动摄像头 PTZ 联动。
- * Updated to use JNI-based LivoxDriver.
+ * 集成背景建模、防区管理、侵入检测功能。
  */
 public class RadarService {
     private static final Logger logger = LoggerFactory.getLogger(RadarService.class);
 
     private final PTZService ptzService;
     private final LivoxDriver livoxDriver; // JNI Driver
-
-    // 联动配置（示例：将雷达目标映射到特定摄像头）
-    private String targetDeviceId;
-    private int targetChannel = 1;
+    private final Database database;
+    
+    // 集成服务
+    private final BackgroundModelService backgroundService;
+    private final DefenseZoneService defenseZoneService;
+    private final IntrusionDetectionService intrusionDetectionService;
+    
+    // 设备状态管理（deviceId -> 状态）
+    private final Map<String, String> deviceStates = new ConcurrentHashMap<>(); // "collecting" 或 "detecting"
+    private final Map<String, BackgroundModel> loadedBackgrounds = new ConcurrentHashMap<>(); // deviceId -> BackgroundModel
+    private final Map<String, List<DefenseZone>> deviceZones = new ConcurrentHashMap<>(); // deviceId -> List<DefenseZone>
 
     // 点云数据统计
     private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
     private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
-    private final AtomicLong lastSecondFrames = new AtomicLong(0);
-    private final AtomicLong lastSecondPoints = new AtomicLong(0);
     private ScheduledExecutorService statsExecutor;
 
     public RadarService(PTZService ptzService, Database database) {
         this.ptzService = ptzService;
+        this.database = database;
         this.livoxDriver = new LivoxDriver(database);
+        this.backgroundService = new BackgroundModelService(database);
+        this.defenseZoneService = new DefenseZoneService(database);
+        this.intrusionDetectionService = new IntrusionDetectionService(database);
     }
 
     /**
@@ -117,21 +131,21 @@ public class RadarService {
         if (packet.payload == null || packet.payload.length < 1)
             return;
 
-        // Payload Structure for Data:
-        // [0] Data Type (1 = Cartesian)
-        // ...
-
         ByteBuffer bb = ByteBuffer.wrap(packet.payload).order(ByteOrder.LITTLE_ENDIAN);
         byte dataType = bb.get();
 
         // Mid-360 常见的笛卡尔坐标数据类型 0x01
         if (dataType == 0x01) {
-            int pointCount = parseCartesianPoints(bb);
+            List<Point> points = parseCartesianPoints(bb);
             
             // 更新统计信息
-            if (pointCount > 0) {
+            if (!points.isEmpty()) {
                 totalPointCloudFrames.incrementAndGet();
-                totalPointCloudPoints.addAndGet(pointCount);
+                totalPointCloudPoints.addAndGet(points.size());
+                
+                // 根据设备状态路由点云数据
+                String deviceId = getCurrentDeviceId(); // 需要从配置获取
+                routePointCloud(deviceId, points);
             }
         }
     }
@@ -139,88 +153,163 @@ public class RadarService {
     /**
      * 解析笛卡尔坐标点云 (Type 0x01)
      * 每个点 13 字节: x(4), y(4), z(4), reflectivity(1)
-     * @return 解析的点数
      */
-    private int parseCartesianPoints(ByteBuffer bb) {
+    private List<Point> parseCartesianPoints(ByteBuffer bb) {
         List<Point> points = new ArrayList<>();
-        int totalPoints = 0;
         
         while (bb.remaining() >= 13) {
             int xInt = bb.getInt();
             int yInt = bb.getInt();
             int zInt = bb.getInt();
+            byte reflectivity = bb.get();
 
             float x = xInt / 1000.0f; // mm -> m
             float y = yInt / 1000.0f;
             float z = zInt / 1000.0f;
-            bb.get(); // reflectivity
-            totalPoints++;
 
             // 简单过滤：只保留 0.5m 到 30m 范围内的目标
             float distance = (float) Math.sqrt(x * x + y * y + z * z);
             if (distance > 0.5f && distance < 30.0f) {
-                points.add(new Point(x, y, z));
+                points.add(new Point(x, y, z, reflectivity));
             }
         }
-
-        if (!points.isEmpty()) {
-            processPoints(points);
-        }
         
-        return totalPoints;
+        return points;
     }
 
     /**
-     * 目标识别与联动调度
-     * 这里简化为取点云的质心作为目标
+     * 路由点云数据（根据设备状态）
      */
-    private void processPoints(List<Point> points) {
-        if (points.size() < 10)
-            return; // Ignore noise
-
-        float sumX = 0, sumY = 0, sumZ = 0;
-        for (Point p : points) {
-            sumX += p.x;
-            sumY += p.y;
-            sumZ += p.z;
+    private void routePointCloud(String deviceId, List<Point> points) {
+        if (deviceId == null) {
+            return;
         }
-        float centerX = sumX / points.size();
-        float centerY = sumY / points.size();
-        float centerZ = sumZ / points.size();
 
-        // 计算 PTZ 角度
-        // Pan: 水平角，atan2(y, x)
-        double pan = Math.toDegrees(Math.atan2(centerY, centerX));
-        // Tilt: 垂直角，atan2(z, sqrt(x^2 + y^2))
-        double tilt = Math.toDegrees(Math.atan2(centerZ, Math.sqrt(centerX * centerX + centerY * centerY)));
-
-        // 纠正角度范围 (根据摄像头挂载方向调整Offset)
-        float finalPan = (float) (pan + 180); // 映射到 0-360
-        float finalTilt = (float) (tilt);
-
-        if (targetDeviceId != null) {
-            drivePTZ(targetDeviceId, targetChannel, finalPan, finalTilt);
+        String state = deviceStates.get(deviceId);
+        if ("collecting".equals(state)) {
+            // 采集背景模式：添加到背景采集
+            PointCloudFrame frame = new PointCloudFrame(System.currentTimeMillis(), points);
+            backgroundService.addFrame(deviceId, frame);
+        } else if ("detecting".equals(state)) {
+            // 检测模式：进行侵入检测
+            processDetection(deviceId, points);
         }
     }
 
-    private void drivePTZ(String deviceId, int channel, float pan, float tilt) {
-        ptzService.gotoAngle(deviceId, channel, pan, tilt, 1.0f);
-        logger.debug("雷达联动驱动 PTZ: deviceId={}, pan={}, tilt={}", deviceId, pan, tilt);
-    }
-
-    // 配置目标设备
-    public void setTargetDevice(String deviceId, int channel) {
-        this.targetDeviceId = deviceId;
-        this.targetChannel = channel;
-    }
-
-    private static class Point {
-        float x, y, z;
-
-        Point(float x, float y, float z) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
+    /**
+     * 处理侵入检测
+     */
+    private void processDetection(String deviceId, List<Point> currentPoints) {
+        BackgroundModel background = loadedBackgrounds.get(deviceId);
+        if (background == null) {
+            return; // 背景未加载
         }
+
+        List<DefenseZone> zones = deviceZones.get(deviceId);
+        if (zones == null || zones.isEmpty()) {
+            return; // 无防区配置
+        }
+
+        // 对每个启用的防区进行检测
+        for (DefenseZone zone : zones) {
+            if (!zone.getEnabled()) {
+                continue;
+            }
+
+            List<IntrusionEvent> events = intrusionDetectionService.detectIntrusion(currentPoints, zone, background);
+            
+            // 处理侵入事件：触发PTZ联动
+            for (IntrusionEvent event : events) {
+                handleIntrusionEvent(event, zone);
+            }
+        }
+    }
+
+    /**
+     * 处理侵入事件：PTZ联动
+     */
+    private void handleIntrusionEvent(IntrusionEvent event, DefenseZone zone) {
+        PointCluster cluster = event.getCluster();
+        if (cluster == null || cluster.getCentroid() == null) {
+            return;
+        }
+
+        Point radarPoint = cluster.getCentroid();
+        
+        // 坐标系转换
+        DefenseZone.CoordinateTransform transform = zone.getCoordinateTransform();
+        com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform coordTransform = 
+            new com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform(
+                transform.translationX, transform.translationY, transform.translationZ,
+                transform.rotationX, transform.rotationY, transform.rotationZ,
+                transform.scale
+            );
+        
+        Point cameraPoint = coordTransform.transformRadarToCamera(radarPoint);
+        
+        // 计算PTZ角度
+        float[] angles = coordTransform.calculatePTZAngles(cameraPoint);
+        float pan = angles[0];
+        float tilt = angles[1];
+
+        // 驱动PTZ
+        if (zone.getCameraDeviceId() != null) {
+            int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
+            ptzService.gotoAngle(zone.getCameraDeviceId(), channel, pan, tilt, 1.0f);
+            logger.info("侵入检测触发PTZ联动: zoneId={}, camera={}, pan={}, tilt={}", 
+                    zone.getZoneId(), zone.getCameraDeviceId(), pan, tilt);
+        }
+    }
+
+    /**
+     * 获取当前设备ID（从配置或默认值）
+     */
+    private String getCurrentDeviceId() {
+        // TODO: 从配置或数据库获取当前雷达设备ID
+        // 暂时返回固定值，后续需要从配置中读取
+        return database.getConfig("radar.current_device_id");
+    }
+
+    // ==================== 公共API方法 ====================
+
+    /**
+     * 开始采集背景
+     */
+    public String startBackgroundCollection(String deviceId, int durationSeconds, float gridResolution) {
+        deviceStates.put(deviceId, "collecting");
+        return backgroundService.startCollection(deviceId, durationSeconds, gridResolution);
+    }
+
+    /**
+     * 停止采集背景
+     */
+    public String stopBackgroundCollection(String deviceId) {
+        String backgroundId = backgroundService.stopCollection(deviceId);
+        if (backgroundId != null) {
+            deviceStates.put(deviceId, "detecting");
+            // 加载背景模型
+            BackgroundModel background = backgroundService.loadBackground(backgroundId);
+            if (background != null) {
+                loadedBackgrounds.put(deviceId, background);
+            }
+            // 加载防区配置
+            loadZonesForDevice(deviceId);
+        }
+        return backgroundId;
+    }
+
+    /**
+     * 加载设备的防区配置
+     */
+    private void loadZonesForDevice(String deviceId) {
+        List<DefenseZone> zones = defenseZoneService.getZonesByDeviceId(deviceId);
+        deviceZones.put(deviceId, zones);
+    }
+
+    /**
+     * 设置设备状态
+     */
+    public void setDeviceState(String deviceId, String state) {
+        deviceStates.put(deviceId, state);
     }
 }

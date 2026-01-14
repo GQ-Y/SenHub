@@ -413,7 +413,13 @@ public class Main {
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
-        radarController = new RadarController(radarTestService);
+        
+        // 初始化雷达相关服务
+        BackgroundModelService backgroundModelService = new BackgroundModelService(database);
+        DefenseZoneService defenseZoneService = new DefenseZoneService(database);
+        IntrusionDetectionService intrusionDetectionService = new IntrusionDetectionService(database);
+        radarController = new RadarController(radarTestService, database, 
+                backgroundModelService, defenseZoneService, intrusionDetectionService, radarService);
 
         // 注册路由
         // 认证路由
@@ -478,6 +484,14 @@ public class Main {
 
         // 雷达路由
         Spark.post("/api/radar/test", radarController::testConnection);
+        Spark.get("/api/radar/devices", radarController::getRadarDevices);
+        Spark.post("/api/radar/devices", radarController::addRadarDevice);
+        Spark.post("/api/radar/:deviceId/background/start", radarController::startBackgroundCollection);
+        Spark.post("/api/radar/:deviceId/background/stop", radarController::stopBackgroundCollection);
+        Spark.get("/api/radar/:deviceId/background/status", radarController::getBackgroundStatus);
+        Spark.get("/api/radar/:deviceId/zones", radarController::getZones);
+        Spark.post("/api/radar/:deviceId/zones", radarController::createZone);
+        Spark.get("/api/radar/:deviceId/intrusions", radarController::getIntrusions);
 
         // 报警规则路由
         Spark.get("/api/alarm-rules", alarmRuleController::getAlarmRules);

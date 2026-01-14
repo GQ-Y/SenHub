@@ -1,0 +1,170 @@
+package com.digital.video.gateway.service;
+
+import com.digital.video.gateway.database.Database;
+import com.digital.video.gateway.database.RadarIntrusionRecord;
+import com.digital.video.gateway.database.RadarIntrusionRecordDAO;
+import com.digital.video.gateway.driver.livox.algorithm.DBSCAN;
+import com.digital.video.gateway.driver.livox.algorithm.SpatialIndex;
+import com.digital.video.gateway.driver.livox.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.sql.Connection;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * 侵入检测服务
+ * 负责实时检测防区内的侵入物体
+ */
+public class IntrusionDetectionService {
+    private static final Logger logger = LoggerFactory.getLogger(IntrusionDetectionService.class);
+
+    private final Database database;
+    private final Connection connection;
+    private final RadarIntrusionRecordDAO recordDAO;
+
+    // DBSCAN参数
+    private final float eps = 0.3f; // 邻域半径（米）
+    private final int minPoints = 5; // 最小点数
+
+    public IntrusionDetectionService(Database database) {
+        this.database = database;
+        this.connection = database.getConnection();
+        this.recordDAO = new RadarIntrusionRecordDAO(connection);
+    }
+
+    /**
+     * 检测侵入
+     * 
+     * @param currentPoints 当前点云
+     * @param zone 防区配置
+     * @param background 背景模型
+     * @return 侵入事件列表
+     */
+    public List<IntrusionEvent> detectIntrusion(List<Point> currentPoints, DefenseZone zone, BackgroundModel background) {
+        if (currentPoints == null || currentPoints.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        if (zone == null || !zone.getEnabled()) {
+            return new ArrayList<>();
+        }
+
+        // 1. 过滤：只保留防区内的点
+        List<Point> zonePoints = currentPoints.stream()
+                .filter(p -> zone.isPointInZone(p))
+                .collect(Collectors.toList());
+
+        if (zonePoints.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 2. 背景差分：从当前点云中移除背景点
+        List<Point> intrusionPoints = subtractBackground(zonePoints, background);
+
+        if (intrusionPoints.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 3. 聚类：对侵入点进行DBSCAN聚类
+        DBSCAN dbscan = new DBSCAN(eps, minPoints);
+        List<List<Point>> clusters = dbscan.cluster(intrusionPoints);
+
+        // 4. 特征提取：为每个聚类提取特征
+        List<IntrusionEvent> events = new ArrayList<>();
+        for (int i = 0; i < clusters.size(); i++) {
+            List<Point> clusterPoints = clusters.get(i);
+            PointCluster cluster = new PointCluster("cluster_" + System.currentTimeMillis() + "_" + i, clusterPoints);
+            cluster.calculateFeatures();
+
+            IntrusionEvent event = new IntrusionEvent();
+            event.setRecordId("rec_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8));
+            event.setDeviceId(zone.getDeviceId());
+            event.setZoneId(zone.getZoneId());
+            event.setCluster(cluster);
+            event.setClusterId(cluster.getClusterId());
+
+            events.add(event);
+        }
+
+        // 5. 保存侵入记录
+        for (IntrusionEvent event : events) {
+            saveIntrusionRecord(event);
+        }
+
+        return events;
+    }
+
+    /**
+     * 背景差分：从当前点云中移除背景点
+     */
+    private List<Point> subtractBackground(List<Point> currentPoints, BackgroundModel background) {
+        if (background == null) {
+            return new ArrayList<>(currentPoints);
+        }
+
+        // 构建空间索引
+        SpatialIndex spatialIndex = new SpatialIndex(background.getGridResolution());
+        for (BackgroundPoint bgPoint : background.getPoints()) {
+            spatialIndex.addPoint(bgPoint);
+        }
+
+        // 过滤：只保留不在背景中的点
+        List<Point> newPoints = new ArrayList<>();
+        for (Point point : currentPoints) {
+            // 检查点是否在背景中（容差0.1米）
+            if (!spatialIndex.isPointInBackground(point, 0.1f)) {
+                newPoints.add(point);
+            }
+        }
+
+        return newPoints;
+    }
+
+    /**
+     * 保存侵入记录到数据库
+     */
+    private void saveIntrusionRecord(IntrusionEvent event) {
+        try {
+            RadarIntrusionRecord record = new RadarIntrusionRecord();
+            record.setRecordId(event.getRecordId());
+            record.setDeviceId(event.getDeviceId());
+            record.setAssemblyId(event.getAssemblyId());
+            record.setZoneId(event.getZoneId());
+            record.setClusterId(event.getClusterId());
+
+            PointCluster cluster = event.getCluster();
+            if (cluster != null && cluster.getCentroid() != null) {
+                record.setCentroidX(cluster.getCentroid().x);
+                record.setCentroidY(cluster.getCentroid().y);
+                record.setCentroidZ(cluster.getCentroid().z);
+                record.setVolume(cluster.getVolume());
+                record.setPointCount(cluster.getPointCount());
+
+                if (cluster.getBbox() != null) {
+                    record.setBboxMinX(cluster.getBbox().minX);
+                    record.setBboxMinY(cluster.getBbox().minY);
+                    record.setBboxMinZ(cluster.getBbox().minZ);
+                    record.setBboxMaxX(cluster.getBbox().maxX);
+                    record.setBboxMaxY(cluster.getBbox().maxY);
+                    record.setBboxMaxZ(cluster.getBbox().maxZ);
+                }
+            }
+
+            record.setDetectedAt(event.getDetectedAt());
+            recordDAO.save(record);
+        } catch (Exception e) {
+            logger.error("保存侵入记录失败: {}", event.getRecordId(), e);
+        }
+    }
+
+    /**
+     * 获取侵入记录列表
+     */
+    public List<RadarIntrusionRecord> getIntrusionRecords(String deviceId, String zoneId, 
+                                                           Date startTime, Date endTime, 
+                                                           int page, int pageSize) {
+        return recordDAO.getRecords(deviceId, zoneId, startTime, endTime, page, pageSize);
+    }
+}

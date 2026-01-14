@@ -11,6 +11,10 @@ import { LoginPage } from './components/LoginPage';
 import { AssemblyManagement } from './components/AssemblyManagement';
 import { AssemblyDetail } from './components/AssemblyDetail';
 import { AlarmRules } from './components/AlarmRules';
+import { RadarManagement } from './components/RadarManagement';
+import { RadarBackgroundCollection } from './components/RadarBackgroundCollection';
+import { RadarDefenseZone } from './components/RadarDefenseZone';
+import { RadarMonitoring } from './components/RadarMonitoring';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 
 // 路由守卫组件
@@ -36,6 +40,7 @@ const getViewFromPath = (pathname: string): string => {
   if (pathname === '/drivers') return 'DRIVER_CONFIG';
   if (pathname === '/mqtt') return 'MQTT_CONFIG';
   if (pathname === '/settings') return 'SYSTEM_CONFIG';
+  if (pathname.startsWith('/radar')) return 'RADAR';
   return 'DASHBOARD';
 };
 
@@ -123,6 +128,38 @@ const AppContent: React.FC = () => {
           element={
             <ProtectedRoute>
               <SystemSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/radar"
+          element={
+            <ProtectedRoute>
+              <RadarManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/radar/:deviceId/background"
+          element={
+            <ProtectedRoute>
+              <RadarBackgroundCollection />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/radar/:deviceId/zones"
+          element={
+            <ProtectedRoute>
+              <RadarDefenseZone />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/radar/:deviceId/monitoring"
+          element={
+            <ProtectedRoute>
+              <RadarMonitoring />
             </ProtectedRoute>
           }
         />

@@ -555,3 +555,103 @@ export const alarmRecordService = {
   },
 };
 
+// ==================== 雷达服务 ====================
+export const radarService = {
+  /**
+   * 获取雷达设备列表
+   */
+  async getRadarDevices() {
+    const response = await get<any[]>('/radar/devices');
+    return response;
+  },
+
+  /**
+   * 添加雷达设备
+   */
+  async addRadarDevice(device: { deviceId: string; radarIp: string; radarName?: string; assemblyId?: string }) {
+    const response = await post<any>('/radar/devices', device);
+    return response;
+  },
+
+  /**
+   * 开始采集背景
+   */
+  async startBackgroundCollection(deviceId: string, config: { durationSeconds?: number; gridResolution?: number }) {
+    const response = await post<any>(`/radar/${encodeURIComponent(deviceId)}/background/start`, config);
+    return response;
+  },
+
+  /**
+   * 停止采集背景
+   */
+  async stopBackgroundCollection(deviceId: string) {
+    const response = await post<any>(`/radar/${encodeURIComponent(deviceId)}/background/stop`);
+    return response;
+  },
+
+  /**
+   * 获取采集状态
+   */
+  async getBackgroundStatus(deviceId: string) {
+    const response = await get<any>(`/radar/${encodeURIComponent(deviceId)}/background/status`);
+    return response;
+  },
+
+  /**
+   * 获取防区列表
+   */
+  async getZones(deviceId: string) {
+    const response = await get<any[]>(`/radar/${encodeURIComponent(deviceId)}/zones`);
+    return response;
+  },
+
+  /**
+   * 创建防区
+   */
+  async createZone(deviceId: string, zone: any) {
+    const response = await post<any>(`/radar/${encodeURIComponent(deviceId)}/zones`, zone);
+    return response;
+  },
+
+  /**
+   * 获取侵入记录列表
+   */
+  async getIntrusions(deviceId: string, params?: { zoneId?: string; startTime?: string; endTime?: string; page?: number; pageSize?: number }) {
+    const response = await get<any>(`/radar/${encodeURIComponent(deviceId)}/intrusions`, params);
+    return response;
+  },
+
+  /**
+   * WebSocket连接（需要在组件中实现）
+   */
+  connectWebSocket(deviceId: string, onMessage: (data: any) => void) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/radar/${encodeURIComponent(deviceId)}/stream`;
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('Radar WebSocket connected');
+      ws.send(JSON.stringify({ type: 'subscribe', topics: ['pointcloud', 'intrusion', 'status'] }));
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage(data);
+      } catch (e) {
+        console.error('Failed to parse WebSocket message', e);
+      }
+    };
+    
+    ws.onerror = (error) => {
+      console.error('Radar WebSocket error', error);
+    };
+    
+    ws.onclose = () => {
+      console.log('Radar WebSocket closed');
+    };
+    
+    return ws;
+  },
+};
+

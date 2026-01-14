@@ -177,6 +177,11 @@ public class Database {
             AlarmRecordTable.createTables(connection);
             SpeakerTable.createTables(connection);
             RecordingTaskTable.createTables(connection);
+            
+            // 创建雷达相关表
+            RadarDeviceTable.createTables(connection);
+            RadarBackgroundTable.createTables(connection);
+            RadarDefenseZoneTable.createTables(connection);
 
             logger.info("数据库表创建成功");
         }

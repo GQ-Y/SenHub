@@ -46,7 +46,8 @@ export type ViewState =
   | 'SYSTEM_CONFIG'
   | 'ASSEMBLY_MANAGEMENT'
   | 'ASSEMBLY_DETAIL'
-  | 'ALARM_RULES';
+  | 'ALARM_RULES'
+  | 'RADAR';
 
 export interface AppState {
   currentView: ViewState;
