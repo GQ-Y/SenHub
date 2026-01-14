@@ -1,0 +1,41 @@
+# 编译产物
+build/
+target/
+lib/
+*.so
+*.dylib
+*.dll
+*.a
+*.o
+
+# Livox SDK2 编译目录
+livox-sdk2-official/build/
+
+# IDE 文件
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+logs/
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# 临时文件
+*.tmp
+*.bak
+*.cache
+
+# Artifacts
+artifacts/

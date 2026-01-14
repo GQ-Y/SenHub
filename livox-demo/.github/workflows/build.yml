@@ -1,0 +1,144 @@
+name: Build Multi-Platform
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            lib_ext: .so
+            lib_dir: linux
+          - os: macos-14
+            platform: macos
+            arch: arm64
+            lib_ext: .dylib
+            lib_dir: macos
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-14'
+        run: |
+          brew install cmake
+
+      - name: Install Maven
+        uses: stCarolas/setup-maven@v4
+        with:
+          maven-version: '3.9.5'
+
+      - name: Build Livox SDK2
+        run: |
+          cd livox-sdk2-official
+          mkdir -p build && cd build
+          cmake .. && make -j$(if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then nproc; else sysctl -n hw.ncpu; fi)
+          cd ../..
+          # Verify SDK library was built
+          echo "检查 SDK 编译结果..."
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            if [ -f "livox-sdk2-official/build/sdk_core/liblivox_lidar_sdk_shared.so" ]; then
+              echo "✓ Linux SDK 库编译成功"
+              ls -lh livox-sdk2-official/build/sdk_core/*.so
+            else
+              echo "✗ 错误: Linux SDK 库未找到"
+              ls -la livox-sdk2-official/build/sdk_core/ || true
+              exit 1
+            fi
+          else
+            # macOS: find any dylib file
+            SDK_DYLIB=$(find livox-sdk2-official/build/sdk_core -name "*.dylib" -type f 2>/dev/null | head -1)
+            if [ -n "$SDK_DYLIB" ]; then
+              echo "✓ macOS SDK 库编译成功: $SDK_DYLIB"
+              ls -lh livox-sdk2-official/build/sdk_core/*.dylib 2>/dev/null || true
+            else
+              echo "✗ 错误: macOS SDK 库未找到"
+              echo "查找 build 目录内容:"
+              find livox-sdk2-official/build -type f -name "*.dylib" 2>/dev/null || true
+              ls -la livox-sdk2-official/build/sdk_core/ 2>/dev/null || true
+              exit 1
+            fi
+          fi
+
+      - name: Build JNI library
+        run: |
+          mkdir -p lib/${{ matrix.lib_dir }}
+          # Copy SDK library to lib directory
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            cp livox-sdk2-official/build/sdk_core/liblivox_lidar_sdk_shared.so lib/${{ matrix.lib_dir }}/
+            echo "已复制 Linux SDK 库"
+          else
+            # macOS: find the dylib file (may have different naming)
+            SDK_DYLIB=$(find livox-sdk2-official/build/sdk_core -name "*.dylib" -type f 2>/dev/null | head -1)
+            if [ -z "$SDK_DYLIB" ]; then
+              echo "错误: 在 livox-sdk2-official/build/sdk_core/ 中未找到 dylib 文件"
+              find livox-sdk2-official/build -name "*.dylib" -type f 2>/dev/null || true
+              exit 1
+            fi
+            echo "找到 SDK 库: $SDK_DYLIB"
+            cp "$SDK_DYLIB" lib/${{ matrix.lib_dir }}/liblivox_lidar_sdk_shared.dylib
+            echo "已复制 macOS SDK 库"
+          fi
+          
+          # Build JNI
+          cd jni
+          mkdir -p build && cd build
+          cmake .. && make -j$(nproc || sysctl -n hw.ncpu)
+          cd ../..
+          
+          # Move JNI library to lib directory
+          if [ -f "lib/liblivoxjni${{ matrix.lib_ext }}" ]; then
+            mv lib/liblivoxjni${{ matrix.lib_ext }} lib/${{ matrix.lib_dir }}/
+            echo "JNI 库已移动到 lib/${{ matrix.lib_dir }}/"
+          else
+            echo "警告: JNI 库未在预期位置找到"
+            find lib -name "liblivoxjni*" 2>/dev/null || true
+          fi
+
+      - name: Build Java project
+        run: |
+          mvn clean package -DskipTests
+
+      - name: Create artifacts directory
+        run: |
+          mkdir -p artifacts/${{ matrix.platform }}-${{ matrix.arch }}
+          cp -r lib/${{ matrix.lib_dir }} artifacts/${{ matrix.platform }}-${{ matrix.arch }}/lib/
+          cp target/livox-demo-1.0.0.jar artifacts/${{ matrix.platform }}-${{ matrix.arch }}/
+          cp config.json artifacts/${{ matrix.platform }}-${{ matrix.arch }}/
+          cp README.md artifacts/${{ matrix.platform }}-${{ matrix.arch }}/
+
+      - name: Package artifacts
+        run: |
+          cd artifacts/${{ matrix.platform }}-${{ matrix.arch }}
+          zip -r ../livox-demo-${{ matrix.platform }}-${{ matrix.arch }}.zip .
+          cd ../..
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: livox-demo-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/livox-demo-${{ matrix.platform }}-${{ matrix.arch }}.zip
+          retention-days: 90
