@@ -107,11 +107,17 @@
             <artifactId>jbcrypt</artifactId>
             <version>${bcrypt.version}</version>
         </dependency>
-        <!-- Minio Object Storage -->
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>8.5.2</version>
+        </dependency>
+
+        <!-- Netty for High Performance UDP -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.100.Final</version>
         </dependency>
     </dependencies>
 

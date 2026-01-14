@@ -49,9 +49,15 @@
 └────────┬────────┘
          │ HTTP/WebSocket
 ┌────────▼─────────────────────────┐
-│   后端服务 (Java Spark)          │
+│   后端服务 (Java SpringBoot/Netty) │
 │  ┌──────────────────────────┐   │
-│  │  RadarService            │   │ ← 点云接收、背景建模、侵入检测
+│  │  Livox Driver (Netty)    │   │ ← 高性能 UDP 接收 (Netty UDP Server)
+│  │  - 协议解析 (CRC16/32)    │   │
+│  │  - 点云解包               │   │
+│  └────────┬─────────────────┘   │
+│           │ Pushed Data         │
+│  ┌────────▼─────────────────┐   │
+│  │  RadarService            │   │ ← 业务逻辑
 │  │  - 背景建模               │   │
 │  │  - 防区管理               │   │
 │  │  - 侵入检测               │   │
@@ -63,7 +69,7 @@
 │  │  AlarmService            │   │ ← 报警处理、PTZ联动
 │  └──────────────────────────┘   │
 └────────┬─────────────────────────┘
-         │ UDP
+         │ UDP (55000:Broadcast, 56000:Cmd, DataPort)
 ┌────────▼────────┐
 │  MID-360 雷达   │
 └─────────────────┘
@@ -71,15 +77,67 @@
 
 ### 3.2 数据流
 
-1. **背景采集阶段**：
-   ```
-   雷达 → UDP数据包 → RadarService接收 → 累积点云 → 存储背景模型 → 返回给前端渲染
-   ```
+1. **协议层 (Low-Level)**：
+   - 使用 **Netty** 构建 UDP Server，监听数据端口（如 56001/56002）。
+   - 实现 `CRC16` (Header) 和 `CRC32` (Body) 校验算法。
+   - 解析 Livox SDK2 协议包，提取笛卡尔坐标点云 (Type 0x01)。
 
-2. **实时检测阶段**：
-   ```
-   雷达 → 实时点云 → 背景差分 → 防区过滤 → 聚类分析 → 特征提取 → 报警触发 → PTZ联动
-   ```
+2. **业务层 (High-Level)**：
+   - `Driver` 将原始点云转换为统一的 `PointCloudFrame` 对象推送给 `RadarService`。
+   - `RadarService` 执行背景建模或侵入检测逻辑。
+
+---
+
+## 4. 驱动开发实施 (Java Native)
+
+鉴于官方未提供 Java SDK，我们将采用 **纯 Java UDP 直连** 方案。
+
+### 4.1 协议定义 (基于 SDK2)
+
+### 4.1 协议定义 (基于 SDK2 源码)
+
+**Header (Wrapper) 结构 - 24 Bytes (Little Endian)**:
+- SOF (1 byte): `0xAA` (Fixed)
+- Version (1 byte): `0x00` (Mid-360)
+- Length (2 bytes): 整个包长度 (Header + Body + CRC32)
+- SeqNum (4 bytes): 序列号 (`uint32_t`)
+- CmdId (2 bytes): 指令 ID (`uint16_t`)
+- CmdType (1 byte): `0x00`(Req), `0x01`(Ack), `0x02`(Msg)
+- SenderType (1 byte): 发送方类型 (`0x00`: Host, `0x01`: Lidar)
+- Rsvd (6 bytes): 保留字段 (全0)
+- CRC16 (2 bytes): 校验 Header 前18个字节 (SOF -> Rsvd)。算法：Standard CRC16-CCITT (Init `0xFFFF`)
+
+**Body 结构**:
+- Payload (N bytes): 具体指令数据
+- CRC32 (4 bytes): 校验 Payload。算法：Standard CRC32 (Init `0xFFFFFFFF`)
+
+
+### 4.2 关键类设计 (已完成)
+
+**`PacketDecoder.java`**:
+- Netty `SimpleChannelInboundHandler` 实现。
+- 负责校验 `SOF (0xAA)`, `Length`, `CRC16`。
+- 输出 `SdkPacket` 对象。
+
+**`LivoxDriver.java`**:
+- 管理 Netty UDP Server (Binding 55000)。
+- 负责发送指令 (To 56000)。
+- 提供 `setPointCloudCallback` 供上层业务订阅点云。
+
+**`RadarService.java`**:
+- 业务入口，初始化 `LivoxDriver`。
+- 订阅点云数据，解析笛卡尔坐标 (Type 0x01)。
+- 执行简单的侵入检测和 PTZ 联动。
+
+### 4.3当前状态
+- [x] Java Netty 驱动依赖添加
+- [x] SdkPacket/Protocol 定义
+- [x] PacketDecoder 实现
+- [x] LivoxDriver 实现
+- [x] RadarService 集成
+- [ ] 真实环境联调
+
+
 
 ---
 
