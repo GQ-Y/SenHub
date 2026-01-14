@@ -598,6 +598,25 @@ export const radarService = {
   },
 
   /**
+   * 获取采集中的点云数据（用于实时预览）
+   * 注意：实时点云数据应通过WebSocket获取
+   */
+  async getCollectingPointCloud(deviceId: string, maxPoints?: number) {
+    const params = maxPoints ? { maxPoints } : undefined;
+    const response = await get<any>(`/radar/${encodeURIComponent(deviceId)}/background/collecting/points`, params);
+    return response;
+  },
+
+  /**
+   * 获取背景点云数据（从文件读取）
+   */
+  async getBackgroundPoints(deviceId: string, backgroundId: string, maxPoints?: number) {
+    const params = maxPoints ? { maxPoints } : undefined;
+    const response = await get<any>(`/radar/${encodeURIComponent(deviceId)}/background/${encodeURIComponent(backgroundId)}/points`, params);
+    return response;
+  },
+
+  /**
    * 获取防区列表
    */
   async getZones(deviceId: string) {
@@ -614,6 +633,38 @@ export const radarService = {
   },
 
   /**
+   * 更新防区
+   */
+  async updateZone(deviceId: string, zoneId: string, zone: any) {
+    const response = await put<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}`, zone);
+    return response;
+  },
+
+  /**
+   * 删除防区
+   */
+  async deleteZone(deviceId: string, zoneId: string) {
+    const response = await del<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}`);
+    return response;
+  },
+
+  /**
+   * 切换防区启用状态
+   */
+  async toggleZone(deviceId: string, zoneId: string) {
+    const response = await put<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/toggle`);
+    return response;
+  },
+
+  /**
+   * 获取背景模型列表
+   */
+  async getBackgrounds(deviceId: string) {
+    const response = await get<any[]>(`/radar/${encodeURIComponent(deviceId)}/backgrounds`);
+    return response;
+  },
+
+  /**
    * 获取侵入记录列表
    */
   async getIntrusions(deviceId: string, params?: { zoneId?: string; startTime?: string; endTime?: string; page?: number; pageSize?: number }) {
@@ -625,13 +676,24 @@ export const radarService = {
    * WebSocket连接（需要在组件中实现）
    */
   connectWebSocket(deviceId: string, onMessage: (data: any) => void) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/radar/${encodeURIComponent(deviceId)}/stream`;
+    // 从API配置获取基础URL（去掉/api前缀，因为WebSocket路径是完整的）
+    // Spark WebSocket不支持路径参数，使用查询参数传递deviceId
+    const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://192.168.1.210:8084/api';
+    const baseUrl = apiBaseUrl.replace('/api', '').replace('http://', '').replace('https://', '');
+    const protocol = apiBaseUrl.startsWith('https') ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${baseUrl}/api/radar/stream?deviceId=${encodeURIComponent(deviceId)}`;
+    
+    console.log('正在连接WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
-      console.log('Radar WebSocket connected');
-      ws.send(JSON.stringify({ type: 'subscribe', topics: ['pointcloud', 'intrusion', 'status'] }));
+      console.log('Radar WebSocket连接成功:', deviceId);
+      // 发送订阅消息（可选）
+      try {
+        ws.send(JSON.stringify({ type: 'subscribe', topics: ['pointcloud', 'intrusion', 'status'] }));
+      } catch (e) {
+        console.warn('发送订阅消息失败（可能不需要）', e);
+      }
     };
     
     ws.onmessage = (event) => {
@@ -639,16 +701,23 @@ export const radarService = {
         const data = JSON.parse(event.data);
         onMessage(data);
       } catch (e) {
-        console.error('Failed to parse WebSocket message', e);
+        console.error('解析WebSocket消息失败', e, event.data);
       }
     };
     
     ws.onerror = (error) => {
-      console.error('Radar WebSocket error', error);
+      console.error('Radar WebSocket错误:', error);
+      // 尝试重新连接
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.CLOSED) {
+          console.log('尝试重新连接WebSocket...');
+          // 注意：这里不自动重连，由组件管理重连逻辑
+        }
+      }, 3000);
     };
     
-    ws.onclose = () => {
-      console.log('Radar WebSocket closed');
+    ws.onclose = (event) => {
+      console.log('Radar WebSocket关闭:', event.code, event.reason);
     };
     
     return ws;

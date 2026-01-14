@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, Radar, MapPin, Settings, Activity } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import { radarService } from '../src/api/services';
+import { radarService, assemblyService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
 import { Modal, ConfirmModal } from './Modal';
+import { Assembly } from '../types';
 
 /**
  * 雷达管理页面
@@ -19,11 +20,11 @@ export const RadarManagement: React.FC = () => {
   const [activeModal, setActiveModal] = useState<'NONE' | 'CREATE' | 'EDIT' | 'DELETE'>('NONE');
   const [selectedDevice, setSelectedDevice] = useState<any | null>(null);
   const [formData, setFormData] = useState({
-    deviceId: '',
     radarIp: '',
     radarName: '',
     assemblyId: ''
   });
+  const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   // 加载雷达设备列表
@@ -45,17 +46,26 @@ export const RadarManagement: React.FC = () => {
 
   useEffect(() => {
     loadDevices();
+    loadAssemblies();
   }, []);
+  
+  const loadAssemblies = async () => {
+    try {
+      const response = await assemblyService.getAssemblies({});
+      setAssemblies(response.data || []);
+    } catch (err) {
+      console.error('加载装置列表失败', err);
+    }
+  };
 
   const openCreateModal = () => {
-    setFormData({ deviceId: '', radarIp: '', radarName: '', assemblyId: '' });
+    setFormData({ radarIp: '', radarName: '', assemblyId: '' });
     setActiveModal('CREATE');
   };
 
   const openEditModal = (device: any) => {
     setSelectedDevice(device);
     setFormData({
-      deviceId: device.deviceId || '',
       radarIp: device.radarIp || '',
       radarName: device.radarName || '',
       assemblyId: device.assemblyId || ''
@@ -75,16 +85,27 @@ export const RadarManagement: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!formData.deviceId?.trim()) {
+    if (!formData.radarIp?.trim()) {
       modal.showModal({
-        message: '请输入设备ID',
+        message: '请输入雷达IP地址',
         type: 'warning',
       });
       return;
     }
-    if (!formData.radarIp?.trim()) {
+    
+    // 验证IP格式
+    const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipPattern.test(formData.radarIp.trim())) {
       modal.showModal({
-        message: '请输入雷达IP地址',
+        message: '请输入有效的IP地址格式',
+        type: 'warning',
+      });
+      return;
+    }
+    
+    if (!formData.radarName?.trim()) {
+      modal.showModal({
+        message: '请输入雷达名称',
         type: 'warning',
       });
       return;
@@ -106,6 +127,7 @@ export const RadarManagement: React.FC = () => {
         });
       }
       handleCloseModal();
+      setFormData({ radarIp: '', radarName: '', assemblyId: '' });
       await loadDevices();
     } catch (err: any) {
       modal.showModal({
@@ -369,19 +391,6 @@ export const RadarManagement: React.FC = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    设备ID <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.deviceId}
-                    onChange={(e) => setFormData({ ...formData, deviceId: e.target.value })}
-                    placeholder="请输入设备ID"
-                    disabled={activeModal === 'EDIT'}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     雷达IP <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -391,26 +400,34 @@ export const RadarManagement: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, radarIp: e.target.value })}
                     placeholder="192.168.1.115"
                   />
+                  <p className="mt-1 text-xs text-gray-500">设备ID将自动生成</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">设备名称</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    雷达名称 <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.radarName}
                     onChange={(e) => setFormData({ ...formData, radarName: e.target.value })}
-                    placeholder="请输入设备名称（可选）"
+                    placeholder="请输入雷达名称"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">所属装置ID</label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">所属装置（可选）</label>
+                  <select
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.assemblyId}
-                    onChange={(e) => setFormData({ ...formData, assemblyId: e.target.value })}
-                    placeholder="请输入所属装置ID（可选）"
-                  />
+                    value={formData.assemblyId || ''}
+                    onChange={(e) => setFormData({ ...formData, assemblyId: e.target.value || '' })}
+                  >
+                    <option value="">不关联装置</option>
+                    {assemblies.map((assembly) => (
+                      <option key={assembly.id || assembly.assemblyId} value={assembly.assemblyId || assembly.id}>
+                        {assembly.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end space-x-3">

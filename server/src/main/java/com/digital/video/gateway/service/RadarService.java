@@ -5,6 +5,8 @@ import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
 import com.digital.video.gateway.driver.livox.model.*;
 import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
 import com.digital.video.gateway.database.Database;
+import com.digital.video.gateway.database.RadarDeviceDAO;
+import com.digital.video.gateway.api.RadarWebSocketHandler;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +40,9 @@ public class RadarService {
     private final DefenseZoneService defenseZoneService;
     private final IntrusionDetectionService intrusionDetectionService;
     
+    // WebSocket处理器（用于实时推送）
+    private RadarWebSocketHandler webSocketHandler;
+    
     // 设备状态管理（deviceId -> 状态）
     private final Map<String, String> deviceStates = new ConcurrentHashMap<>(); // "collecting" 或 "detecting"
     private final Map<String, BackgroundModel> loadedBackgrounds = new ConcurrentHashMap<>(); // deviceId -> BackgroundModel
@@ -54,6 +60,14 @@ public class RadarService {
         this.backgroundService = new BackgroundModelService(database);
         this.defenseZoneService = new DefenseZoneService(database);
         this.intrusionDetectionService = new IntrusionDetectionService(database);
+        this.webSocketHandler = new RadarWebSocketHandler(this);
+    }
+    
+    /**
+     * 获取WebSocket处理器（供外部调用）
+     */
+    public RadarWebSocketHandler getWebSocketHandler() {
+        return webSocketHandler;
     }
 
     /**
@@ -144,8 +158,15 @@ public class RadarService {
                 totalPointCloudPoints.addAndGet(points.size());
                 
                 // 根据设备状态路由点云数据
-                String deviceId = getCurrentDeviceId(); // 需要从配置获取
-                routePointCloud(deviceId, points);
+                // 注意：由于点云回调中只有handle，这里简化处理
+                // 如果只有一个雷达设备，直接使用；多个设备时使用第一个
+                String deviceId = getCurrentDeviceId();
+                if (deviceId != null) {
+                    routePointCloud(deviceId, points);
+                } else {
+                    // 没有配置雷达设备，忽略点云数据
+                    logger.debug("没有配置雷达设备，忽略点云数据");
+                }
             }
         }
     }
@@ -182,6 +203,7 @@ public class RadarService {
      */
     private void routePointCloud(String deviceId, List<Point> points) {
         if (deviceId == null) {
+            // 没有配置雷达设备，忽略点云数据
             return;
         }
 
@@ -190,26 +212,79 @@ public class RadarService {
             // 采集背景模式：添加到背景采集
             PointCloudFrame frame = new PointCloudFrame(System.currentTimeMillis(), points);
             backgroundService.addFrame(deviceId, frame);
+            // 实时推送点云数据（用于前端实时预览）
+            if (webSocketHandler != null) {
+                webSocketHandler.pushPointCloud(deviceId, points);
+                webSocketHandler.logPushStats(deviceId); // 记录推送日志
+            }
         } else if ("detecting".equals(state)) {
             // 检测模式：进行侵入检测
-            processDetection(deviceId, points);
+            List<IntrusionEvent> events = processDetection(deviceId, points);
+            // 实时推送点云数据
+            if (webSocketHandler != null) {
+                webSocketHandler.pushPointCloud(deviceId, points);
+                webSocketHandler.logPushStats(deviceId); // 记录推送日志
+            }
+            // 推送侵入检测结果
+            if (webSocketHandler != null && !events.isEmpty()) {
+                for (IntrusionEvent event : events) {
+                    Map<String, Object> eventData = new HashMap<>();
+                    eventData.put("zoneId", event.getZoneId());
+                    eventData.put("detectedAt", new java.util.Date());
+                    if (event.getCluster() != null) {
+                        PointCluster cluster = event.getCluster();
+                        if (cluster.getCentroid() != null) {
+                            Map<String, Object> centroid = new HashMap<>();
+                            centroid.put("x", cluster.getCentroid().x);
+                            centroid.put("y", cluster.getCentroid().y);
+                            centroid.put("z", cluster.getCentroid().z);
+                            eventData.put("centroid", centroid);
+                        }
+                        eventData.put("volume", cluster.getVolume());
+                        if (cluster.getPoints() != null) {
+                            eventData.put("pointCount", cluster.getPoints().size());
+                            List<Map<String, Object>> clusterPoints = new ArrayList<>();
+                            for (Point p : cluster.getPoints()) {
+                                Map<String, Object> pointMap = new HashMap<>();
+                                pointMap.put("x", p.x);
+                                pointMap.put("y", p.y);
+                                pointMap.put("z", p.z);
+                                clusterPoints.add(pointMap);
+                            }
+                            Map<String, Object> clusterData = new HashMap<>();
+                            clusterData.put("points", clusterPoints);
+                            eventData.put("cluster", clusterData);
+                        }
+                    }
+                    webSocketHandler.pushIntrusion(deviceId, eventData);
+                }
+            }
+        } else {
+            // 默认模式：实时推送点云数据
+            if (webSocketHandler != null) {
+                webSocketHandler.pushPointCloud(deviceId, points);
+                webSocketHandler.logPushStats(deviceId); // 记录推送日志
+            }
         }
     }
 
     /**
      * 处理侵入检测
+     * @return 侵入事件列表
      */
-    private void processDetection(String deviceId, List<Point> currentPoints) {
+    private List<IntrusionEvent> processDetection(String deviceId, List<Point> currentPoints) {
         BackgroundModel background = loadedBackgrounds.get(deviceId);
         if (background == null) {
-            return; // 背景未加载
+            return new ArrayList<>(); // 背景未加载
         }
 
         List<DefenseZone> zones = deviceZones.get(deviceId);
         if (zones == null || zones.isEmpty()) {
-            return; // 无防区配置
+            return new ArrayList<>(); // 无防区配置
         }
 
+        List<IntrusionEvent> allEvents = new ArrayList<>();
+        
         // 对每个启用的防区进行检测
         for (DefenseZone zone : zones) {
             if (!zone.getEnabled()) {
@@ -217,12 +292,15 @@ public class RadarService {
             }
 
             List<IntrusionEvent> events = intrusionDetectionService.detectIntrusion(currentPoints, zone, background);
+            allEvents.addAll(events);
             
             // 处理侵入事件：触发PTZ联动
             for (IntrusionEvent event : events) {
                 handleIntrusionEvent(event, zone);
             }
         }
+        
+        return allEvents;
     }
 
     /**
@@ -262,12 +340,46 @@ public class RadarService {
     }
 
     /**
-     * 获取当前设备ID（从配置或默认值）
+     * 获取当前设备ID（从数据库读取）
+     * 注意：由于点云回调中只有handle，没有设备IP信息，这里简化处理
+     * 如果只有一个雷达设备，直接使用；多个设备时使用第一个
      */
     private String getCurrentDeviceId() {
-        // TODO: 从配置或数据库获取当前雷达设备ID
-        // 暂时返回固定值，后续需要从配置中读取
-        return database.getConfig("radar.current_device_id");
+        // 从数据库读取所有雷达设备
+        RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+        List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
+        
+        if (devices.isEmpty()) {
+            // 没有雷达设备，返回null
+            return null;
+        } else if (devices.size() == 1) {
+            // 只有一个雷达设备，直接使用
+            return devices.get(0).getDeviceId();
+        } else {
+            // 多个雷达设备，优先使用配置指定的，否则使用第一个
+            String configuredDeviceId = database.getConfig("radar.current_device_id");
+            if (configuredDeviceId != null && !configuredDeviceId.trim().isEmpty()) {
+                // 检查配置的设备ID是否存在
+                for (com.digital.video.gateway.database.RadarDevice device : devices) {
+                    if (configuredDeviceId.equals(device.getDeviceId())) {
+                        return device.getDeviceId();
+                    }
+                }
+            }
+            // 使用第一个设备
+            logger.debug("多个雷达设备，使用第一个: {}", devices.get(0).getDeviceId());
+            return devices.get(0).getDeviceId();
+        }
+    }
+    
+    /**
+     * 根据handle获取设备ID（简化实现：如果只有一个设备，直接返回）
+     * TODO: 未来可以通过JNI扩展获取handle对应的设备IP/SN进行精确匹配
+     */
+    private String getDeviceIdByHandle(int handle) {
+        // 简化实现：返回第一个设备的ID
+        // 实际应该通过handle查询设备信息进行匹配
+        return getCurrentDeviceId();
     }
 
     // ==================== 公共API方法 ====================

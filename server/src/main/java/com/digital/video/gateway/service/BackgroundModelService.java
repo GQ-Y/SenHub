@@ -13,6 +13,7 @@ import com.digital.video.gateway.driver.livox.model.PointCloudFrame;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -160,14 +161,27 @@ public class BackgroundModelService {
                 backgroundPoints.add(bgPoint);
             }
 
-            // 3. 保存到数据库
-            saveBackgroundPoints(state.backgroundId, backgroundPoints);
+            // 3. 转换为Point列表（用于文件存储）
+            List<Point> pointsForFile = new ArrayList<>();
+            for (BackgroundPoint bgPoint : backgroundPoints) {
+                Point point = new Point(
+                    bgPoint.getCenterX(),
+                    bgPoint.getCenterY(),
+                    bgPoint.getCenterZ(),
+                    (byte)0 // reflectivity
+                );
+                pointsForFile.add(point);
+            }
+            
+            // 4. 保存到文件
+            String filePath = BackgroundPointFileStorage.savePoints(state.backgroundId, pointsForFile);
 
-            // 4. 更新背景记录
+            // 5. 更新背景记录（包含文件路径）
             RadarBackground background = backgroundDAO.getByBackgroundId(state.backgroundId);
             if (background != null) {
                 background.setFrameCount(state.frameCount.get());
                 background.setPointCount(backgroundPoints.size());
+                background.setFilePath(filePath);
                 background.setStatus("ready");
                 backgroundDAO.update(background);
             }
@@ -262,28 +276,12 @@ public class BackgroundModelService {
         }
     }
 
-    /**
-     * 保存背景点到数据库
-     */
+    // 注意：背景点云数据已改为文件存储，不再保存到数据库
+    // 此方法已废弃，保留用于兼容性
+    @Deprecated
     private void saveBackgroundPoints(String backgroundId, List<BackgroundPoint> points) throws SQLException {
-        String sql = "INSERT OR REPLACE INTO radar_background_points " +
-                "(background_id, grid_key, center_x, center_y, center_z, point_count, mean_distance, std_deviation) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            for (BackgroundPoint point : points) {
-                pstmt.setString(1, backgroundId);
-                pstmt.setString(2, point.getGridKey());
-                pstmt.setFloat(3, point.getCenterX());
-                pstmt.setFloat(4, point.getCenterY());
-                pstmt.setFloat(5, point.getCenterZ());
-                pstmt.setInt(6, point.getPointCount());
-                pstmt.setObject(7, point.getMeanDistance());
-                pstmt.setObject(8, point.getStdDeviation());
-                pstmt.addBatch();
-            }
-            pstmt.executeBatch();
-        }
+        // 不再保存到数据库，改为文件存储
+        logger.warn("saveBackgroundPoints方法已废弃，背景点云数据应使用文件存储");
     }
 
     /**
@@ -328,6 +326,48 @@ public class BackgroundModelService {
                 variance += diff * diff;
             }
             return (float) Math.sqrt(variance / count);
+        }
+    }
+
+    /**
+     * 获取采集中的点云数据（用于实时预览）
+     * 注意：实时点云数据应该通过WebSocket推送，此方法仅用于采集过程中的预览
+     */
+    public List<com.digital.video.gateway.driver.livox.model.Point> getCollectingPointCloud(String deviceId, int maxPoints) {
+        CollectionState state = collectionStates.get(deviceId);
+        if (state == null || state.frames.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 从最近的帧中提取点云（采样）
+        List<com.digital.video.gateway.driver.livox.model.Point> allPoints = new ArrayList<>();
+        int frameCount = Math.min(10, state.frames.size()); // 取最近10帧
+        for (int i = state.frames.size() - frameCount; i < state.frames.size(); i++) {
+            allPoints.addAll(state.frames.get(i).getPoints());
+        }
+
+        // 采样：如果点数太多，随机采样
+        if (allPoints.size() > maxPoints) {
+            List<com.digital.video.gateway.driver.livox.model.Point> sampled = new ArrayList<>();
+            int step = allPoints.size() / maxPoints;
+            for (int i = 0; i < allPoints.size(); i += step) {
+                sampled.add(allPoints.get(i));
+            }
+            return sampled;
+        }
+
+        return allPoints;
+    }
+    
+    /**
+     * 从文件加载背景点云数据
+     */
+    public List<com.digital.video.gateway.driver.livox.model.Point> loadBackgroundPointsFromFile(String backgroundId, int maxPoints) {
+        try {
+            return BackgroundPointFileStorage.loadPoints(backgroundId, maxPoints);
+        } catch (IOException e) {
+            logger.error("从文件加载背景点云失败: {}", backgroundId, e);
+            return new ArrayList<>();
         }
     }
 
