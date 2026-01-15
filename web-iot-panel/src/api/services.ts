@@ -673,6 +673,14 @@ export const radarService = {
   },
 
   /**
+   * 获取侵入记录的轨迹数据
+   */
+  async getIntrusionData(recordId: string) {
+    const response = await get<any[]>(`/radar/intrusions/${encodeURIComponent(recordId)}/data`);
+    return response;
+  },
+
+  /**
    * WebSocket连接（需要在组件中实现）
    */
   connectWebSocket(deviceId: string, onMessage: (data: any) => void) {
@@ -682,10 +690,10 @@ export const radarService = {
     const baseUrl = apiBaseUrl.replace('/api', '').replace('http://', '').replace('https://', '');
     const protocol = apiBaseUrl.startsWith('https') ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${baseUrl}/api/radar/stream?deviceId=${encodeURIComponent(deviceId)}`;
-    
+
     console.log('正在连接WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);
-    
+
     ws.onopen = () => {
       console.log('Radar WebSocket连接成功:', deviceId);
       // 发送订阅消息（可选）
@@ -695,7 +703,7 @@ export const radarService = {
         console.warn('发送订阅消息失败（可能不需要）', e);
       }
     };
-    
+
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -704,7 +712,7 @@ export const radarService = {
         console.error('解析WebSocket消息失败', e, event.data);
       }
     };
-    
+
     ws.onerror = (error) => {
       console.error('Radar WebSocket错误:', error);
       // 尝试重新连接
@@ -715,11 +723,11 @@ export const radarService = {
         }
       }, 3000);
     };
-    
+
     ws.onclose = (event) => {
       console.log('Radar WebSocket关闭:', event.code, event.reason);
     };
-    
+
     return ws;
   },
 };

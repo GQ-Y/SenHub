@@ -40,6 +40,7 @@ public class RadarService {
     private final BackgroundModelService backgroundService;
     private final DefenseZoneService defenseZoneService;
     private final IntrusionDetectionService intrusionDetectionService;
+    private final RecordingManager recordingManager; // 侵入录制管理器
 
     // WebSocket处理器（用于实时推送）
     private RadarWebSocketHandler webSocketHandler;
@@ -70,6 +71,7 @@ public class RadarService {
         this.backgroundService = new BackgroundModelService(database);
         this.defenseZoneService = new DefenseZoneService(database);
         this.intrusionDetectionService = new IntrusionDetectionService(database);
+        this.recordingManager = new RecordingManager(database);
         this.webSocketHandler = new RadarWebSocketHandler(this);
     }
 
@@ -317,6 +319,18 @@ public class RadarService {
             }
         } else if ("detecting".equals(state)) {
             // 检测模式：进行侵入检测
+
+            // 1. 标记侵入点（用于前端显示红色，以及录制判断）
+            BackgroundModel background = loadedBackgrounds.get(deviceId);
+            List<DefenseZone> zones = deviceZones.get(deviceId);
+            if (background != null && zones != null) {
+                intrusionDetectionService.markIntruderPoints(processedPoints, zones, background);
+            }
+
+            // 2. 处理录制（缓冲和保存侵入片段）
+            recordingManager.processFrame(deviceId, processedPoints);
+
+            // 3. 生成侵入事件（用于报警和PTZ）
             List<IntrusionEvent> events = processDetection(deviceId, processedPoints);
             // 实时推送点云数据
             if (webSocketHandler != null) {

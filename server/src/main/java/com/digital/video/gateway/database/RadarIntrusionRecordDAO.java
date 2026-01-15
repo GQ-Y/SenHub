@@ -56,11 +56,28 @@ public class RadarIntrusionRecordDAO {
     }
 
     /**
+     * 根据ID获取记录
+     */
+    public RadarIntrusionRecord getById(String recordId) {
+        String sql = "SELECT * FROM radar_intrusion_records WHERE record_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, recordId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return RadarIntrusionRecord.fromResultSet(rs);
+            }
+        } catch (SQLException e) {
+            logger.error("获取侵入记录失败: {}", recordId, e);
+        }
+        return null;
+    }
+
+    /**
      * 获取侵入记录列表（支持分页和过滤）
      */
-    public List<RadarIntrusionRecord> getRecords(String deviceId, String zoneId, 
-                                                  Date startTime, Date endTime, 
-                                                  int page, int pageSize) {
+    public List<RadarIntrusionRecord> getRecords(String deviceId, String zoneId,
+            Date startTime, Date endTime,
+            int page, int pageSize) {
         List<RadarIntrusionRecord> records = new ArrayList<>();
         StringBuilder sql = new StringBuilder("SELECT * FROM radar_intrusion_records WHERE 1=1");
         List<Object> params = new ArrayList<>();

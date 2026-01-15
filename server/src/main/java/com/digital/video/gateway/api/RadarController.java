@@ -6,6 +6,7 @@ import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.RadarDeviceDAO;
 import com.digital.video.gateway.database.RadarBackground;
 import com.digital.video.gateway.database.RadarIntrusionRecord;
+import com.digital.video.gateway.database.RadarIntrusionRecordDAO;
 import com.digital.video.gateway.driver.livox.model.DefenseZone;
 import com.digital.video.gateway.service.*;
 import com.digital.video.gateway.service.RadarTestService;
@@ -25,27 +26,29 @@ import java.util.UUID;
  */
 public class RadarController {
     private static final Logger logger = LoggerFactory.getLogger(RadarController.class);
-    
+
     private final RadarTestService radarTestService;
     @SuppressWarnings("unused")
     private final Database database;
     private final Connection connection;
     private final RadarDeviceDAO radarDeviceDAO;
+    private final RadarIntrusionRecordDAO intrusionRecordDAO;
     private final BackgroundModelService backgroundService;
     private final DefenseZoneService defenseZoneService;
     private final IntrusionDetectionService intrusionDetectionService;
     private final RadarService radarService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public RadarController(RadarTestService radarTestService, Database database, 
-                          BackgroundModelService backgroundService,
-                          DefenseZoneService defenseZoneService,
-                          IntrusionDetectionService intrusionDetectionService,
-                          RadarService radarService) {
+    public RadarController(RadarTestService radarTestService, Database database,
+            BackgroundModelService backgroundService,
+            DefenseZoneService defenseZoneService,
+            IntrusionDetectionService intrusionDetectionService,
+            RadarService radarService) {
         this.radarTestService = radarTestService;
         this.database = database;
         this.connection = database.getConnection();
         this.radarDeviceDAO = new RadarDeviceDAO(connection);
+        this.intrusionRecordDAO = new RadarIntrusionRecordDAO(connection);
         this.backgroundService = backgroundService;
         this.defenseZoneService = defenseZoneService;
         this.intrusionDetectionService = intrusionDetectionService;
@@ -95,27 +98,27 @@ public class RadarController {
     public Object addRadarDevice(Request request, Response response) {
         try {
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
-            
+
             // 验证必填字段
             String radarIp = (String) body.get("radarIp");
             String radarName = (String) body.get("radarName");
-            
+
             if (radarIp == null || radarIp.trim().isEmpty()) {
                 response.status(400);
                 return createErrorResponse(400, "雷达IP地址不能为空");
             }
-            
+
             if (radarName == null || radarName.trim().isEmpty()) {
                 response.status(400);
                 return createErrorResponse(400, "雷达名称不能为空");
             }
-            
+
             // 验证IP格式
             if (!isValidIpAddress(radarIp)) {
                 response.status(400);
                 return createErrorResponse(400, "无效的IP地址格式");
             }
-            
+
             // 检查IP是否已存在
             List<RadarDevice> existingDevices = radarDeviceDAO.getAll();
             for (RadarDevice existing : existingDevices) {
@@ -124,20 +127,20 @@ public class RadarController {
                     return createErrorResponse(400, "该IP地址已存在: " + radarIp);
                 }
             }
-            
+
             // 自动生成deviceId
-            String deviceId = "radar_" + System.currentTimeMillis() + "_" + 
+            String deviceId = "radar_" + System.currentTimeMillis() + "_" +
                     UUID.randomUUID().toString().substring(0, 8);
-            
+
             RadarDevice device = new RadarDevice();
             device.setDeviceId(deviceId);
             device.setRadarIp(radarIp.trim());
             device.setRadarName(radarName.trim());
             device.setAssemblyId((String) body.get("assemblyId")); // 可选
             device.setStatus(0);
-            
+
             if (radarDeviceDAO.saveOrUpdate(device)) {
-                logger.info("雷达设备添加成功: deviceId={}, radarIp={}, radarName={}", 
+                logger.info("雷达设备添加成功: deviceId={}, radarIp={}, radarName={}",
                         deviceId, radarIp, radarName);
                 return createSuccessResponse(device.toMap());
             } else {
@@ -150,7 +153,7 @@ public class RadarController {
             return createErrorResponse(500, e.getMessage());
         }
     }
-    
+
     /**
      * 验证IP地址格式
      */
@@ -187,22 +190,24 @@ public class RadarController {
                 response.status(503);
                 return createErrorResponse(503, "雷达服务未启动，请先添加雷达设备");
             }
-            
+
             String deviceId = request.params("deviceId");
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
-            int durationSeconds = body.get("durationSeconds") != null ? 
-                    ((Number) body.get("durationSeconds")).intValue() : 10;
-            float gridResolution = body.get("gridResolution") != null ? 
-                    ((Number) body.get("gridResolution")).floatValue() : 0.05f;
-            
+            int durationSeconds = body.get("durationSeconds") != null
+                    ? ((Number) body.get("durationSeconds")).intValue()
+                    : 10;
+            float gridResolution = body.get("gridResolution") != null
+                    ? ((Number) body.get("gridResolution")).floatValue()
+                    : 0.05f;
+
             String backgroundId = radarService.startBackgroundCollection(deviceId, durationSeconds, gridResolution);
-            
+
             @SuppressWarnings("unchecked")
             Map<String, Object> result = new HashMap<>();
             result.put("backgroundId", backgroundId);
             result.put("status", "collecting");
             result.put("estimatedTime", durationSeconds);
-            
+
             return createSuccessResponse(result);
         } catch (Exception e) {
             logger.error("开始采集背景失败", e);
@@ -221,10 +226,10 @@ public class RadarController {
                 response.status(503);
                 return createErrorResponse(503, "雷达服务未启动，请先添加雷达设备");
             }
-            
+
             String deviceId = request.params("deviceId");
             String backgroundId = radarService.stopBackgroundCollection(deviceId);
-            
+
             if (backgroundId != null) {
                 RadarBackground background = backgroundService.getBackgroundDAO().getByBackgroundId(backgroundId);
                 Map<String, Object> result = new HashMap<>();
@@ -273,12 +278,13 @@ public class RadarController {
     public Object getCollectingPointCloud(Request request, Response response) {
         try {
             String deviceId = request.params("deviceId");
-            int maxPoints = request.queryParams("maxPoints") != null ? 
-                    Integer.parseInt(request.queryParams("maxPoints")) : 5000;
-            
-            List<com.digital.video.gateway.driver.livox.model.Point> points = 
-                    backgroundService.getCollectingPointCloud(deviceId, maxPoints);
-            
+            int maxPoints = request.queryParams("maxPoints") != null
+                    ? Integer.parseInt(request.queryParams("maxPoints"))
+                    : 5000;
+
+            List<com.digital.video.gateway.driver.livox.model.Point> points = backgroundService
+                    .getCollectingPointCloud(deviceId, maxPoints);
+
             // 转换为Map格式
             List<Map<String, Object>> pointList = new ArrayList<>();
             for (com.digital.video.gateway.driver.livox.model.Point point : points) {
@@ -291,11 +297,11 @@ public class RadarController {
                 }
                 pointList.add(p);
             }
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("points", pointList);
             result.put("pointCount", pointList.size());
-            
+
             return createSuccessResponse(result);
         } catch (Exception e) {
             logger.error("获取采集点云数据失败", e);
@@ -312,13 +318,14 @@ public class RadarController {
         try {
             String deviceId = request.params("deviceId");
             String backgroundId = request.params("backgroundId");
-            int maxPoints = request.queryParams("maxPoints") != null ? 
-                    Integer.parseInt(request.queryParams("maxPoints")) : 10000;
-            
+            int maxPoints = request.queryParams("maxPoints") != null
+                    ? Integer.parseInt(request.queryParams("maxPoints"))
+                    : 10000;
+
             // 从文件加载背景点云
-            List<com.digital.video.gateway.driver.livox.model.Point> points = 
-                    backgroundService.loadBackgroundPointsFromFile(backgroundId, maxPoints);
-            
+            List<com.digital.video.gateway.driver.livox.model.Point> points = backgroundService
+                    .loadBackgroundPointsFromFile(backgroundId, maxPoints);
+
             // 转换为Map格式
             List<Map<String, Object>> pointList = new ArrayList<>();
             for (com.digital.video.gateway.driver.livox.model.Point point : points) {
@@ -331,12 +338,12 @@ public class RadarController {
                 }
                 pointList.add(p);
             }
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("points", pointList);
             result.put("pointCount", pointList.size());
             result.put("backgroundId", backgroundId);
-            
+
             return createSuccessResponse(result);
         } catch (Exception e) {
             logger.error("获取背景点云数据失败", e);
@@ -374,16 +381,15 @@ public class RadarController {
         try {
             String deviceId = request.params("deviceId");
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
-            
+
             DefenseZone zone = new DefenseZone();
             zone.setDeviceId(deviceId);
             zone.setBackgroundId((String) body.get("backgroundId"));
             zone.setZoneType((String) body.get("zoneType"));
             zone.setName((String) body.get("name"));
             zone.setDescription((String) body.get("description"));
-            zone.setEnabled(body.get("enabled") != null ? 
-                    ((Boolean) body.get("enabled")) : true);
-            
+            zone.setEnabled(body.get("enabled") != null ? ((Boolean) body.get("enabled")) : true);
+
             if (body.get("shrinkDistanceCm") != null) {
                 zone.setShrinkDistanceCm(((Number) body.get("shrinkDistanceCm")).intValue());
             }
@@ -397,10 +403,10 @@ public class RadarController {
             }
             if (body.get("cameraDeviceId") != null) {
                 zone.setCameraDeviceId((String) body.get("cameraDeviceId"));
-                zone.setCameraChannel(body.get("cameraChannel") != null ? 
-                        ((Number) body.get("cameraChannel")).intValue() : 1);
+                zone.setCameraChannel(
+                        body.get("cameraChannel") != null ? ((Number) body.get("cameraChannel")).intValue() : 1);
             }
-            
+
             String zoneId = defenseZoneService.createZone(zone);
             if (zoneId != null) {
                 return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
@@ -424,7 +430,7 @@ public class RadarController {
             String deviceId = request.params("deviceId");
             String zoneId = request.params("zoneId");
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
-            
+
             DefenseZone zone = new DefenseZone();
             zone.setZoneId(zoneId);
             zone.setDeviceId(deviceId);
@@ -435,7 +441,7 @@ public class RadarController {
             if (body.get("enabled") != null) {
                 zone.setEnabled(((Boolean) body.get("enabled")));
             }
-            
+
             if (body.get("shrinkDistanceCm") != null) {
                 zone.setShrinkDistanceCm(((Number) body.get("shrinkDistanceCm")).intValue());
             }
@@ -449,10 +455,10 @@ public class RadarController {
             }
             if (body.get("cameraDeviceId") != null) {
                 zone.setCameraDeviceId((String) body.get("cameraDeviceId"));
-                zone.setCameraChannel(body.get("cameraChannel") != null ? 
-                        ((Number) body.get("cameraChannel")).intValue() : 1);
+                zone.setCameraChannel(
+                        body.get("cameraChannel") != null ? ((Number) body.get("cameraChannel")).intValue() : 1);
             }
-            
+
             if (defenseZoneService.updateZone(zoneId, zone)) {
                 return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
             } else {
@@ -498,7 +504,7 @@ public class RadarController {
                 response.status(404);
                 return createErrorResponse(404, "防区不存在");
             }
-            
+
             zone.setEnabled(!zone.getEnabled());
             if (defenseZoneService.updateZone(zoneId, zone)) {
                 return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
@@ -556,28 +562,65 @@ public class RadarController {
             String startTimeStr = request.queryParams("startTime");
             String endTimeStr = request.queryParams("endTime");
             int page = request.queryParams("page") != null ? Integer.parseInt(request.queryParams("page")) : 1;
-            int pageSize = request.queryParams("pageSize") != null ? Integer.parseInt(request.queryParams("pageSize")) : 20;
-            
-            Date startTime = startTimeStr != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(startTimeStr) : null;
+            int pageSize = request.queryParams("pageSize") != null ? Integer.parseInt(request.queryParams("pageSize"))
+                    : 20;
+
+            Date startTime = startTimeStr != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(startTimeStr)
+                    : null;
             Date endTime = endTimeStr != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(endTimeStr) : null;
-            
+
             List<RadarIntrusionRecord> records = intrusionDetectionService.getIntrusionRecords(
                     deviceId, zoneId, startTime, endTime, page, pageSize);
-            
+
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> recordList = records.stream()
                     .map(RadarIntrusionRecord::toMap)
                     .collect(Collectors.toList());
-            
+
             @SuppressWarnings("unchecked")
             Map<String, Object> result = new HashMap<>();
             result.put("records", recordList);
             result.put("page", page);
             result.put("pageSize", pageSize);
-            
+
             return createSuccessResponse(result);
         } catch (Exception e) {
             logger.error("获取侵入记录失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
+     * 获取侵入数据文件
+     * GET /api/radar/intrusions/:id/data
+     */
+    public Object getIntrusionData(Request request, Response response) {
+        try {
+            String id = request.params("id");
+            RadarIntrusionRecord record = intrusionRecordDAO.getById(id);
+            if (record == null) {
+                response.status(404);
+                return createErrorResponse(404, "记录不存在");
+            }
+
+            String clusterId = record.getClusterId();
+            if (clusterId == null || !clusterId.startsWith("TRAJECTORY:")) {
+                response.status(404);
+                return createErrorResponse(404, "该记录没有轨迹数据");
+            }
+
+            String relativePath = clusterId.substring("TRAJECTORY:".length());
+            java.io.File file = new java.io.File(relativePath);
+            if (!file.exists()) {
+                response.status(404);
+                return createErrorResponse(404, "数据文件未找到");
+            }
+
+            response.header("Content-Type", "application/json");
+            return new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            logger.error("读取侵入数据文件失败", e);
             response.status(500);
             return createErrorResponse(500, e.getMessage());
         }

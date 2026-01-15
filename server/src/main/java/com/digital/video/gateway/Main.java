@@ -144,7 +144,7 @@ public class Main {
             alarmRecordService = new AlarmRecordService(database);
             speakerService = new SpeakerService(database);
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
-            
+
             // 检查数据库是否有雷达设备，没有则不启动雷达服务
             RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
             List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
@@ -156,7 +156,7 @@ public class Main {
                 radarService.start();
                 logger.info("雷达服务已启动，配置了 {} 个雷达设备", radarDevices.size());
             }
-            
+
             radarTestService = new RadarTestService();
             logger.info("新增服务初始化成功");
 
@@ -383,14 +383,14 @@ public class Main {
         int port = 8084; // 默认端口，可以从配置中读取
 
         Spark.port(port);
-        
+
         // 注册WebSocket端点（必须在所有路由映射之前）
         if (radarService != null) {
             try {
                 com.digital.video.gateway.api.RadarWebSocketHandler wsHandler = radarService.getWebSocketHandler();
                 // 为每个设备注册WebSocket处理器
-                com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = 
-                        new com.digital.video.gateway.database.RadarDeviceDAO(database.getConnection());
+                com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = new com.digital.video.gateway.database.RadarDeviceDAO(
+                        database.getConnection());
                 List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
                 for (com.digital.video.gateway.database.RadarDevice device : devices) {
                     com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler(
@@ -398,10 +398,10 @@ public class Main {
                 }
                 // 注册默认处理器（用于动态添加的设备）
                 com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler("default", wsHandler);
-                
+
                 // 注册WebSocket路由（必须在所有HTTP路由之前）
                 // 注意：Spark WebSocket不支持路径参数，使用固定路径+查询参数
-                Spark.webSocket("/api/radar/stream", 
+                Spark.webSocket("/api/radar/stream",
                         com.digital.video.gateway.api.RadarWebSocketEndpoint.class);
                 logger.info("雷达WebSocket端点已注册: /api/radar/stream?deviceId=xxx");
             } catch (Exception e) {
@@ -429,7 +429,7 @@ public class Main {
         Spark.options("/*", (request, response) -> {
             return "";
         });
-        
+
         // 注册认证过滤器
         Spark.before(new AuthFilter());
 
@@ -450,15 +450,15 @@ public class Main {
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
-        
+
         // 初始化雷达相关服务
         BackgroundModelService backgroundModelService = new BackgroundModelService(database);
         DefenseZoneService defenseZoneService = new DefenseZoneService(database);
         IntrusionDetectionService intrusionDetectionService = new IntrusionDetectionService(database);
         // radarService可能为null（如果没有雷达设备），需要处理
-        radarController = new RadarController(radarTestService, database, 
+        radarController = new RadarController(radarTestService, database,
                 backgroundModelService, defenseZoneService, intrusionDetectionService, radarService);
-        
+
         // 注意：WebSocket端点注册在startHttpServer()方法中，因为必须在HTTP路由之前
 
         // 注册路由
@@ -538,6 +538,7 @@ public class Main {
         Spark.put("/api/radar/:deviceId/zones/:zoneId/toggle", radarController::toggleZone);
         Spark.get("/api/radar/:deviceId/backgrounds", radarController::getBackgrounds);
         Spark.get("/api/radar/:deviceId/intrusions", radarController::getIntrusions);
+        Spark.get("/api/radar/intrusions/:id/data", radarController::getIntrusionData);
 
         // 报警规则路由
         Spark.get("/api/alarm-rules", alarmRuleController::getAlarmRules);

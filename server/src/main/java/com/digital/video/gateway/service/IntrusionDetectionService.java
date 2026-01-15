@@ -38,11 +38,12 @@ public class IntrusionDetectionService {
      * 检测侵入
      * 
      * @param currentPoints 当前点云
-     * @param zone 防区配置
-     * @param background 背景模型
+     * @param zone          防区配置
+     * @param background    背景模型
      * @return 侵入事件列表
      */
-    public List<IntrusionEvent> detectIntrusion(List<Point> currentPoints, DefenseZone zone, BackgroundModel background) {
+    public List<IntrusionEvent> detectIntrusion(List<Point> currentPoints, DefenseZone zone,
+            BackgroundModel background) {
         if (currentPoints == null || currentPoints.isEmpty()) {
             return new ArrayList<>();
         }
@@ -162,9 +163,71 @@ public class IntrusionDetectionService {
     /**
      * 获取侵入记录列表
      */
-    public List<RadarIntrusionRecord> getIntrusionRecords(String deviceId, String zoneId, 
-                                                           Date startTime, Date endTime, 
-                                                           int page, int pageSize) {
+    public List<RadarIntrusionRecord> getIntrusionRecords(String deviceId, String zoneId,
+            Date startTime, Date endTime,
+            int page, int pageSize) {
         return recordDAO.getRecords(deviceId, zoneId, startTime, endTime, page, pageSize);
+    }
+
+    /**
+     * 标记侵入点（直接修改 Point 对象的 zoneId）
+     * 
+     * @param currentPoints 当前点云
+     * @param zones         防区列表
+     * @param background    背景模型
+     */
+    public void markIntruderPoints(List<Point> currentPoints, List<DefenseZone> zones, BackgroundModel background) {
+        if (currentPoints == null || currentPoints.isEmpty() || zones == null || zones.isEmpty()) {
+            return;
+        }
+
+        // 构建空间索引（如果需要Shrink防区）
+        SpatialIndex spatialIndex = null;
+        boolean hasShrinkZone = zones.stream().anyMatch(z -> DefenseZone.ZONE_TYPE_SHRINK.equals(z.getZoneType()));
+
+        if (hasShrinkZone && background != null) {
+            spatialIndex = new SpatialIndex(background.getGridResolution());
+            for (BackgroundPoint bgPoint : background.getPoints()) {
+                spatialIndex.addPoint(bgPoint);
+            }
+        }
+
+        // 遍历所有点
+        for (Point point : currentPoints) {
+            // 对每个点，检查是否在任意已启用的防区内
+            for (DefenseZone zone : zones) {
+                if (!zone.getEnabled())
+                    continue;
+
+                boolean isIntruder = false;
+
+                if (DefenseZone.ZONE_TYPE_BOUNDING_BOX.equals(zone.getZoneType())) {
+                    // 边界框检测
+                    isIntruder = zone.isPointInZone(point);
+                } else if (DefenseZone.ZONE_TYPE_SHRINK.equals(zone.getZoneType()) && spatialIndex != null) {
+                    // 缩小距离检测 (Radial Shrink)
+                    // 逻辑：找到最近的背景点，如果当前点比背景点显著更靠近雷达（大于 shrinkDistance），则是侵入
+
+                    // 搜索半径设为 0.5米，确保能找到对应的墙体点
+                    BackgroundPoint bgPoint = spatialIndex.findNearest(point, 0.5f);
+                    if (bgPoint != null) {
+                        float pDist = point.distance(); // 点到雷达距离
+                        float bgDist = bgPoint.toPoint().distance(); // 背景到雷达距离
+                        float shrinkM = zone.getShrinkDistanceCm() != null ? zone.getShrinkDistanceCm() / 100.0f : 0.0f;
+
+                        // 判定：点必须比背景更近，且差距大于 shrinkDistance
+                        // 并且，点要在背景点附近（角度接近），通过 findNearest 已经保证了空间位置接近
+                        if (pDist < bgDist - shrinkM) {
+                            isIntruder = true;
+                        }
+                    }
+                }
+
+                if (isIntruder) {
+                    point.zoneId = zone.getZoneId();
+                    break; // 一个点只归属一个防区（优先归属第一个匹配的）
+                }
+            }
+        }
     }
 }

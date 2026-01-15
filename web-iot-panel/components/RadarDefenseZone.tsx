@@ -6,6 +6,7 @@ import { radarService, deviceService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
 import { Modal, ConfirmModal } from './Modal';
 import { PointCloudRenderer } from './PointCloudRenderer';
+import { IntrusionHistoryPanel } from './IntrusionHistoryPanel';
 
 interface Point {
   x: number;
@@ -13,6 +14,7 @@ interface Point {
   z: number;
   r?: number;
   isZoneBoundary?: boolean; // 标记是否为防区边界点
+  zoneId?: string; // 标记该点所属的防区ID（如果是侵入点）
 }
 
 interface TimestampedPoint extends Point {
@@ -63,6 +65,51 @@ export const RadarDefenseZone: React.FC = () => {
   const renderIntervalRef = useRef<number | null>(null);
   const [realtimePoints, setRealtimePoints] = useState<TimestampedPoint[]>([]);
   const [isWsConnected, setIsWsConnected] = useState(false);
+
+  // 回放状态
+  const [playbackMode, setPlaybackMode] = useState(false);
+  const [playbackPoints, setPlaybackPoints] = useState<Point[]>([]);
+  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePlay = async (record: any) => {
+    if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+    setPlaybackMode(true);
+    setPlaybackPoints([]);
+
+    try {
+      const res = await radarService.getIntrusionData(record.recordId);
+      const frames = res.data;
+      if (!frames || !Array.isArray(frames)) {
+        modal.showModal({ message: '无效的录制数据', type: 'error' });
+        return;
+      }
+
+      let i = 0;
+      playbackIntervalRef.current = setInterval(() => {
+        if (i >= frames.length) {
+          if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+          return;
+        }
+        const frame = frames[i];
+        // 确保点云有 zoneId，如果没有则使用记录的 zoneId
+        const pts = (frame.points || []).map((p: any) => ({
+          ...p,
+          zoneId: p.zoneId || record.zoneId
+        }));
+        setPlaybackPoints(pts);
+        i++;
+      }, 100);
+    } catch (e: any) {
+      console.error(e);
+      modal.showModal({ message: '加载轨迹失败: ' + e.message, type: 'error' });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+    };
+  }, []);
 
   // 滑动窗口配置
   const ACCUMULATION_TIME = 3000; // 3秒窗口
@@ -121,6 +168,7 @@ export const RadarDefenseZone: React.FC = () => {
           y: p.y || 0,
           z: p.z || 0,
           r: p.r,
+          zoneId: p.zoneId,
           timestamp: now - (timeSpread * index / pointCount)
         }));
 
@@ -275,7 +323,9 @@ export const RadarDefenseZone: React.FC = () => {
       isStaticBackground: true
     })) : [];
 
-    return showDefenseLayer ? [...safeBackgroundPoints, ...boundaryPoints] : safeBackgroundPoints;
+    return showDefenseLayer
+      ? [...safeBackgroundPoints, ...boundaryPoints, ...playbackPoints]
+      : [...safeBackgroundPoints, ...playbackPoints];
   };
 
   const loadZones = async () => {
@@ -842,109 +892,136 @@ export const RadarDefenseZone: React.FC = () => {
           />
         )}
 
-        {/* 3D防区可视化 */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">3D防区可视化</h2>
-            <div className="flex items-center gap-4">
-              {/* 视图模式切换 */}
-              <div className="flex bg-gray-100 p-1 rounded-lg">
-                {[
-                  { id: 'defense', label: '防区' },
-                  { id: 'reflectivity', label: '反射率' },
-                  { id: 'height', label: '高度' },
-                  { id: 'distance', label: '距离' }
-                ].map(mode => (
+        {/* 3D防区可视化区域（修改为 Grid 布局） */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold flex items-center">
+                {playbackMode ? (
+                  <span className="text-red-500 flex items-center animate-pulse mr-2">● 回放中</span>
+                ) : '3D防区可视化'}
+              </h2>
+              <div className="flex items-center gap-4">
+                {/* ... (Existing Controls) ... */}
+                {/* 视图模式切换 */}
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  {[
+                    { id: 'defense', label: '防区' },
+                    { id: 'reflectivity', label: '反射率' },
+                    { id: 'height', label: '高度' },
+                    { id: 'distance', label: '距离' }
+                  ].map(mode => (
+                    <button
+                      key={mode.id}
+                      onClick={() => setViewMode(mode.id as any)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewMode === mode.id
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 背景显示开关 */}
+                <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+                  <span className="text-sm text-gray-600">背景显示</span>
                   <button
-                    key={mode.id}
-                    onClick={() => setViewMode(mode.id as any)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewMode === mode.id
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
+                    onClick={() => setShowBackground(!showBackground)}
+                    className={`w-10 h-6 rounded-full transition-colors relative ${showBackground ? 'bg-gray-600' : 'bg-gray-200'
                       }`}
                   >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* 背景显示开关 */}
-              <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-                <span className="text-sm text-gray-600">背景显示</span>
-                <button
-                  onClick={() => setShowBackground(!showBackground)}
-                  className={`w-10 h-6 rounded-full transition-colors relative ${showBackground ? 'bg-gray-600' : 'bg-gray-200'
-                    }`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showBackground ? 'left-5' : 'left-1'
-                    }`} />
-                </button>
-              </div>
-
-              {/* 防区显示开关 */}
-              <div className="flex items-center gap-4 border-l border-gray-200 pl-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">防区显示</span>
-                  <button
-                    onClick={() => setShowDefenseLayer(!showDefenseLayer)}
-                    className={`w-10 h-6 rounded-full transition-colors relative ${showDefenseLayer ? 'bg-blue-500' : 'bg-gray-200'
-                      }`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showDefenseLayer ? 'left-5' : 'left-1'
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showBackground ? 'left-5' : 'left-1'
                       }`} />
                   </button>
                 </div>
 
-                {showDefenseLayer && (
+                {/* 防区显示开关 */}
+                <div className="flex items-center gap-4 border-l border-gray-200 pl-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">实体化</span>
+                    <span className="text-sm text-gray-600">防区显示</span>
                     <button
-                      onClick={() => setShowSolid(!showSolid)}
-                      className={`w-10 h-6 rounded-full transition-colors relative ${showSolid ? 'bg-purple-500' : 'bg-gray-200'
+                      onClick={() => setShowDefenseLayer(!showDefenseLayer)}
+                      className={`w-10 h-6 rounded-full transition-colors relative ${showDefenseLayer ? 'bg-blue-500' : 'bg-gray-200'
                         }`}
                     >
-                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showSolid ? 'left-5' : 'left-1'
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showDefenseLayer ? 'left-5' : 'left-1'
                         }`} />
                     </button>
                   </div>
-                )}
+
+                  {showDefenseLayer && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">实体化</span>
+                      <button
+                        onClick={() => setShowSolid(!showSolid)}
+                        className={`w-10 h-6 rounded-full transition-colors relative ${showSolid ? 'bg-purple-500' : 'bg-gray-200'
+                          }`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showSolid ? 'left-5' : 'left-1'
+                          }`} />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="w-full h-[500px] rounded-2xl overflow-hidden bg-gray-900 shadow-inner">
-            {selectedBackgroundPoints.length > 0 ? (
-              <PointCloudRenderer
-                points={getAllDisplayPoints()}
-                defenseBackgroundPoints={selectedBackgroundPoints}
-                colorMode={viewMode}
-                shrinkDistance={0.15}
-                showModeling={false} // 彻底关闭连线，避免“蛛网”和错层感
-                modelingDistance={0}
-                modelingMaxConnections={0}
-                pointSize={0.015} //稍微增大点的大小以填补空隙
-                backgroundColor="#0a0a0a"
-                showGrid={true}
-                showAxes={true}
-                showRangeRings={true}
-              />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
-                <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                  <Shield size={32} className="opacity-20" />
+            <div className="w-full h-[500px] rounded-2xl overflow-hidden bg-gray-900 shadow-inner relative">
+              {/* 停止回放按钮 */}
+              {playbackMode && (
+                <button
+                  onClick={() => {
+                    if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+                    setPlaybackMode(false);
+                    setPlaybackPoints([]);
+                  }}
+                  className="absolute top-4 left-4 z-10 bg-red-600/80 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium backdrop-blur-sm transition-colors"
+                >
+                  停止回放
+                </button>
+              )}
+
+              {selectedBackgroundPoints.length > 0 ? (
+                <PointCloudRenderer
+                  points={getAllDisplayPoints()}
+                  defenseBackgroundPoints={selectedBackgroundPoints}
+                  colorMode={viewMode}
+                  shrinkDistance={0.15}
+                  showModeling={false}
+                  modelingDistance={0}
+                  modelingMaxConnections={0}
+                  pointSize={0.015}
+                  backgroundColor="#0a0a0a"
+                  showGrid={true}
+                  showAxes={true}
+                  showRangeRings={true}
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                  <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                    <Shield size={32} className="opacity-20" />
+                  </div>
+                  <p className="text-sm font-medium">请选择背景模型以载入防区视图</p>
+                  <p className="text-xs mt-2 opacity-50">载入后将根据“启用”状态实时呈现防区轮廓</p>
                 </div>
-                <p className="text-sm font-medium">请选择背景模型以载入防区视图</p>
-                <p className="text-xs mt-2 opacity-50">载入后将根据“启用”状态实时呈现防区轮廓</p>
+              )}
+            </div>
+            {selectedBackgroundPoints.length > 0 && (
+              <div className="mt-4 flex justify-between items-center text-[11px] text-gray-400">
+                <div>显示背景点: {selectedBackgroundPoints.length.toLocaleString()} 个</div>
+                {playbackMode && <div className="text-green-400">正在回放: {playbackPoints.length} 点</div>}
+                <div className="text-blue-500 font-medium">
+                  当前启用防区: {zones.filter(z => z.enabled).length} 个
+                </div>
               </div>
             )}
           </div>
-          {selectedBackgroundPoints.length > 0 && (
-            <div className="mt-4 flex justify-between items-center text-[11px] text-gray-400">
-              <div>显示背景点: {selectedBackgroundPoints.length.toLocaleString()} 个</div>
-              <div className="text-blue-500 font-medium">
-                当前启用防区: {zones.filter(z => z.enabled).length} 个
-              </div>
-            </div>
-          )}
+
+          {/* 右侧：侵入历史面板 */}
+          <div className="lg:col-span-1 h-[600px]">
+            <IntrusionHistoryPanel deviceId={deviceId!} onPlay={handlePlay} className="h-full" />
+          </div>
         </div>
       </div>
     </>

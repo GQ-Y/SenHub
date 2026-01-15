@@ -25,6 +25,9 @@ public class Point {
         this.reflectivity = reflectivity;
     }
 
+    // 标记该点所属的防区ID（如果是侵入点）
+    public String zoneId;
+
     /**
      * 计算到原点的距离
      */
