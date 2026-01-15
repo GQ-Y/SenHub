@@ -33,12 +33,10 @@ export const RadarMonitoring: React.FC = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const pointCloudContainerRef = useRef<HTMLDivElement>(null);
-  const [pointCloudStats, setPointCloudStats] = useState({ frameCount: 0, totalPoints: 0, lastUpdate: Date.now() });
 
-  // 累积时间配置（秒）- 关键参数！
-  // Mid-360 是非重复扫描模式，需要较长时间累积才能形成完整点云
-  // 上位机通常累积 10+ 秒才能达到 60 万点的密度
-  const [accumulationTime, setAccumulationTime] = useState(10); // 默认 10 秒
+  // 累积时间配置（秒）- 滑动窗口模式
+  // 只保留指定时间内的数据，老数据自动滑出窗口
+  const [accumulationTime, setAccumulationTime] = useState(1); // 默认 1 秒
   const accumulationTimeRef = useRef(accumulationTime * 1000); // 毫秒
 
   // 同步更新 ref
@@ -46,10 +44,10 @@ export const RadarMonitoring: React.FC = () => {
     accumulationTimeRef.current = accumulationTime * 1000;
   }, [accumulationTime]);
 
-  // 点云缓冲区：累积指定时间内的所有点云数据
+  // 点云缓冲区：滑动窗口累积指定时间内的点云数据
   const pointCloudBufferRef = useRef<TimestampedPoint[]>([]);
   const renderIntervalRef = useRef<number | null>(null);
-  const lastRenderTimeRef = useRef<number>(Date.now());
+  const lastLogTimeRef = useRef<number>(0); // 用于控制日志输出频率
 
   useEffect(() => {
     // 使用标志位防止 React StrictMode 导致的重复连接问题
@@ -72,28 +70,28 @@ export const RadarMonitoring: React.FC = () => {
           }
 
           if (data.type === 'pointcloud' && data.points) {
-            // 接收点云数据，添加时间戳后放入缓冲区（不立即触发渲染）
-            const frameTimestamp = data.timestamp || Date.now();
-            const newPoints: TimestampedPoint[] = data.points.map((p: any) => ({
+            // 接收点云数据，添加时间戳后放入缓冲区
+            const now = Date.now();
+            const pointCount = data.points.length;
+
+            // 关键修复：给每个点添加均匀分布的时间偏移
+            // 这样点会逐渐过期而不是同时消失，消除频闪
+            // 将一帧的点分散在 50ms 的时间窗口内
+            const timeSpread = 50; // 50ms 的时间分散
+
+            const newPoints: TimestampedPoint[] = data.points.map((p: any, index: number) => ({
               x: p.x || 0,
               y: p.y || 0,
               z: p.z || 0,
               r: p.r,
-              timestamp: frameTimestamp
+              // 给每个点一个微小的时间偏移，让它们均匀分布
+              timestamp: now - (timeSpread * index / pointCount)
             }));
 
-            // 更新统计信息
-            setPointCloudStats(prev => ({
-              frameCount: prev.frameCount + 1,
-              totalPoints: prev.totalPoints + newPoints.length,
-              lastUpdate: Date.now()
-            }));
-
-            // 将新点添加到缓冲区（不直接更新状态，由定时器统一处理）
-            const now = Date.now();
+            // 将新点添加到缓冲区
             const cutoffTime = now - accumulationTimeRef.current;
 
-            // 清理超过累积时间的旧数据并添加新点
+            // 滑动窗口：清理超时数据并添加新点
             pointCloudBufferRef.current = [
               ...pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime),
               ...newPoints
@@ -153,34 +151,32 @@ export const RadarMonitoring: React.FC = () => {
       }
     }
 
-    // 核心改进：定时更新渲染，累积指定时间窗口内的点云数据
+    // 核心改进：滑动窗口模式 - 每100ms更新一次渲染
+    // 这样可以实现平滑过渡，避免频闪
     renderIntervalRef.current = window.setInterval(() => {
       if (isCleaningUp) return;
 
       const now = Date.now();
       const cutoffTime = now - accumulationTimeRef.current;
 
-      // 获取缓冲区中累积时间窗口内的数据
-      const recentPoints = pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime);
+      // 滑动窗口：只保留时间窗口内的点，老数据自动滑出
+      const windowPoints = pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime);
 
-      // 只在有数据时更新
-      if (recentPoints.length > 0) {
-        const timeSinceLastRender = now - lastRenderTimeRef.current;
+      // 立即更新缓冲区，确保内存不会无限累积
+      pointCloudBufferRef.current = windowPoints;
 
-        // 批量更新点云数据
-        setPointCloudData(recentPoints);
-        lastRenderTimeRef.current = now;
-
-        // 减少日志输出频率（每秒打印一次）
-        if (timeSinceLastRender >= 1000) {
-          const accTimeSeconds = accumulationTimeRef.current / 1000;
-          console.log(`[点云累积] 点数: ${recentPoints.length.toLocaleString()}, 累积时间: ${accTimeSeconds}s`);
-        }
+      // 更新渲染数据
+      if (windowPoints.length > 0) {
+        setPointCloudData(windowPoints);
       }
 
-      // 清理缓冲区中的旧数据
-      pointCloudBufferRef.current = recentPoints;
-    }, 200); // 每200ms检查一次
+      // 每秒打印一次日志
+      if (now - lastLogTimeRef.current >= 2000) {
+        const accTimeSeconds = accumulationTimeRef.current / 1000;
+        console.log(`[点云滑动窗口] 点数: ${windowPoints.length.toLocaleString()}, 窗口: ${accTimeSeconds}s`);
+        lastLogTimeRef.current = now;
+      }
+    }, 100); // 每100ms更新一次，实现平滑过渡
 
     return () => {
       // 设置清理标志，防止后续事件触发错误日志
@@ -298,10 +294,6 @@ export const RadarMonitoring: React.FC = () => {
               <option value={1}>1秒</option>
               <option value={3}>3秒</option>
               <option value={5}>5秒</option>
-              <option value={10}>10秒</option>
-              <option value={20}>20秒</option>
-              <option value={30}>30秒</option>
-              <option value={60}>60秒</option>
             </select>
           </div>
 
@@ -372,18 +364,13 @@ export const RadarMonitoring: React.FC = () => {
             )}
             {isFullscreen && allPoints.length > 0 && (
               <>
-                <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-sm space-y-1">
-                  <div>
-                    当前显示 {allPoints.length.toLocaleString()} 个点
-                    {intrusionPoints.length > 0 && (
-                      <span className="ml-2 text-red-400">
-                        （{intrusionPoints.length} 个侵入点）
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-300">
-                    已接收 {pointCloudStats.frameCount} 帧，累计 {pointCloudStats.totalPoints.toLocaleString()} 个点
-                  </div>
+                <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-sm">
+                  当前显示 {allPoints.length.toLocaleString()} 个点
+                  {intrusionPoints.length > 0 && (
+                    <span className="ml-2 text-red-400">
+                      （{intrusionPoints.length} 个侵入点）
+                    </span>
+                  )}
                 </div>
                 <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-xs">
                   <div>操作提示：</div>
@@ -394,7 +381,7 @@ export const RadarMonitoring: React.FC = () => {
             )}
           </div>
           {!isFullscreen && allPoints.length > 0 && (
-            <div className="mt-2 space-y-1">
+            <div className="mt-2">
               <div className="text-xs text-gray-500 text-center">
                 当前显示 {allPoints.length} 个点
                 {intrusionPoints.length > 0 && (
@@ -403,11 +390,8 @@ export const RadarMonitoring: React.FC = () => {
                   </span>
                 )}
               </div>
-              <div className="text-xs text-gray-400 text-center">
-                统计：已接收 {pointCloudStats.frameCount} 帧，累计 {pointCloudStats.totalPoints.toLocaleString()} 个点
-              </div>
               <div className="text-xs text-gray-400 text-center mt-1">
-                操作提示：鼠标左键拖拽旋转视角 | 滚轮缩放 | 鼠标右键拖拽平移 | 点击全屏按钮进入全屏模式
+                操作提示：左键拖拽旋转 | 滚轮缩放 | 右键平移 | 点击全屏按钮进入全屏模式
               </div>
             </div>
           )}
