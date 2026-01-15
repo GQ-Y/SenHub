@@ -15,17 +15,18 @@ interface PointCloudRendererProps {
   backgroundColor?: string;
   showGrid?: boolean;
   showAxes?: boolean;
-  showRangeRings?: boolean; // 新增：显示范围环
-  colorMode?: 'height' | 'distance' | 'reflectivity' | 'intensity' | 'fixed';
+  showRangeRings?: boolean;
+  colorMode?: 'height' | 'distance' | 'reflectivity' | 'intensity' | 'fixed' | 'defense';
+  showModeling?: boolean;
+  modelingDistance?: number;
+  modelingMaxConnections?: number;
+  // 防区模式相关
+  defenseBackgroundPoints?: Point[];
+  shrinkDistance?: number; // 默认 0.2m (20cm)
 }
 
 /**
  * 点云渲染组件（Three.js）
- * 增强功能：
- * 1. 动态坐标轴单位（厘米/米）
- * 2. 范围环（Range Rings）显示
- * 3. 优化反射率着色
- * 4. 性能优化支持大量点云
  */
 export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   points,
@@ -34,8 +35,13 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   backgroundColor = '#000000',
   showGrid = true,
   showAxes = true,
-  showRangeRings = true, // 默认显示范围环
-  colorMode = 'height'
+  showRangeRings = true,
+  colorMode = 'height',
+  showModeling = false,
+  modelingDistance = 0.2,
+  modelingMaxConnections = 3,
+  defenseBackgroundPoints = [],
+  shrinkDistance = 0.2
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -43,6 +49,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<any>(null);
   const pointsRef = useRef<THREE.Points | null>(null);
+  const modelingRef = useRef<THREE.LineSegments | null>(null);
+  const backgroundPointsRef = useRef<THREE.Points | null>(null); // 背景参考点云
   const animationFrameRef = useRef<number | null>(null);
   const cameraInitializedRef = useRef<boolean>(false);
 
@@ -51,6 +59,11 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   const axesLabelsRef = useRef<HTMLDivElement[]>([]);
   const gridHelperRef = useRef<THREE.GridHelper | null>(null);
   const axesHelperRef = useRef<THREE.AxesHelper | null>(null);
+  const colorModeRef = useRef(colorMode);
+
+  useEffect(() => {
+    colorModeRef.current = colorMode;
+  }, [colorMode]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -225,26 +238,24 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
    * 参考上位机效果：低反射率深蓝色，高反射率红/黄色
    */
   const getReflectivityColor = (normalizedR: number): [number, number, number] => {
-    // 使用更丰富的颜色渐变：深蓝 -> 青色 -> 绿色 -> 黄色 -> 红色
-    if (normalizedR < 0.2) {
-      // 深蓝色区域
-      return [0.1, 0.1, 0.6 + normalizedR * 2];
-    } else if (normalizedR < 0.4) {
-      // 蓝色到青色
-      const t = (normalizedR - 0.2) / 0.2;
-      return [0.1, 0.3 + t * 0.5, 0.8 - t * 0.2];
-    } else if (normalizedR < 0.6) {
-      // 青色到绿色
-      const t = (normalizedR - 0.4) / 0.2;
-      return [0.1 + t * 0.2, 0.8 - t * 0.2, 0.6 - t * 0.4];
-    } else if (normalizedR < 0.8) {
-      // 绿色到黄色
-      const t = (normalizedR - 0.6) / 0.2;
-      return [0.3 + t * 0.7, 0.6 + t * 0.3, 0.2 - t * 0.1];
+    // 使用更丰富的颜色渐变：浅蓝/蓝 -> 绿 -> 黄 -> 橙 -> 红
+    // 0.0 -> 1.0 (低 -> 高)
+    if (normalizedR < 0.25) {
+      // 蓝色区域 (0.0 - 0.25)
+      const t = normalizedR / 0.25;
+      return [0.0, 0.5 * t, 1.0];
+    } else if (normalizedR < 0.5) {
+      // 蓝色到绿色 (0.25 - 0.5)
+      const t = (normalizedR - 0.25) / 0.25;
+      return [0.0, 0.5 + 0.5 * t, 1.0 - t];
+    } else if (normalizedR < 0.75) {
+      // 绿色到黄色 (0.5 - 0.75)
+      const t = (normalizedR - 0.5) / 0.25;
+      return [t, 1.0, 0.0];
     } else {
-      // 黄色到红色
-      const t = (normalizedR - 0.8) / 0.2;
-      return [1.0, 0.9 - t * 0.7, 0.1 - t * 0.1];
+      // 黄色到红色 (0.75 - 1.0)
+      const t = (normalizedR - 0.75) / 0.25;
+      return [1.0, 1.0 - t, 0.0];
     }
   };
 
@@ -289,53 +300,82 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   // 更新点云数据
   useEffect(() => {
     if (!sceneRef.current || points.length === 0) {
+      // 清空点云
       if (pointsRef.current) {
         sceneRef.current?.remove(pointsRef.current);
-        if (pointsRef.current.geometry) {
-          pointsRef.current.geometry.dispose();
-        }
-        if (pointsRef.current.material) {
-          (pointsRef.current.material as THREE.Material).dispose();
-        }
+        pointsRef.current.geometry.dispose();
+        (pointsRef.current.material as THREE.Material).dispose();
         pointsRef.current = null;
+      }
+      // 清空建模连线
+      if (modelingRef.current) {
+        sceneRef.current?.remove(modelingRef.current);
+        modelingRef.current.geometry.dispose();
+        (modelingRef.current.material as THREE.Material).dispose();
+        modelingRef.current = null;
       }
       return;
     }
 
     const scene = sceneRef.current;
-    const oldPoints = pointsRef.current;
 
-    // 移除旧的点云
-    if (oldPoints) {
-      scene.remove(oldPoints);
-      if (oldPoints.geometry) {
-        oldPoints.geometry.dispose();
-      }
-      if (oldPoints.material) {
-        (oldPoints.material as THREE.Material).dispose();
-      }
+    // 1. 移除旧的对象
+    if (pointsRef.current) {
+      scene.remove(pointsRef.current);
+      pointsRef.current.geometry.dispose();
+      (pointsRef.current.material as THREE.Material).dispose();
+    }
+    if (modelingRef.current) {
+      scene.remove(modelingRef.current);
+      modelingRef.current.geometry.dispose();
+      (modelingRef.current.material as THREE.Material).dispose();
+    }
+    if (backgroundPointsRef.current) {
+      scene.remove(backgroundPointsRef.current);
+      backgroundPointsRef.current.geometry.dispose();
+      (backgroundPointsRef.current.material as THREE.Material).dispose();
     }
 
-    // 创建新的点云几何体
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(points.length * 3);
-    const colors = new Float32Array(points.length * 3);
+    // --- 防区逻辑：背景参考 ---
+    const bgSearchGrid: Record<string, number> = {};
+    const bgCellSize = 0.5; // 背景检索步长
+    if (defenseBackgroundPoints.length > 0) {
+      defenseBackgroundPoints.forEach(p => {
+        const gx = Math.floor(p.x / bgCellSize);
+        const gy = Math.floor(p.y / bgCellSize);
+        const gz = Math.floor(p.z / bgCellSize);
+        const key = `${gx}_${gy}_${gz}`;
+        const distSq = p.x * p.x + p.y * p.y + p.z * p.z;
+        // 在每个格子保存该方向上最远的背景距离
+        if (!bgSearchGrid[key] || distSq > bgSearchGrid[key]) {
+          bgSearchGrid[key] = distSq;
+        }
+      });
 
-    // 计算点云的统计信息用于颜色映射
+      // 同时渲染背景点（淡色显示作为底图）
+      const bgGeom = new THREE.BufferGeometry();
+      const bgPos = new Float32Array(defenseBackgroundPoints.length * 3);
+      defenseBackgroundPoints.forEach((p, i) => {
+        bgPos[i * 3] = p.x;
+        bgPos[i * 3 + 1] = p.y;
+        bgPos[i * 3 + 2] = p.z;
+      });
+      bgGeom.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+      const bgMat = new THREE.PointsMaterial({ size: 0.005, color: 0x333333, transparent: true, opacity: 0.3 });
+      const bgPoints = new THREE.Points(bgGeom, bgMat);
+      backgroundPointsRef.current = bgPoints;
+      scene.add(bgPoints);
+    }
+
+    // 2. 统计信息计算
     let minZ = Infinity, maxZ = -Infinity;
     let minDist = Infinity, maxDist = -Infinity;
     let minR = Infinity, maxR = -Infinity;
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
 
     for (const point of points) {
       const dist = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
       minZ = Math.min(minZ, point.z);
       maxZ = Math.max(maxZ, point.z);
-      minX = Math.min(minX, point.x);
-      maxX = Math.max(maxX, point.x);
-      minY = Math.min(minY, point.y);
-      maxY = Math.max(maxY, point.y);
       minDist = Math.min(minDist, dist);
       maxDist = Math.max(maxDist, dist);
       if (point.r !== undefined) {
@@ -348,40 +388,63 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     const distRange = maxDist - minDist || 1;
     const rRange = maxR - minR || 1;
 
+    // 3. 创建实时点云
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(points.length * 3);
+    const colors = new Float32Array(points.length * 3);
+    const isIntruderArr = new Uint8Array(points.length); // 记录是否为侵入点
+
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       positions[i * 3] = point.x;
       positions[i * 3 + 1] = point.y;
       positions[i * 3 + 2] = point.z;
 
-      let r = 1, g = 1, b = 1;
+      // 侵入检测判定
+      let isIntruder = false;
+      if (defenseBackgroundPoints.length > 0) {
+        const gx = Math.floor(point.x / bgCellSize);
+        const gy = Math.floor(point.y / bgCellSize);
+        const gz = Math.floor(point.z / bgCellSize);
+        const key = `${gx}_${gy}_${gz}`;
+        const pDistSq = point.x * point.x + point.y * point.y + point.z * point.z;
 
-      // 优先使用传入的color函数
-      if (typeof color === 'function') {
-        const colorStr = color(point);
-        if (colorStr && colorStr.trim() !== '') {
-          const colorObj = new THREE.Color(colorStr);
-          r = colorObj.r;
-          g = colorObj.g;
-          b = colorObj.b;
-        } else {
-          // color函数返回空，使用colorMode
-          if (colorMode === 'height') {
-            const normalizedZ = (point.z - minZ) / zRange;
-            [r, g, b] = getHeightColor(normalizedZ);
-          } else if (colorMode === 'distance') {
-            const dist = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
-            const normalizedDist = (dist - minDist) / distRange;
-            [r, g, b] = getHeightColor(normalizedDist);
-          } else if (colorMode === 'reflectivity' && point.r !== undefined) {
-            const normalizedR = (point.r - minR) / rRange;
-            [r, g, b] = getReflectivityColor(normalizedR);
-          } else {
-            const colorObj = new THREE.Color(color);
-            r = colorObj.r;
-            g = colorObj.g;
-            b = colorObj.b;
+        // 获取该格子的背景距离
+        const bgDistSq = bgSearchGrid[key];
+        if (bgDistSq) {
+          const bgDist = Math.sqrt(bgDistSq);
+          const pDist = Math.sqrt(pDistSq);
+          // 如果点比背景点向内缩 shrinkDistance 以上，判定为侵入
+          if (pDist < bgDist - shrinkDistance) {
+            isIntruder = true;
           }
+        } else {
+          // 如果在该格子没找到对应的背景，检查周围 1 格
+          outer: for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dz = -1; dz <= 1; dz++) {
+                const k = `${gx + dx}_${gy + dy}_${gz + dz}`;
+                if (bgSearchGrid[k]) {
+                  const bd = Math.sqrt(bgSearchGrid[k]);
+                  const pd = Math.sqrt(pDistSq);
+                  if (pd < bd - shrinkDistance) {
+                    isIntruder = true;
+                    break outer;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      isIntruderArr[i] = isIntruder ? 1 : 0;
+
+      let r = 1, g = 1, b = 1;
+      if (colorMode === 'defense') {
+        if (isIntruder) {
+          r = 1; g = 0; b = 0; // 侵入点显示为红色
+        } else {
+          r = 0.8; g = 0.8; b = 0.8; // 背景内点显示为灰白色
         }
       } else if (colorMode === 'height') {
         const normalizedZ = (point.z - minZ) / zRange;
@@ -394,10 +457,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         const normalizedR = (point.r - minR) / rRange;
         [r, g, b] = getReflectivityColor(normalizedR);
       } else {
-        const colorObj = new THREE.Color(color);
-        r = colorObj.r;
-        g = colorObj.g;
-        b = colorObj.b;
+        const colorObj = new THREE.Color(typeof color === 'string' ? color : '#ffffff');
+        r = colorObj.r; g = colorObj.g; b = colorObj.b;
       }
 
       colors[i * 3] = r;
@@ -408,43 +469,96 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    // 根据点云数量动态调整点大小
-    const adaptivePointSize = points.length > 100000
-      ? pointSize * 0.5
-      : points.length > 50000
-        ? pointSize * 0.75
-        : pointSize;
-
-    // 创建点云材质
     const material = new THREE.PointsMaterial({
-      size: adaptivePointSize,
+      size: (colorMode === 'defense') ? pointSize * 1.5 : pointSize, // 防区模式下点大一点
       vertexColors: true,
-      transparent: false,
-      opacity: 1.0,
       sizeAttenuation: true
     });
 
-    // 创建点云对象
     const pointCloud = new THREE.Points(geometry, material);
     pointsRef.current = pointCloud;
     scene.add(pointCloud);
 
-    // 动态更新范围环（根据点云范围调整）
-    if (rangeRingsGroupRef.current && sceneRef.current) {
-      // 计算点云的最大距离
-      const maxDimXY = Math.max(maxX - minX, maxY - minY);
-      const maxRange = Math.max(maxDist, maxDimXY / 2);
+    // 4. 实现具象建模 (Concrete Modeling)
+    if (showModeling && points.length > 0) {
+      const linePositions: number[] = [];
+      const lineColors: number[] = [];
 
-      // 根据点云范围调整范围环的可见性
-      rangeRingsGroupRef.current.children.forEach((child, index) => {
-        if (child instanceof THREE.Mesh) {
-          // 只显示在点云范围内的环
-          child.visible = index * 5 <= maxRange * 1.5;
-        }
+      // 使用空间索引加速
+      const grid: Record<string, number[]> = {};
+      const res = modelingDistance;
+      points.forEach((p, idx) => {
+        // 在防区模式下，只对侵入目标（红色点）进行建模
+        if (colorMode === 'defense' && !isIntruderArr[idx]) return;
+
+        const gx = Math.floor(p.x / res);
+        const gy = Math.floor(p.y / res);
+        const gz = Math.floor(p.z / res);
+        const key = `${gx}_${gy}_${gz}`;
+        if (!grid[key]) grid[key] = [];
+        grid[key].push(idx);
       });
+
+      const maxDistSq = modelingDistance * modelingDistance;
+
+      points.forEach((p, i) => {
+        // 只处理需要建模的点
+        if (colorMode === 'defense' && !isIntruderArr[i]) return;
+
+        const gx = Math.floor(p.x / res);
+        const gy = Math.floor(p.y / res);
+        const gz = Math.floor(p.z / res);
+        const neighbors: { idx: number, distSq: number }[] = [];
+
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const key = `${gx + dx}_${gy + dy}_${gz + dz}`;
+              const cellPoints = grid[key];
+              if (cellPoints) {
+                cellPoints.forEach(j => {
+                  if (i === j) return;
+                  const dp = points[j];
+                  const distSq = (p.x - dp.x) ** 2 + (p.y - dp.y) ** 2 + (p.z - dp.z) ** 2;
+                  if (distSq < maxDistSq) {
+                    neighbors.push({ idx: j, distSq });
+                  }
+                });
+              }
+            }
+          }
+        }
+
+        // 挑选最近的邻居连线，形成“表面感”
+        neighbors.sort((a, b) => a.distSq - b.distSq);
+        neighbors.slice(0, modelingMaxConnections).forEach(n => {
+          if (i < n.idx) { // 避免双向连线重复添加
+            const p2 = points[n.idx];
+            linePositions.push(p.x, p.y, p.z, p2.x, p2.y, p2.z);
+            const r1 = colors[i * 3], g1 = colors[i * 3 + 1], b1 = colors[i * 3 + 2];
+            const r2 = colors[n.idx * 3], g2 = colors[n.idx * 3 + 1], b2 = colors[n.idx * 3 + 2];
+            lineColors.push(r1, g1, b1, r2, g2, b2);
+          }
+        });
+      });
+
+      if (linePositions.length > 0) {
+        const lineGeom = new THREE.BufferGeometry();
+        lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+        lineGeom.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
+        const lineMat = new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: colorMode === 'defense' ? 0.8 : 0.4,
+          linewidth: 2
+        });
+        const segments = new THREE.LineSegments(lineGeom, lineMat);
+        modelingRef.current = segments;
+        scene.add(segments);
+      }
     }
 
-    // 只在首次加载时自动调整相机位置
+    // 5. 调整相机
     if (!cameraInitializedRef.current && cameraRef.current) {
       geometry.computeBoundingBox();
       const box = geometry.boundingBox;
@@ -454,55 +568,31 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         const size = new THREE.Vector3();
         box.getSize(size);
         const maxDim = Math.max(size.x, size.y, size.z);
-
-        const distance = maxDim > 0 ? Math.max(maxDim * 2.5, 10) : 10;
-
-        if (maxDim > 0) {
-          cameraRef.current.position.set(
-            center.x + distance * 0.7,
-            center.y + distance * 0.7,
-            center.z + distance * 0.7
-          );
-          cameraRef.current.lookAt(center);
-          cameraRef.current.updateProjectionMatrix();
-
-          if (controlsRef.current) {
-            controlsRef.current.target.copy(center);
-            controlsRef.current.update();
-          }
-
-          cameraInitializedRef.current = true;
+        const distance = maxDim > 0 ? Math.max(maxDim * 1.5, 8) : 8;
+        cameraRef.current.position.set(center.x + distance, center.y + distance, center.z + distance);
+        cameraRef.current.lookAt(center);
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(center);
+          controlsRef.current.update();
         }
+        cameraInitializedRef.current = true;
       }
     }
-  }, [points, color, pointSize, colorMode]);
+  }, [points, color, pointSize, colorMode, showModeling, modelingDistance, defenseBackgroundPoints, shrinkDistance]);
 
-  // 计算显示统计信息
+  // 计算统计信息
   const statsInfo = useMemo(() => {
     if (points.length === 0) return null;
-
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
-
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const point of points) {
-      minX = Math.min(minX, point.x);
-      maxX = Math.max(maxX, point.x);
-      minY = Math.min(minY, point.y);
-      maxY = Math.max(maxY, point.y);
-      minZ = Math.min(minZ, point.z);
-      maxZ = Math.max(maxZ, point.z);
+      minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+      minZ = Math.min(minZ, point.z); maxZ = Math.max(maxZ, point.z);
     }
-
-    const rangeX = maxX - minX;
-    const rangeY = maxY - minY;
-    const rangeZ = maxZ - minZ;
+    const rangeX = maxX - minX, rangeY = maxY - minY, rangeZ = maxZ - minZ;
     const maxDim = Math.max(rangeX, rangeY, rangeZ);
-
-    // 根据点云范围决定单位
     const unit = maxDim < 1 ? 'cm' : 'm';
     const scale = maxDim < 1 ? 100 : 1;
-
     return {
       pointCount: points.length,
       rangeX: (rangeX * scale).toFixed(1),
@@ -514,68 +604,48 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
 
   return (
     <div ref={containerRef} className="w-full h-full" style={{ position: 'relative' }}>
-      {/* 动态坐标轴单位显示 */}
+      {/* 坐标范围信息 */}
       {statsInfo && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '8px',
-            left: '8px',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            color: '#fff',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            pointerEvents: 'none',
-            zIndex: 10
-          }}
-        >
-          <div style={{ marginBottom: '2px' }}>
-            <span style={{ color: '#4a90d9' }}>■</span> X: {statsInfo.rangeX}{statsInfo.unit}
-            <span style={{ marginLeft: '8px', color: '#50c878' }}>■</span> Y: {statsInfo.rangeY}{statsInfo.unit}
-            <span style={{ marginLeft: '8px', color: '#ff6b6b' }}>■</span> Z: {statsInfo.rangeZ}{statsInfo.unit}
+        <div style={{
+          position: 'absolute', bottom: '12px', left: '12px',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)', color: '#fff',
+          padding: '8px 12px', borderRadius: '8px', fontSize: '11px',
+          fontFamily: 'monospace', pointerEvents: 'none', zIndex: 10,
+          border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{ marginBottom: '4px', display: 'flex', gap: '10px' }}>
+            <span><span style={{ color: '#4a90d9' }}>●</span> X: {statsInfo.rangeX}{statsInfo.unit}</span>
+            <span><span style={{ color: '#50c878' }}>●</span> Y: {statsInfo.rangeY}{statsInfo.unit}</span>
+            <span><span style={{ color: '#ff6b6b' }}>●</span> Z: {statsInfo.rangeZ}{statsInfo.unit}</span>
           </div>
-          <div style={{ color: '#aaa' }}>
+          <div style={{ color: '#888' }}>
             点数: {statsInfo.pointCount.toLocaleString()}
           </div>
         </div>
       )}
 
-      {/* 图例 */}
+      {/* 增强型反射率/高度图例 */}
       {colorMode !== 'fixed' && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            color: '#fff',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            fontSize: '10px',
-            pointerEvents: 'none',
-            zIndex: 10
-          }}
-        >
-          <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>
+        <div style={{
+          position: 'absolute', top: '12px', right: '12px',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)', color: '#fff',
+          padding: '12px', borderRadius: '12px', fontSize: '11px',
+          pointerEvents: 'none', zIndex: 10, minWidth: '60px',
+          border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{ marginBottom: '8px', fontWeight: 'bold', textAlign: 'center' }}>
             {colorMode === 'height' ? '高度' : colorMode === 'distance' ? '距离' : '反射率'}
           </div>
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            height: '80px',
-            flexDirection: 'column',
-            justifyContent: 'space-between'
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
           }}>
-            <span>高</span>
+            <span style={{ color: '#ff4d4d' }}>高</span>
             <div style={{
-              width: '12px',
-              height: '60px',
-              background: 'linear-gradient(to bottom, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff)',
-              borderRadius: '2px'
+              width: '14px', height: '100px',
+              background: 'linear-gradient(to bottom, #ff0000, #ffa500, #ffff00, #00ff00, #0080ff)',
+              borderRadius: '10px', boxShadow: 'inset 0 0 5px rgba(0,0,0,0.5)'
             }} />
-            <span>低</span>
+            <span style={{ color: '#4da6ff' }}>低</span>
           </div>
         </div>
       )}

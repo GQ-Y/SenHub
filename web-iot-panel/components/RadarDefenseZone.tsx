@@ -28,6 +28,8 @@ export const RadarDefenseZone: React.FC = () => {
   const modal = useModal();
   const [zones, setZones] = useState<any[]>([]);
   const [backgrounds, setBackgrounds] = useState<any[]>([]);
+  const [selectedBackgroundId, setSelectedBackgroundId] = useState<string>('');
+  const [selectedBackgroundPoints, setSelectedBackgroundPoints] = useState<Point[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -67,7 +69,7 @@ export const RadarDefenseZone: React.FC = () => {
       loadZones();
       loadBackgrounds();
       loadDevices();
-      connectWebSocket();
+      // connectWebSocket(); // 移除实时点云连接，按需只显示背景和防区
     }
 
     return () => {
@@ -75,7 +77,27 @@ export const RadarDefenseZone: React.FC = () => {
     };
   }, [deviceId]);
 
-  // WebSocket 连接 - 使用 radarService 统一方法
+  // 当选择的背景发生变化时，加载背景点云数据以供防区渲染参考
+  useEffect(() => {
+    if (selectedBackgroundId && deviceId) {
+      loadBackgroundPoints(selectedBackgroundId);
+    } else {
+      setSelectedBackgroundPoints([]);
+    }
+  }, [selectedBackgroundId, deviceId]);
+
+  const loadBackgroundPoints = async (bgId: string) => {
+    try {
+      const response = await radarService.getBackgroundPoints(deviceId!, bgId, 50000);
+      if (response.data && response.data.points) {
+        setSelectedBackgroundPoints(response.data.points);
+      }
+    } catch (err: any) {
+      console.error('加载背景点云数据失败', err);
+    }
+  };
+
+  // WebSocket 逻辑保持定义但不再自动开启
   const connectWebSocket = () => {
     if (wsRef.current) {
       wsRef.current.close();
@@ -223,7 +245,12 @@ export const RadarDefenseZone: React.FC = () => {
   const loadBackgrounds = async () => {
     try {
       const response = await radarService.getBackgrounds(deviceId!);
-      setBackgrounds(response.data || []);
+      const bgs = response.data || [];
+      setBackgrounds(bgs);
+      // 如果没有选中的背景，默认选第一个
+      if (!selectedBackgroundId && bgs.length > 0) {
+        setSelectedBackgroundId(bgs[0].backgroundId);
+      }
     } catch (err: any) {
       console.error('加载背景列表失败', err);
     }
@@ -772,56 +799,45 @@ export const RadarDefenseZone: React.FC = () => {
             <h2 className="text-lg font-semibold">3D防区可视化</h2>
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${isWsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-gray-600">{isWsConnected ? '实时连接' : '未连接'}</span>
+                <div className="w-3 h-3 rounded-full bg-blue-500" />
+                <span className="text-gray-600">背景点云</span>
               </div>
-              {zones.filter(z => z.enabled).length > 0 && (
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <span className="text-gray-600">防区边界</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <span className="text-gray-600">防区边界</span>
+              </div>
             </div>
           </div>
-          <div className="w-full h-96 rounded-lg overflow-hidden bg-gray-900">
-            {realtimePoints.length > 0 || zones.filter(z => z.enabled).length > 0 ? (
+          <div className="w-full h-[500px] rounded-2xl overflow-hidden bg-gray-900 shadow-inner">
+            {selectedBackgroundPoints.length > 0 ? (
               <PointCloudRenderer
-                points={getAllDisplayPoints()}
-                color={(point: Point) => {
-                  // 防区边界点显示为红色
-                  if ((point as any).isZoneBoundary) {
-                    return '#ff0000';
-                  }
-                  return ''; // 其他点使用 colorMode 处理
-                }}
+                points={[...selectedBackgroundPoints, ...generateZoneBoundaryPoints()]}
+                color={(p: any) => p.isZoneBoundary ? '#ff0000' : ''}
                 colorMode="reflectivity"
                 pointSize={0.015}
                 backgroundColor="#0a0a0a"
                 showGrid={true}
                 showAxes={true}
                 showRangeRings={true}
+                showModeling={true}
+                modelingDistance={0.5}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
-                {isWsConnected ? (
-                  <div className="text-center">
-                    <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                    <p>等待点云数据...</p>
-                  </div>
-                ) : (
-                  <p>正在连接雷达...</p>
-                )}
+              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                  <Shield size={32} className="opacity-20" />
+                </div>
+                <p className="text-sm font-medium">请选择背景模型以载入防区视图</p>
+                <p className="text-xs mt-2 opacity-50">载入后将根据“启用”状态实时呈现防区轮廓</p>
               </div>
             )}
           </div>
-          {realtimePoints.length > 0 && (
-            <div className="mt-2 text-xs text-gray-500 text-center">
-              当前显示 {realtimePoints.length.toLocaleString()} 个点
-              {zones.filter(z => z.enabled).length > 0 && (
-                <span className="ml-2 text-red-500">
-                  + {generateZoneBoundaryPoints().length} 个防区边界点
-                </span>
-              )}
+          {selectedBackgroundPoints.length > 0 && (
+            <div className="mt-4 flex justify-between items-center text-[11px] text-gray-400">
+              <div>显示背景点: {selectedBackgroundPoints.length.toLocaleString()} 个</div>
+              <div className="text-blue-500 font-medium">
+                当前启用防区: {zones.filter(z => z.enabled).length} 个
+              </div>
             </div>
           )}
         </div>

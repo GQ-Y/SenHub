@@ -43,6 +43,10 @@ export const RadarBackgroundCollection: React.FC = () => {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(false);
 
+  // 渲染配置
+  const [showModeling, setShowModeling] = useState(false);
+  const [colorMode, setColorMode] = useState<'reflectivity' | 'height' | 'distance'>('reflectivity');
+
   // 加载背景列表
   useEffect(() => {
     if (deviceId) {
@@ -230,8 +234,8 @@ export const RadarBackgroundCollection: React.FC = () => {
                   <div
                     key={bg.backgroundId}
                     className={`p-4 rounded-xl border cursor-pointer transition-all ${selectedBackground?.backgroundId === bg.backgroundId
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-100 hover:border-blue-300 hover:bg-gray-50'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-100 hover:border-blue-300 hover:bg-gray-50'
                       }`}
                     onClick={() => handleSelectBackground(bg)}
                   >
@@ -240,8 +244,8 @@ export const RadarBackgroundCollection: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{bg.backgroundId.slice(0, 20)}...</span>
                           <span className={`px-2 py-0.5 rounded text-xs ${bg.status === 'ready' ? 'bg-green-100 text-green-700' :
-                              bg.status === 'collecting' ? 'bg-blue-100 text-blue-700' :
-                                'bg-gray-100 text-gray-700'
+                            bg.status === 'collecting' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-700'
                             }`}>
                             {bg.status === 'ready' ? '就绪' : bg.status === 'collecting' ? '采集中' : bg.status}
                           </span>
@@ -270,50 +274,84 @@ export const RadarBackgroundCollection: React.FC = () => {
 
         {/* 右侧：3D点云预览 */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
             <h2 className="text-lg font-semibold">3D点云预览</h2>
-            {selectedBackground && (
-              <button
-                onClick={handleClearPreview}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                清除预览
-              </button>
+
+            {/* 预览控制项 */}
+            {previewPoints.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center bg-gray-100 p-1 rounded-lg">
+                  <button
+                    onClick={() => setShowModeling(!showModeling)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${showModeling ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    具象建模
+                  </button>
+                </div>
+
+                <select
+                  value={colorMode}
+                  onChange={(e) => setColorMode(e.target.value as any)}
+                  className="bg-gray-100 text-xs font-medium px-3 py-1 rounded-lg outline-none border-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="reflectivity">反射率图</option>
+                  <option value="height">高度图</option>
+                  <option value="distance">距离图</option>
+                </select>
+
+                <button
+                  onClick={handleClearPreview}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                  title="清除预览"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             )}
           </div>
-          <div className="w-full h-96 rounded-lg overflow-hidden bg-gray-900">
+
+          <div className="w-full h-[500px] rounded-2xl overflow-hidden bg-gray-900 shadow-inner relative">
             {isLoadingPreview ? (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
-                <div className="text-center">
-                  <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                  <p>加载点云数据...</p>
-                </div>
+              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-900/50 backdrop-blur-sm">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-white rounded-full animate-spin mb-4" />
+                <p className="font-medium animate-pulse">正在深度解析点云数据...</p>
               </div>
             ) : previewPoints.length > 0 ? (
               <PointCloudRenderer
                 points={previewPoints}
-                colorMode="reflectivity"
-                pointSize={0.015}
+                colorMode={colorMode}
+                showModeling={showModeling}
+                pointSize={showModeling ? 0.005 : 0.015} // 建模模式下点小一点，更突出线条
                 backgroundColor="#0a0a0a"
                 showGrid={true}
                 showAxes={true}
                 showRangeRings={true}
+                modelingDistance={0.3}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
-                <div className="text-center">
-                  <Eye size={48} className="mx-auto mb-2 opacity-50" />
-                  <p>选择一个背景进行预览</p>
+              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                  <Eye size={40} className="opacity-30" />
                 </div>
+                <p className="text-sm font-medium">请从左侧列表选择背景进行三维建模重现</p>
+                <p className="text-xs mt-2 opacity-50">支持 360° 旋转、缩放与反射率分析</p>
               </div>
             )}
           </div>
+
           {previewPoints.length > 0 && (
-            <div className="mt-2 text-xs text-gray-500 text-center">
-              显示 {previewPoints.length.toLocaleString()} 个点
-              {selectedBackground && (
-                <span className="ml-2">| 背景: {selectedBackground.backgroundId.slice(0, 15)}...</span>
-              )}
+            <div className="mt-4 flex justify-between items-center text-[11px] text-gray-400 px-2">
+              <div className="flex items-center gap-3">
+                <span>点数: <span className="text-gray-600 font-medium">{previewPoints.length.toLocaleString()}</span></span>
+                {selectedBackground && (
+                  <span className="flex items-center gap-1">
+                    <Clock size={10} /> 采集于: {new Date(selectedBackground.createdAt || '').toLocaleString()}
+                  </span>
+                )}
+              </div>
+              <div className="text-blue-500 font-medium">
+                {showModeling ? '具象建模模式已开启' : '点云原生显示'}
+              </div>
             </div>
           )}
         </div>
