@@ -424,28 +424,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       positions[i * 3 + 1] = ty;
       positions[i * 3 + 2] = tz;
 
-      // 侵入检测判定 (优先使用后端返回的zoneId)
-      let isIntruder = false;
-      if (point.zoneId) {
-        isIntruder = true;
-      }
-      // 只有非背景点才需要检测 (前端回退检测逻辑)
-      else if (defenseBackgroundPoints.length > 0 && !point.isStaticBackground) {
-        const gx = Math.floor(tx / bgCellSize);
-        const gy = Math.floor(ty / bgCellSize);
-        const gz = Math.floor(tz / bgCellSize);
-        const key = `${gx}_${gy}_${gz}`;
-        const pDistSq = tx * tx + ty * ty + tz * tz;
-
-        const bgDistSq = bgSearchGrid[key];
-        if (bgDistSq) {
-          const bgDist = Math.sqrt(bgDistSq);
-          const pDist = Math.sqrt(pDistSq);
-          if (pDist < bgDist - shrinkDistance) {
-            isIntruder = true;
-          }
-        }
-      }
+      // 侵入检测判定 (仅使用后端返回的 zoneId，前端不做任何检测)
+      const isIntruder = !!point.zoneId;
       isIntruderArr[i] = isIntruder ? 1 : 0;
 
       let r = 1, g = 1, b = 1;

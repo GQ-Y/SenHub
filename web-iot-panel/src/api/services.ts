@@ -665,6 +665,14 @@ export const radarService = {
   },
 
   /**
+   * 删除背景模型
+   */
+  async deleteBackground(deviceId: string, backgroundId: string) {
+    const response = await del<void>(`/radar/${encodeURIComponent(deviceId)}/backgrounds/${encodeURIComponent(backgroundId)}`);
+    return response;
+  },
+
+  /**
    * 获取侵入记录列表
    */
   async getIntrusions(deviceId: string, params?: { zoneId?: string; startTime?: string; endTime?: string; page?: number; pageSize?: number }) {

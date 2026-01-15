@@ -409,6 +409,8 @@ public class RadarController {
 
             String zoneId = defenseZoneService.createZone(zone);
             if (zoneId != null) {
+                // 重新加载检测上下文
+                radarService.reloadDeviceDetectionContext(deviceId);
                 return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
             } else {
                 response.status(400);
@@ -460,6 +462,8 @@ public class RadarController {
             }
 
             if (defenseZoneService.updateZone(zoneId, zone)) {
+                // 重新加载检测上下文
+                radarService.reloadDeviceDetectionContext(deviceId);
                 return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
             } else {
                 response.status(400);
@@ -478,8 +482,11 @@ public class RadarController {
      */
     public Object deleteZone(Request request, Response response) {
         try {
+            String deviceId = request.params("deviceId");
             String zoneId = request.params("zoneId");
             if (defenseZoneService.deleteZone(zoneId)) {
+                // 重新加载检测上下文
+                radarService.reloadDeviceDetectionContext(deviceId);
                 return createSuccessResponse(null);
             } else {
                 response.status(400);
@@ -507,6 +514,9 @@ public class RadarController {
 
             zone.setEnabled(!zone.getEnabled());
             if (defenseZoneService.updateZone(zoneId, zone)) {
+                // 重新加载检测上下文
+                String deviceId = request.params("deviceId");
+                radarService.reloadDeviceDetectionContext(deviceId);
                 return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
             } else {
                 response.status(400);
@@ -544,6 +554,32 @@ public class RadarController {
             return createSuccessResponse(backgroundList);
         } catch (Exception e) {
             logger.error("获取背景列表失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
+     * 删除背景模型
+     * DELETE /api/radar/:deviceId/backgrounds/:backgroundId
+     */
+    public Object deleteBackground(Request request, Response response) {
+        try {
+            String deviceId = request.params("deviceId");
+            String backgroundId = request.params("backgroundId");
+
+            // 删除数据库记录和文件
+            boolean deleted = backgroundService.deleteBackground(backgroundId);
+
+            if (deleted) {
+                logger.info("背景模型删除成功: deviceId={}, backgroundId={}", deviceId, backgroundId);
+                return createSuccessResponse(null);
+            } else {
+                response.status(400);
+                return createErrorResponse(400, "删除背景模型失败");
+            }
+        } catch (Exception e) {
+            logger.error("删除背景模型失败", e);
             response.status(500);
             return createErrorResponse(500, e.getMessage());
         }

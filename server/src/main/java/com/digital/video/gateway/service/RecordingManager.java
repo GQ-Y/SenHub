@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RecordingManager {
     private static final Logger logger = LoggerFactory.getLogger(RecordingManager.class);
     private static final int MAX_DURATION_MS = 10000; // 最长录制10秒
-    private static final int SILENCE_TIMEOUT_MS = 1000; // 1秒无数据视为结束
+    private static final int SILENCE_TIMEOUT_MS = 3000; // 3秒无数据视为结束
 
     private final Database database;
     private final RadarIntrusionRecordDAO recordDAO;

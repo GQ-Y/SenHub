@@ -241,26 +241,26 @@ export const RadarDefenseZone: React.FC = () => {
         const step = 0.2; // 每20cm一个点
         // (省略重复的边界点生成逻辑以保持精简，代码中已包含完整实现)
         for (let x = minX; x <= maxX; x += step) {
-          boundaryPoints.push({ x, y: minY, z: minZ, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x, y: maxY, z: minZ, isZoneBoundary: true } as any);
+          boundaryPoints.push({ x, y: minY, z: minZ, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x, y: maxY, z: minZ, isZoneBoundary: true, isStaticBackground: true } as any);
         }
         for (let y = minY; y <= maxY; y += step) {
-          boundaryPoints.push({ x: minX, y, z: minZ, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x: maxX, y, z: minZ, isZoneBoundary: true } as any);
+          boundaryPoints.push({ x: minX, y, z: minZ, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x: maxX, y, z: minZ, isZoneBoundary: true, isStaticBackground: true } as any);
         }
         for (let x = minX; x <= maxX; x += step) {
-          boundaryPoints.push({ x, y: minY, z: maxZ, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x, y: maxY, z: maxZ, isZoneBoundary: true } as any);
+          boundaryPoints.push({ x, y: minY, z: maxZ, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x, y: maxY, z: maxZ, isZoneBoundary: true, isStaticBackground: true } as any);
         }
         for (let y = minY; y <= maxY; y += step) {
-          boundaryPoints.push({ x: minX, y, z: maxZ, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x: maxX, y, z: maxZ, isZoneBoundary: true } as any);
+          boundaryPoints.push({ x: minX, y, z: maxZ, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x: maxX, y, z: maxZ, isZoneBoundary: true, isStaticBackground: true } as any);
         }
         for (let z = minZ; z <= maxZ; z += step) {
-          boundaryPoints.push({ x: minX, y: minY, z, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x: maxX, y: minY, z, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x: minX, y: maxY, z, isZoneBoundary: true } as any);
-          boundaryPoints.push({ x: maxX, y: maxY, z, isZoneBoundary: true } as any);
+          boundaryPoints.push({ x: minX, y: minY, z, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x: maxX, y: minY, z, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x: minX, y: maxY, z, isZoneBoundary: true, isStaticBackground: true } as any);
+          boundaryPoints.push({ x: maxX, y: maxY, z, isZoneBoundary: true, isStaticBackground: true } as any);
         }
       }
 
@@ -283,7 +283,8 @@ export const RadarDefenseZone: React.FC = () => {
               x: p.x * ratio,
               y: p.y * ratio,
               z: p.z * ratio,
-              isZoneBoundary: true
+              isZoneBoundary: true,
+              isStaticBackground: true
             } as any);
 
             // 2. 生成内部实体（Solid Volume）- 仅当开启时
@@ -300,7 +301,8 @@ export const RadarDefenseZone: React.FC = () => {
                     x: p.x * innerRatio,
                     y: p.y * innerRatio,
                     z: p.z * innerRatio,
-                    isZoneBoundary: true // 颜色相同
+                    isZoneBoundary: true,
+                    isStaticBackground: true
                   } as any);
                 }
               }

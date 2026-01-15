@@ -537,6 +537,7 @@ public class Main {
         Spark.delete("/api/radar/:deviceId/zones/:zoneId", radarController::deleteZone);
         Spark.put("/api/radar/:deviceId/zones/:zoneId/toggle", radarController::toggleZone);
         Spark.get("/api/radar/:deviceId/backgrounds", radarController::getBackgrounds);
+        Spark.delete("/api/radar/:deviceId/backgrounds/:backgroundId", radarController::deleteBackground);
         Spark.get("/api/radar/:deviceId/intrusions", radarController::getIntrusions);
         Spark.get("/api/radar/intrusions/:id/data", radarController::getIntrusionData);
 

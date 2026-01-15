@@ -89,10 +89,11 @@ public class IntrusionDetectionService {
             events.add(event);
         }
 
-        // 5. 保存侵入记录
-        for (IntrusionEvent event : events) {
-            saveIntrusionRecord(event);
-        }
+        // 注意：侵入记录改由 RecordingManager 统一保存，避免重复
+        // 如果需要单独的事件记录，可以在此处添加额外逻辑
+        // for (IntrusionEvent event : events) {
+        // saveIntrusionRecord(event);
+        // }
 
         return events;
     }
@@ -181,6 +182,12 @@ public class IntrusionDetectionService {
             return;
         }
 
+        // 记录调试信息
+        long enabledZones = zones.stream().filter(DefenseZone::getEnabled).count();
+        if (enabledZones > 0) {
+            logger.debug("标记侵入点: 总点数={}, 启用防区数={}", currentPoints.size(), enabledZones);
+        }
+
         // 构建空间索引（如果需要Shrink防区）
         SpatialIndex spatialIndex = null;
         boolean hasShrinkZone = zones.stream().anyMatch(z -> DefenseZone.ZONE_TYPE_SHRINK.equals(z.getZoneType()));
@@ -225,6 +232,9 @@ public class IntrusionDetectionService {
 
                 if (isIntruder) {
                     point.zoneId = zone.getZoneId();
+                    logger.debug("标记侵入点: zoneId={}, point=({}, {}, {})",
+                            zone.getZoneId(), String.format("%.2f", point.x), String.format("%.2f", point.y),
+                            String.format("%.2f", point.z));
                     break; // 一个点只归属一个防区（优先归属第一个匹配的）
                 }
             }

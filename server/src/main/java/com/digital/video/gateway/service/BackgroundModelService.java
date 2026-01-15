@@ -256,6 +256,31 @@ public class BackgroundModelService {
     }
 
     /**
+     * 删除背景模型
+     * 
+     * @param backgroundId 背景ID
+     * @return 是否成功删除
+     */
+    public boolean deleteBackground(String backgroundId) {
+        try {
+            // 1. 从缓存中移除
+            loadedModels.remove(backgroundId);
+
+            // 2. 删除文件
+            BackgroundPointFileStorage.deleteFile(backgroundId);
+
+            // 3. 从数据库删除（delete方法已经包含了删除关联点数据的逻辑）
+            boolean deleted = backgroundDAO.delete(backgroundId);
+
+            logger.info("背景模型删除完成: backgroundId={}, dbDeleted={}", backgroundId, deleted);
+            return deleted;
+        } catch (Exception e) {
+            logger.error("删除背景模型失败: {}", backgroundId, e);
+            return false;
+        }
+    }
+
+    /**
      * 加载背景模型到内存
      */
     public BackgroundModel loadBackground(String backgroundId) {
@@ -271,28 +296,30 @@ public class BackgroundModelService {
                 return null;
             }
 
-            // 从数据库加载背景点
-            List<RadarBackgroundPoint> dbPoints = backgroundDAO.getPointsByBackgroundId(backgroundId);
-
             BackgroundModel model = new BackgroundModel();
             model.setBackgroundId(backgroundId);
             model.setDeviceId(background.getDeviceId());
             model.setGridResolution(background.getGridResolution());
 
-            // 转换为BackgroundPoint
+            // 从文件加载背景点云（而非数据库）
             List<BackgroundPoint> points = new ArrayList<>();
 
-            for (RadarBackgroundPoint dbPoint : dbPoints) {
-                BackgroundPoint bgPoint = new BackgroundPoint();
-                bgPoint.setGridKey(dbPoint.getGridKey());
-                bgPoint.setCenterX(dbPoint.getCenterX());
-                bgPoint.setCenterY(dbPoint.getCenterY());
-                bgPoint.setCenterZ(dbPoint.getCenterZ());
-                bgPoint.setPointCount(dbPoint.getPointCount());
-                bgPoint.setMeanDistance(dbPoint.getMeanDistance());
-                bgPoint.setStdDeviation(dbPoint.getStdDeviation());
+            if (BackgroundPointFileStorage.fileExists(backgroundId)) {
+                // 加载全部点云用于检测
+                List<Point> filePoints = BackgroundPointFileStorage.loadPoints(backgroundId, 0);
 
-                points.add(bgPoint);
+                // 转换为 BackgroundPoint
+                for (Point p : filePoints) {
+                    BackgroundPoint bgPoint = new BackgroundPoint();
+                    bgPoint.setCenterX(p.x);
+                    bgPoint.setCenterY(p.y);
+                    bgPoint.setCenterZ(p.z);
+                    bgPoint.setMeanDistance((float) Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z));
+                    points.add(bgPoint);
+                }
+                logger.info("从文件加载背景点云: backgroundId={}, 点数={}", backgroundId, points.size());
+            } else {
+                logger.warn("背景点云文件不存在: {}", backgroundId);
             }
 
             model.setPoints(points);

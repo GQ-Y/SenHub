@@ -324,7 +324,19 @@ public class RadarService {
             BackgroundModel background = loadedBackgrounds.get(deviceId);
             List<DefenseZone> zones = deviceZones.get(deviceId);
             if (background != null && zones != null) {
+                int beforeCount = processedPoints.size();
                 intrusionDetectionService.markIntruderPoints(processedPoints, zones, background);
+                long intruderCount = processedPoints.stream().filter(p -> p.zoneId != null).count();
+                if (intruderCount > 0) {
+                    logger.debug("检测到侵入点: deviceId={}, 总点数={}, 侵入点数={}", deviceId, beforeCount, intruderCount);
+                }
+            } else {
+                if (background == null) {
+                    logger.debug("检测模式但背景模型未加载: deviceId={}", deviceId);
+                }
+                if (zones == null || zones.isEmpty()) {
+                    logger.debug("检测模式但防区未配置: deviceId={}", deviceId);
+                }
             }
 
             // 2. 处理录制（缓冲和保存侵入片段）
@@ -522,11 +534,47 @@ public class RadarService {
     }
 
     /**
-     * 加载设备的防区配置
+     * 加载设备的防区配置（内部方法）
      */
     private void loadZonesForDevice(String deviceId) {
         List<DefenseZone> zones = defenseZoneService.getZonesByDeviceId(deviceId);
         deviceZones.put(deviceId, zones);
+        logger.info("加载防区配置: deviceId={}, 防区数={}", deviceId, zones != null ? zones.size() : 0);
+    }
+
+    /**
+     * 重新加载设备的检测上下文（背景模型和防区配置）
+     * 在创建、更新、删除防区后调用此方法
+     */
+    public void reloadDeviceDetectionContext(String deviceId) {
+        // 1. 重新加载防区配置
+        loadZonesForDevice(deviceId);
+
+        // 2. 查找防区中使用的背景，并加载
+        List<DefenseZone> zones = deviceZones.get(deviceId);
+        if (zones != null && !zones.isEmpty()) {
+            // 取第一个启用的防区的背景ID（假设一个设备使用一个背景）
+            String backgroundId = zones.stream()
+                    .filter(DefenseZone::getEnabled)
+                    .map(DefenseZone::getBackgroundId)
+                    .filter(id -> id != null && !id.isEmpty())
+                    .findFirst()
+                    .orElse(null);
+
+            if (backgroundId != null) {
+                BackgroundModel background = backgroundService.loadBackground(backgroundId);
+                if (background != null) {
+                    loadedBackgrounds.put(deviceId, background);
+                    deviceStates.put(deviceId, "detecting");
+                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}",
+                            deviceId, backgroundId, background.getPoints().size());
+                } else {
+                    logger.warn("背景模型加载失败: deviceId={}, backgroundId={}", deviceId, backgroundId);
+                }
+            } else {
+                logger.debug("没有启用的防区或背景ID为空: deviceId={}", deviceId);
+            }
+        }
     }
 
     /**
