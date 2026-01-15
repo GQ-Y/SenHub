@@ -37,6 +37,8 @@ export const RadarDefenseZone: React.FC = () => {
   const [selectedZone, setSelectedZone] = useState<any | null>(null);
   const [viewMode, setViewMode] = useState<'defense' | 'reflectivity' | 'height' | 'distance'>('defense');
   const [showDefenseLayer, setShowDefenseLayer] = useState(true); // 单独控制防区显示隐藏
+  const [showSolid, setShowSolid] = useState(false); // 控制防区实体化显示
+  const [showBackground, setShowBackground] = useState(true); // 控制背景显示
   const [zoneType, setZoneType] = useState<'shrink' | 'bounding_box'>('shrink');
   const [formData, setFormData] = useState<any>({
     backgroundId: '',
@@ -226,7 +228,7 @@ export const RadarDefenseZone: React.FC = () => {
 
           // 只保留确实需要缩进的点
           if (dist > maxShrink + 0.02) {
-            // 向雷达原点 (0,0,0) 方向缩进
+            // 1. 生成外壳（Boundary Shell）- 始终生成
             const ratio = (dist - maxShrink) / dist;
             boundaryPoints.push({
               x: p.x * ratio,
@@ -234,6 +236,26 @@ export const RadarDefenseZone: React.FC = () => {
               z: p.z * ratio,
               isZoneBoundary: true
             } as any);
+
+            // 2. 生成内部实体（Solid Volume）- 仅当开启时
+            if (showSolid) {
+              // 内部填充采样密度可以低一些，比如每 10 个点才做一次内部填充，防止显存爆炸
+              if (i % 10 === 0) {
+                // 从外壳向内每隔 20cm 填充一层，模拟“固态”
+                const coreStep = 0.2; // 填充步长
+                const currentRadius = dist - maxShrink;
+                // 向内填充直到接近雷达中心 (0.5m)
+                for (let r = currentRadius - coreStep; r > 0.5; r -= coreStep) {
+                  const innerRatio = r / dist;
+                  boundaryPoints.push({
+                    x: p.x * innerRatio,
+                    y: p.y * innerRatio,
+                    z: p.z * innerRatio,
+                    isZoneBoundary: true // 颜色相同
+                  } as any);
+                }
+              }
+            }
           }
         }
       }
@@ -248,10 +270,10 @@ export const RadarDefenseZone: React.FC = () => {
     const boundaryPoints = generateZoneBoundaryPoints();
 
     // 2. 标记背景点为“静态背景”，防止被错误识别为侵入
-    const safeBackgroundPoints = selectedBackgroundPoints.map(p => ({
+    const safeBackgroundPoints = showBackground ? selectedBackgroundPoints.map(p => ({
       ...p,
       isStaticBackground: true
-    }));
+    })) : [];
 
     return showDefenseLayer ? [...safeBackgroundPoints, ...boundaryPoints] : safeBackgroundPoints;
   };
@@ -846,17 +868,46 @@ export const RadarDefenseZone: React.FC = () => {
                 ))}
               </div>
 
-              {/* 防区显示开关 */}
+              {/* 背景显示开关 */}
               <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-                <span className="text-sm text-gray-600">防区显示</span>
+                <span className="text-sm text-gray-600">背景显示</span>
                 <button
-                  onClick={() => setShowDefenseLayer(!showDefenseLayer)}
-                  className={`w-10 h-6 rounded-full transition-colors relative ${showDefenseLayer ? 'bg-blue-500' : 'bg-gray-200'
+                  onClick={() => setShowBackground(!showBackground)}
+                  className={`w-10 h-6 rounded-full transition-colors relative ${showBackground ? 'bg-gray-600' : 'bg-gray-200'
                     }`}
                 >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showDefenseLayer ? 'left-5' : 'left-1'
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showBackground ? 'left-5' : 'left-1'
                     }`} />
                 </button>
+              </div>
+
+              {/* 防区显示开关 */}
+              <div className="flex items-center gap-4 border-l border-gray-200 pl-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">防区显示</span>
+                  <button
+                    onClick={() => setShowDefenseLayer(!showDefenseLayer)}
+                    className={`w-10 h-6 rounded-full transition-colors relative ${showDefenseLayer ? 'bg-blue-500' : 'bg-gray-200'
+                      }`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showDefenseLayer ? 'left-5' : 'left-1'
+                      }`} />
+                  </button>
+                </div>
+
+                {showDefenseLayer && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">实体化</span>
+                    <button
+                      onClick={() => setShowSolid(!showSolid)}
+                      className={`w-10 h-6 rounded-full transition-colors relative ${showSolid ? 'bg-purple-500' : 'bg-gray-200'
+                        }`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${showSolid ? 'left-5' : 'left-1'
+                        }`} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
