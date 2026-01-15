@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 雷达WebSocket处理器
@@ -23,6 +24,11 @@ public class RadarWebSocketHandler {
     
     // 设备ID -> WebSocket连接列表
     private final Map<String, List<Session>> connections = new ConcurrentHashMap<>();
+    
+    // 点云发送统计（设备ID -> 统计信息）
+    private final Map<String, AtomicLong> pointCloudFrameCount = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> pointCloudPointCount = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastLogTime = new ConcurrentHashMap<>();
     
     public RadarWebSocketHandler(RadarService radarService) {
         this.radarService = radarService;
@@ -44,6 +50,12 @@ public class RadarWebSocketHandler {
         connections.forEach((deviceId, sessions) -> {
             if (sessions.remove(session)) {
                 logger.info("移除WebSocket连接: deviceId={}, 剩余连接数={}", deviceId, sessions.size());
+                // 如果该设备没有连接了，清理统计信息
+                if (sessions.isEmpty()) {
+                    pointCloudFrameCount.remove(deviceId);
+                    pointCloudPointCount.remove(deviceId);
+                    lastLogTime.remove(deviceId);
+                }
             }
         });
     }
@@ -62,20 +74,34 @@ public class RadarWebSocketHandler {
             return;
         }
         
-        logger.debug("准备推送点云数据: deviceId={}, 点数={}, 连接数={}", 
-                deviceId, points.size(), conns.size());
-
-        // 采样：每10个点取1个，减少数据量
-        List<Point> sampledPoints = new ArrayList<>();
-        for (int i = 0; i < points.size(); i += 10) {
-            sampledPoints.add(points.get(i));
+        // 更新统计信息
+        pointCloudFrameCount.computeIfAbsent(deviceId, k -> new AtomicLong(0)).incrementAndGet();
+        pointCloudPointCount.computeIfAbsent(deviceId, k -> new AtomicLong(0)).addAndGet(points.size());
+        
+        // 每5秒打印一次统计信息
+        long now = System.currentTimeMillis();
+        Long lastLog = lastLogTime.get(deviceId);
+        if (lastLog == null || (now - lastLog) >= 5000) {
+            long frameCount = pointCloudFrameCount.get(deviceId).get();
+            long pointCount = pointCloudPointCount.get(deviceId).get();
+            long avgPointsPerFrame = frameCount > 0 ? pointCount / frameCount : 0;
+            
+            logger.info("[点云推送统计] deviceId={}, 总帧数={}, 总点数={}, 平均每帧点数={}, 当前帧点数={}, 连接数={}", 
+                    deviceId, frameCount, pointCount, avgPointsPerFrame, points.size(), conns.size());
+            
+            lastLogTime.put(deviceId, now);
+        } else {
+            // 详细日志（debug级别）
+            logger.debug("推送点云数据: deviceId={}, 点数={}, 连接数={}", 
+                    deviceId, points.size(), conns.size());
         }
 
+        // 不采样，发送全部点云数据
         Map<String, Object> message = new HashMap<>();
         message.put("type", "pointcloud");
         message.put("timestamp", System.currentTimeMillis());
-        message.put("points", convertPointsToMap(sampledPoints));
-        message.put("pointCount", sampledPoints.size());
+        message.put("points", convertPointsToMap(points));
+        message.put("pointCount", points.size());
 
         sendToAll(deviceId, message);
     }

@@ -4,6 +4,7 @@ import com.digital.video.gateway.driver.livox.LivoxDriver;
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
 import com.digital.video.gateway.driver.livox.model.*;
 import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
+import com.digital.video.gateway.driver.livox.algorithm.PointCloudProcessor;
 import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.database.RadarDeviceDAO;
 import com.digital.video.gateway.api.RadarWebSocketHandler;
@@ -34,24 +35,33 @@ public class RadarService {
     private final PTZService ptzService;
     private final LivoxDriver livoxDriver; // JNI Driver
     private final Database database;
-    
+
     // 集成服务
     private final BackgroundModelService backgroundService;
     private final DefenseZoneService defenseZoneService;
     private final IntrusionDetectionService intrusionDetectionService;
-    
+
     // WebSocket处理器（用于实时推送）
     private RadarWebSocketHandler webSocketHandler;
-    
+
     // 设备状态管理（deviceId -> 状态）
     private final Map<String, String> deviceStates = new ConcurrentHashMap<>(); // "collecting" 或 "detecting"
-    private final Map<String, BackgroundModel> loadedBackgrounds = new ConcurrentHashMap<>(); // deviceId -> BackgroundModel
-    private final Map<String, List<DefenseZone>> deviceZones = new ConcurrentHashMap<>(); // deviceId -> List<DefenseZone>
+    private final Map<String, BackgroundModel> loadedBackgrounds = new ConcurrentHashMap<>(); // deviceId ->
+                                                                                              // BackgroundModel
+    private final Map<String, List<DefenseZone>> deviceZones = new ConcurrentHashMap<>(); // deviceId ->
+                                                                                          // List<DefenseZone>
 
     // 点云数据统计
     private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
     private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
     private ScheduledExecutorService statsExecutor;
+
+    // 降噪配置参数
+    private boolean enableDenoising = true; // 默认启用降噪
+    private int denoiseKNeighbors = 20; // K近邻数量
+    private float denoiseStdDevThreshold = 1.0f; // 标准差阈值
+    private boolean enableVoxelDownsample = false; // 默认不启用下采样
+    private float voxelResolution = 0.05f; // 下采样分辨率（5cm）
 
     public RadarService(PTZService ptzService, Database database) {
         this.ptzService = ptzService;
@@ -62,7 +72,7 @@ public class RadarService {
         this.intrusionDetectionService = new IntrusionDetectionService(database);
         this.webSocketHandler = new RadarWebSocketHandler(this);
     }
-    
+
     /**
      * 获取WebSocket处理器（供外部调用）
      */
@@ -78,14 +88,14 @@ public class RadarService {
             livoxDriver.start();
             livoxDriver.setPointCloudCallback(this::handlePacket);
             logger.info("雷达监听服务已启动 (JNI Driver)");
-            
+
             // 启动统计信息打印任务（每秒打印一次）
             startStatsReporter();
         } catch (Exception e) {
             logger.error("启动雷达监听服务失败", e);
         }
     }
-    
+
     /**
      * 启动统计信息报告器（每秒打印一次）
      */
@@ -95,25 +105,25 @@ public class RadarService {
             t.setDaemon(true);
             return t;
         });
-        
+
         final AtomicLong lastTotalFrames = new AtomicLong(0);
         final AtomicLong lastTotalPoints = new AtomicLong(0);
-        
+
         statsExecutor.scheduleAtFixedRate(() -> {
             long currentFrames = totalPointCloudFrames.get();
             long currentPoints = totalPointCloudPoints.get();
-            
+
             long framesThisSecond = currentFrames - lastTotalFrames.get();
             long pointsThisSecond = currentPoints - lastTotalPoints.get();
-            
+
             lastTotalFrames.set(currentFrames);
             lastTotalPoints.set(currentPoints);
-            
+
             // 每秒都打印，即使没有新数据也显示累计统计
-            logger.info("[点云统计] 本秒接收: {} 帧, {} 点 | 累计: {} 帧, {} 点", 
-                framesThisSecond, pointsThisSecond, currentFrames, currentPoints);
+            logger.info("[点云统计] 本秒接收: {} 帧, {} 点 | 累计: {} 帧, {} 点",
+                    framesThisSecond, pointsThisSecond, currentFrames, currentPoints);
         }, 1, 1, TimeUnit.SECONDS);
-        
+
         logger.info("点云统计报告器已启动（每秒打印一次）");
     }
 
@@ -133,7 +143,7 @@ public class RadarService {
                 Thread.currentThread().interrupt();
             }
         }
-        
+
         livoxDriver.stop();
         logger.info("雷达监听服务已停止");
     }
@@ -145,61 +155,115 @@ public class RadarService {
         if (packet.payload == null || packet.payload.length < 1)
             return;
 
-        ByteBuffer bb = ByteBuffer.wrap(packet.payload).order(ByteOrder.LITTLE_ENDIAN);
-        byte dataType = bb.get();
+        // 重要修复：dataType 应从 packet.cmdId 获取，而不是从 payload 读取
+        // JNI 回调中的 dataType 被存储在 packet.cmdId 中
+        int dataType = packet.cmdId;
 
-        // Mid-360 常见的笛卡尔坐标数据类型 0x01
+        // Mid-360 常见的笛卡尔坐标数据类型
+        // 0x01 = 高精度笛卡尔坐标 (每点14字节: x4+y4+z4+reflectivity1+tag1)
+        // 0x02 = 低精度笛卡尔坐标 (每点8字节: x2+y2+z2+reflectivity1+tag1, 单位cm)
         if (dataType == 0x01) {
-            List<Point> points = parseCartesianPoints(bb);
-            
+            // 高精度笛卡尔坐标
+            List<Point> points = parseCartesianHighPoints(packet.payload);
+
             // 更新统计信息
             if (!points.isEmpty()) {
                 totalPointCloudFrames.incrementAndGet();
                 totalPointCloudPoints.addAndGet(points.size());
-                
+
                 // 根据设备状态路由点云数据
-                // 注意：由于点云回调中只有handle，这里简化处理
-                // 如果只有一个雷达设备，直接使用；多个设备时使用第一个
                 String deviceId = getCurrentDeviceId();
                 if (deviceId != null) {
                     routePointCloud(deviceId, points);
                 } else {
-                    // 没有配置雷达设备，忽略点云数据
                     logger.debug("没有配置雷达设备，忽略点云数据");
                 }
             }
+        } else if (dataType == 0x02) {
+            // 低精度笛卡尔坐标
+            List<Point> points = parseCartesianLowPoints(packet.payload);
+
+            if (!points.isEmpty()) {
+                totalPointCloudFrames.incrementAndGet();
+                totalPointCloudPoints.addAndGet(points.size());
+
+                String deviceId = getCurrentDeviceId();
+                if (deviceId != null) {
+                    routePointCloud(deviceId, points);
+                }
+            }
+        } else {
+            logger.debug("不支持的点云数据类型: 0x{}", String.format("%02X", dataType));
         }
     }
 
     /**
-     * 解析笛卡尔坐标点云 (Type 0x01)
-     * 每个点 13 字节: x(4), y(4), z(4), reflectivity(1)
+     * 解析高精度笛卡尔坐标点云 (Type 0x01)
+     * 根据 Livox SDK2 定义: LivoxLidarCartesianHighRawPoint
+     * 每个点 14 字节: x(int32/4), y(int32/4), z(int32/4), reflectivity(uint8/1),
+     * tag(uint8/1)
+     * 坐标单位: 毫米(mm)
      */
-    private List<Point> parseCartesianPoints(ByteBuffer bb) {
+    private List<Point> parseCartesianHighPoints(byte[] data) {
         List<Point> points = new ArrayList<>();
-        
-        while (bb.remaining() >= 13) {
-            int xInt = bb.getInt();
-            int yInt = bb.getInt();
-            int zInt = bb.getInt();
-            byte reflectivity = bb.get();
+        ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
 
-            float x = xInt / 1000.0f; // mm -> m
+        // 每个点 14 字节
+        while (bb.remaining() >= 14) {
+            int xInt = bb.getInt(); // 4 bytes, mm
+            int yInt = bb.getInt(); // 4 bytes, mm
+            int zInt = bb.getInt(); // 4 bytes, mm
+            byte reflectivity = bb.get(); // 1 byte
+            byte tag = bb.get(); // 1 byte (忽略)
+
+            // mm -> m
+            float x = xInt / 1000.0f;
             float y = yInt / 1000.0f;
             float z = zInt / 1000.0f;
 
-            // 简单过滤：只保留 0.5m 到 30m 范围内的目标
-            float distance = (float) Math.sqrt(x * x + y * y + z * z);
-            if (distance > 0.5f && distance < 30.0f) {
-                points.add(new Point(x, y, z, reflectivity));
-            }
+            // 可选：过滤无效点（tag 的某些位表示无效点）
+            // Mid-360 的 tag 定义：bit0-1 表示置信度，bit2 表示是否有效
+            // 这里暂时不过滤，发送全部点
+
+            points.add(new Point(x, y, z, reflectivity));
         }
-        
+
+        return points;
+    }
+
+    /**
+     * 解析低精度笛卡尔坐标点云 (Type 0x02)
+     * 根据 Livox SDK2 定义: LivoxLidarCartesianLowRawPoint
+     * 每个点 8 字节: x(int16/2), y(int16/2), z(int16/2), reflectivity(uint8/1),
+     * tag(uint8/1)
+     * 坐标单位: 厘米(cm)
+     */
+    private List<Point> parseCartesianLowPoints(byte[] data) {
+        List<Point> points = new ArrayList<>();
+        ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+
+        // 每个点 8 字节
+        while (bb.remaining() >= 8) {
+            short xShort = bb.getShort(); // 2 bytes, cm
+            short yShort = bb.getShort(); // 2 bytes, cm
+            short zShort = bb.getShort(); // 2 bytes, cm
+            byte reflectivity = bb.get(); // 1 byte
+            byte tag = bb.get(); // 1 byte (忽略)
+
+            // cm -> m
+            float x = xShort / 100.0f;
+            float y = yShort / 100.0f;
+            float z = zShort / 100.0f;
+
+            points.add(new Point(x, y, z, reflectivity));
+        }
+
         return points;
     }
 
     /**
      * 路由点云数据（根据设备状态）
+     * 增强：添加可选的降噪处理
      */
     private void routePointCloud(String deviceId, List<Point> points) {
         if (deviceId == null) {
@@ -207,22 +271,56 @@ public class RadarService {
             return;
         }
 
+        // 降噪处理（可选）
+        List<Point> processedPoints = points;
+
+        if (enableDenoising && points.size() > denoiseKNeighbors) {
+            try {
+                // 统计去噪：移除离群较远的噪声点
+                processedPoints = PointCloudProcessor.statisticalOutlierRemoval(
+                        processedPoints,
+                        denoiseKNeighbors,
+                        denoiseStdDevThreshold);
+
+                // 记录降噪效果（仅在调试级别）
+                if (logger.isDebugEnabled()) {
+                    int removedCount = points.size() - processedPoints.size();
+                    logger.debug("降噪处理: 原始点数={}, 处理后={}, 移除={}",
+                            points.size(), processedPoints.size(), removedCount);
+                }
+            } catch (Exception e) {
+                logger.warn("降噪处理失败，使用原始数据", e);
+                processedPoints = points;
+            }
+        }
+
+        // 下采样处理（可选，用于减少点云数量）
+        if (enableVoxelDownsample && processedPoints.size() > 1000) {
+            try {
+                processedPoints = PointCloudProcessor.voxelDownsample(
+                        processedPoints,
+                        voxelResolution);
+            } catch (Exception e) {
+                logger.warn("下采样处理失败", e);
+            }
+        }
+
         String state = deviceStates.get(deviceId);
         if ("collecting".equals(state)) {
             // 采集背景模式：添加到背景采集
-            PointCloudFrame frame = new PointCloudFrame(System.currentTimeMillis(), points);
+            PointCloudFrame frame = new PointCloudFrame(System.currentTimeMillis(), processedPoints);
             backgroundService.addFrame(deviceId, frame);
             // 实时推送点云数据（用于前端实时预览）
             if (webSocketHandler != null) {
-                webSocketHandler.pushPointCloud(deviceId, points);
+                webSocketHandler.pushPointCloud(deviceId, processedPoints);
                 webSocketHandler.logPushStats(deviceId); // 记录推送日志
             }
         } else if ("detecting".equals(state)) {
             // 检测模式：进行侵入检测
-            List<IntrusionEvent> events = processDetection(deviceId, points);
+            List<IntrusionEvent> events = processDetection(deviceId, processedPoints);
             // 实时推送点云数据
             if (webSocketHandler != null) {
-                webSocketHandler.pushPointCloud(deviceId, points);
+                webSocketHandler.pushPointCloud(deviceId, processedPoints);
                 webSocketHandler.logPushStats(deviceId); // 记录推送日志
             }
             // 推送侵入检测结果
@@ -262,7 +360,7 @@ public class RadarService {
         } else {
             // 默认模式：实时推送点云数据
             if (webSocketHandler != null) {
-                webSocketHandler.pushPointCloud(deviceId, points);
+                webSocketHandler.pushPointCloud(deviceId, processedPoints);
                 webSocketHandler.logPushStats(deviceId); // 记录推送日志
             }
         }
@@ -270,6 +368,7 @@ public class RadarService {
 
     /**
      * 处理侵入检测
+     * 
      * @return 侵入事件列表
      */
     private List<IntrusionEvent> processDetection(String deviceId, List<Point> currentPoints) {
@@ -284,7 +383,7 @@ public class RadarService {
         }
 
         List<IntrusionEvent> allEvents = new ArrayList<>();
-        
+
         // 对每个启用的防区进行检测
         for (DefenseZone zone : zones) {
             if (!zone.getEnabled()) {
@@ -293,13 +392,13 @@ public class RadarService {
 
             List<IntrusionEvent> events = intrusionDetectionService.detectIntrusion(currentPoints, zone, background);
             allEvents.addAll(events);
-            
+
             // 处理侵入事件：触发PTZ联动
             for (IntrusionEvent event : events) {
                 handleIntrusionEvent(event, zone);
             }
         }
-        
+
         return allEvents;
     }
 
@@ -313,18 +412,16 @@ public class RadarService {
         }
 
         Point radarPoint = cluster.getCentroid();
-        
+
         // 坐标系转换
         DefenseZone.CoordinateTransform transform = zone.getCoordinateTransform();
-        com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform coordTransform = 
-            new com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform(
+        com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform coordTransform = new com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform(
                 transform.translationX, transform.translationY, transform.translationZ,
                 transform.rotationX, transform.rotationY, transform.rotationZ,
-                transform.scale
-            );
-        
+                transform.scale);
+
         Point cameraPoint = coordTransform.transformRadarToCamera(radarPoint);
-        
+
         // 计算PTZ角度
         float[] angles = coordTransform.calculatePTZAngles(cameraPoint);
         float pan = angles[0];
@@ -334,7 +431,7 @@ public class RadarService {
         if (zone.getCameraDeviceId() != null) {
             int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
             ptzService.gotoAngle(zone.getCameraDeviceId(), channel, pan, tilt, 1.0f);
-            logger.info("侵入检测触发PTZ联动: zoneId={}, camera={}, pan={}, tilt={}", 
+            logger.info("侵入检测触发PTZ联动: zoneId={}, camera={}, pan={}, tilt={}",
                     zone.getZoneId(), zone.getCameraDeviceId(), pan, tilt);
         }
     }
@@ -348,7 +445,7 @@ public class RadarService {
         // 从数据库读取所有雷达设备
         RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
         List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
-        
+
         if (devices.isEmpty()) {
             // 没有雷达设备，返回null
             return null;
@@ -371,7 +468,7 @@ public class RadarService {
             return devices.get(0).getDeviceId();
         }
     }
-    
+
     /**
      * 根据handle获取设备ID（简化实现：如果只有一个设备，直接返回）
      * TODO: 未来可以通过JNI扩展获取handle对应的设备IP/SN进行精确匹配
@@ -423,5 +520,55 @@ public class RadarService {
      */
     public void setDeviceState(String deviceId, String state) {
         deviceStates.put(deviceId, state);
+    }
+
+    // ==================== 降噪配置方法 ====================
+
+    /**
+     * 配置降噪参数
+     * 
+     * @param enabled         是否启用降噪
+     * @param kNeighbors      K近邻数量（默认20）
+     * @param stdDevThreshold 标准差阈值（默认1.0）
+     */
+    public void setDenoiseConfig(boolean enabled, int kNeighbors, float stdDevThreshold) {
+        this.enableDenoising = enabled;
+        this.denoiseKNeighbors = kNeighbors;
+        this.denoiseStdDevThreshold = stdDevThreshold;
+        logger.info("降噪配置已更新: enabled={}, kNeighbors={}, stdDevThreshold={}",
+                enabled, kNeighbors, stdDevThreshold);
+    }
+
+    /**
+     * 启用/禁用降噪
+     */
+    public void setEnableDenoising(boolean enabled) {
+        this.enableDenoising = enabled;
+        logger.info("降噪功能已{}", enabled ? "启用" : "禁用");
+    }
+
+    /**
+     * 配置下采样参数
+     * 
+     * @param enabled    是否启用下采样
+     * @param resolution 体素分辨率（米），例如0.05表示5cm
+     */
+    public void setVoxelDownsampleConfig(boolean enabled, float resolution) {
+        this.enableVoxelDownsample = enabled;
+        this.voxelResolution = resolution;
+        logger.info("下采样配置已更新: enabled={}, resolution={}m", enabled, resolution);
+    }
+
+    /**
+     * 获取当前降噪配置
+     */
+    public Map<String, Object> getDenoiseConfig() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("enableDenoising", enableDenoising);
+        config.put("denoiseKNeighbors", denoiseKNeighbors);
+        config.put("denoiseStdDevThreshold", denoiseStdDevThreshold);
+        config.put("enableVoxelDownsample", enableVoxelDownsample);
+        config.put("voxelResolution", voxelResolution);
+        return config;
     }
 }
