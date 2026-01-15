@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { radarService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
+import { Modal, ConfirmModal } from './Modal';
 import { PointCloudRenderer } from './PointCloudRenderer';
+import { IntrusionHistoryPanel } from './IntrusionHistoryPanel';
+import { ArrowLeft } from 'lucide-react';
 
 interface Point {
   x: number;
@@ -10,6 +13,8 @@ interface Point {
   z: number;
   r?: number;
   timestamp?: number; // 点云时间戳
+  isZoneBoundary?: boolean;
+  zoneId?: string;
 }
 
 interface IntrusionPoint extends Point {
@@ -25,6 +30,7 @@ interface TimestampedPoint extends Point {
 
 export const RadarMonitoring: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
+  const navigate = useNavigate();
   const modal = useModal();
   const [isConnected, setIsConnected] = useState(false);
   const [intrusions, setIntrusions] = useState<any[]>([]);
@@ -48,6 +54,51 @@ export const RadarMonitoring: React.FC = () => {
   const pointCloudBufferRef = useRef<TimestampedPoint[]>([]);
   const renderIntervalRef = useRef<number | null>(null);
   const lastLogTimeRef = useRef<number>(0); // 用于控制日志输出频率
+
+  // 回放状态
+  const [playbackMode, setPlaybackMode] = useState(false);
+  const [playbackPoints, setPlaybackPoints] = useState<Point[]>([]);
+  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePlay = async (record: any) => {
+    if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+    setPlaybackMode(true);
+    setPlaybackPoints([]);
+
+    try {
+      const res = await radarService.getIntrusionData(record.recordId);
+      const frames = res.data;
+      if (!frames || !Array.isArray(frames)) {
+        modal.showModal({ message: '无效的录制数据', type: 'error' });
+        return;
+      }
+
+      let i = 0;
+      playbackIntervalRef.current = setInterval(() => {
+        if (i >= frames.length) {
+          if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+          return;
+        }
+        const frame = frames[i];
+        // 确保点云有 zoneId，如果没有则使用记录的 zoneId
+        const pts = (frame.points || []).map((p: any) => ({
+          ...p,
+          zoneId: p.zoneId || record.zoneId
+        }));
+        setPlaybackPoints(pts);
+        i++;
+      }, 100);
+    } catch (e: any) {
+      console.error(e);
+      modal.showModal({ message: '加载轨迹失败: ' + e.message, type: 'error' });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     // 使用标志位防止 React StrictMode 导致的重复连接问题
@@ -275,7 +326,16 @@ export const RadarMonitoring: React.FC = () => {
     <div className="space-y-6">
       {/* 操作栏 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-        <h1 className="text-2xl font-bold">实时监控</h1>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
+            title="返回"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-2xl font-bold">实时监控</h1>
+        </div>
         <div className="flex items-center gap-4">
           {/* 累积时间控制 */}
           <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg">
@@ -305,14 +365,18 @@ export const RadarMonitoring: React.FC = () => {
         </div>
       </div>
 
-      <div className={`grid ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'grid-cols-1 lg:grid-cols-2 gap-6'}`}>
+      <div className={`grid ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'grid-cols-1 lg:grid-cols-4 gap-6'}`}>
         {/* 左侧：实时点云渲染 */}
         <div
           ref={pointCloudContainerRef}
-          className={`bg-white rounded-xl shadow-sm border border-gray-100 p-6 ${isFullscreen ? 'w-full h-full rounded-none border-0' : ''}`}
+          className={`bg-white rounded-xl shadow-sm border border-gray-100 p-6 ${isFullscreen ? 'w-full h-full rounded-none border-0' : 'lg:col-span-3'}`}
         >
           <div className={`flex justify-between items-center mb-4 ${isFullscreen ? 'absolute top-4 left-4 right-4 z-10' : ''}`}>
-            <h2 className="text-lg font-semibold">实时点云渲染</h2>
+            <h2 className="text-lg font-semibold flex items-center">
+              {playbackMode ? (
+                <span className="text-red-500 flex items-center animate-pulse mr-2">● 回放中</span>
+              ) : '实时点云渲染'}
+            </h2>
             <div className="flex items-center gap-4">
               <button
                 onClick={toggleFullscreen}
@@ -331,19 +395,33 @@ export const RadarMonitoring: React.FC = () => {
               </button>
             </div>
           </div>
-          <div className={`w-full ${isFullscreen ? 'h-full' : 'h-96'} rounded-lg overflow-hidden bg-gray-900 relative`}>
-            {allPoints.length > 0 ? (
+          <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[500px]'} rounded-lg overflow-hidden bg-gray-900 relative`}>
+            {/* 停止回放按钮 */}
+            {playbackMode && !isFullscreen && (
+              <button
+                onClick={() => {
+                  if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
+                  setPlaybackMode(false);
+                  setPlaybackPoints([]);
+                }}
+                className="absolute top-4 left-4 z-10 bg-red-600/80 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium backdrop-blur-sm transition-colors"
+              >
+                停止回放
+              </button>
+            )}
+
+            {allPoints.length > 0 || playbackPoints.length > 0 ? (
               <PointCloudRenderer
-                points={allPoints}
+                points={playbackMode ? playbackPoints : allPoints}
                 color={(point: Point) => {
                   // 侵入点显示为红色，正常点使用colorMode处理
                   const p = point as any;
-                  if (p.isIntrusion) {
-                    return '#ff0000'; // 红色标记侵入点
-                  }
+                  // 优先使用 zoneId 判断
+                  if (p.zoneId) return '#ff0000';
+                  if (p.isIntrusion) return '#ff0000'; // 兼容旧逻辑
                   return ''; // 返回空字符串，由colorMode处理
                 }}
-                colorMode="reflectivity"
+                colorMode={playbackMode ? "defense" : "reflectivity"} // 回放模式下强制 defense 模式
                 pointSize={0.015}
                 backgroundColor="#0a0a0a"
                 showGrid={true}
@@ -362,78 +440,44 @@ export const RadarMonitoring: React.FC = () => {
                 )}
               </div>
             )}
-            {isFullscreen && allPoints.length > 0 && (
-              <>
-                <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-sm">
-                  当前显示 {allPoints.length.toLocaleString()} 个点
-                  {intrusionPoints.length > 0 && (
-                    <span className="ml-2 text-red-400">
-                      （{intrusionPoints.length} 个侵入点）
-                    </span>
-                  )}
-                </div>
-                <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-xs">
-                  <div>操作提示：</div>
-                  <div>左键拖拽旋转 | 滚轮缩放 | 右键拖拽平移</div>
-                  <div className="mt-1">按 ESC 或点击退出全屏</div>
-                </div>
-              </>
+
+            {(isFullscreen || !playbackMode) && allPoints.length > 0 && (
+              // Existing fullscreen overlay Logic ...
+              isFullscreen && (
+                <>
+                  <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-sm">
+                    当前显示 {allPoints.length.toLocaleString()} 个点
+                    {intrusionPoints.length > 0 && (
+                      <span className="ml-2 text-red-400">
+                        （{intrusionPoints.length} 个侵入点）
+                      </span>
+                    )}
+                  </div>
+                  <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-xs">
+                    <div>操作提示：</div>
+                    <div>左键拖拽旋转 | 滚轮缩放 | 右键拖拽平移</div>
+                    <div className="mt-1">按 ESC 或点击退出全屏</div>
+                  </div>
+                </>
+              )
+            )}
+            {playbackMode && (
+              <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-sm">
+                回放帧点数: {playbackPoints.length}
+              </div>
             )}
           </div>
-          {!isFullscreen && allPoints.length > 0 && (
-            <div className="mt-2">
-              <div className="text-xs text-gray-500 text-center">
-                当前显示 {allPoints.length} 个点
-                {intrusionPoints.length > 0 && (
-                  <span className="ml-2 text-red-500">
-                    （{intrusionPoints.length} 个侵入点）
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-gray-400 text-center mt-1">
-                操作提示：左键拖拽旋转 | 滚轮缩放 | 右键平移 | 点击全屏按钮进入全屏模式
-              </div>
+          {!isFullscreen && (allPoints.length > 0 || playbackPoints.length > 0) && (
+            <div className="mt-2 text-xs text-gray-500 text-center">
+              {playbackMode ? `正在回放... (${playbackPoints.length} points)` : `当前显示 ${allPoints.length} 个点`}
             </div>
           )}
         </div>
 
         {/* 右侧：侵入检测列表 */}
         {!isFullscreen && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold">侵入检测列表</h2>
-              <button
-                onClick={loadIntrusions}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                刷新
-              </button>
-            </div>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {intrusions.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">暂无侵入记录</p>
-              ) : (
-                intrusions.map((intrusion, index) => (
-                  <div key={index} className="border rounded-lg p-3 hover:bg-gray-50 transition-colors">
-                    <div className="text-sm space-y-1">
-                      <div className="font-medium text-gray-800">
-                        {new Date(intrusion.detectedAt).toLocaleString()}
-                      </div>
-                      <div className="text-gray-600">
-                        <span className="font-medium">位置：</span>
-                        ({intrusion.centroid?.x?.toFixed(2) || 0},
-                        {intrusion.centroid?.y?.toFixed(2) || 0},
-                        {intrusion.centroid?.z?.toFixed(2) || 0})
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>体积: {intrusion.volume?.toFixed(3) || 0} m³</span>
-                        <span>点数: {intrusion.pointCount || 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <div className="lg:col-span-1 h-[600px]">
+            <IntrusionHistoryPanel deviceId={deviceId!} onPlay={handlePlay} className="h-full" />
           </div>
         )}
       </div>

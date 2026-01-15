@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, X, Shield, Camera, MapPin, Power, PowerOff } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Plus, Search, Edit2, Trash2, X, Shield, Camera, MapPin, Power, PowerOff } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { radarService, deviceService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
@@ -26,6 +26,7 @@ interface TimestampedPoint extends Point {
  */
 export const RadarDefenseZone: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
+  const navigate = useNavigate();
   const { t } = useAppContext();
   const modal = useModal();
   const [zones, setZones] = useState<any[]>([]);
@@ -523,6 +524,13 @@ export const RadarDefenseZone: React.FC = () => {
         {/* 操作栏 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex items-center space-x-3 w-full md:w-auto">
+            <button
+              onClick={() => navigate(-1)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
+              title="返回"
+            >
+              <ArrowLeft size={20} />
+            </button>
             <div className="relative w-full md:w-64">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
               <input

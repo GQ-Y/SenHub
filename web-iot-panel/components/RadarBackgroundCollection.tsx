@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { radarService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
 import { PointCloudRenderer } from './PointCloudRenderer';
-import { RefreshCw, Trash2, Eye, Clock } from 'lucide-react';
+import { RefreshCw, Trash2, Eye, Clock, ArrowLeft } from 'lucide-react';
 
 interface Point {
   x: number;
@@ -29,6 +29,7 @@ interface Background {
  */
 export const RadarBackgroundCollection: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
+  const navigate = useNavigate();
   const modal = useModal();
 
   // 采集设置
@@ -135,7 +136,16 @@ export const RadarBackgroundCollection: React.FC = () => {
     <div className="space-y-6">
       {/* 操作栏 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-        <h1 className="text-2xl font-bold">背景采集</h1>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
+            title="返回"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-2xl font-bold">背景采集</h1>
+        </div>
         <button
           onClick={loadBackgrounds}
           disabled={isLoadingList}
