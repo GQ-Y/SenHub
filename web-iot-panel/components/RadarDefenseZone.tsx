@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, Shield, Camera, MapPin, Power, PowerOff } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
@@ -12,6 +12,11 @@ interface Point {
   y: number;
   z: number;
   r?: number;
+  isZoneBoundary?: boolean; // 标记是否为防区边界点
+}
+
+interface TimestampedPoint extends Point {
+  timestamp: number;
 }
 
 /**
@@ -45,22 +50,163 @@ export const RadarDefenseZone: React.FC = () => {
     cameraChannel: 1
   });
   const [isSaving, setIsSaving] = useState(false);
-  const [backgroundPoints, setBackgroundPoints] = useState<Point[]>([]);
-  const [selectedBackgroundId, setSelectedBackgroundId] = useState<string | null>(null);
+
+  // WebSocket 实时点云
+  const wsRef = useRef<WebSocket | null>(null);
+  const pointCloudBufferRef = useRef<TimestampedPoint[]>([]);
+  const renderIntervalRef = useRef<number | null>(null);
+  const [realtimePoints, setRealtimePoints] = useState<TimestampedPoint[]>([]);
+  const [isWsConnected, setIsWsConnected] = useState(false);
+
+  // 滑动窗口配置
+  const ACCUMULATION_TIME = 3000; // 3秒窗口
+  const lastLogTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (deviceId) {
       loadZones();
       loadBackgrounds();
       loadDevices();
+      connectWebSocket();
     }
+
+    return () => {
+      cleanupWebSocket();
+    };
   }, [deviceId]);
 
-  useEffect(() => {
-    if (selectedBackgroundId) {
-      loadBackgroundPoints(selectedBackgroundId);
+  // WebSocket 连接 - 使用 radarService 统一方法
+  const connectWebSocket = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
     }
-  }, [selectedBackgroundId]);
+
+    console.log('[防区可视化] 正在连接WebSocket...');
+
+    const ws = radarService.connectWebSocket(deviceId!, (data) => {
+      if (data.type === 'pointcloud' && data.points) {
+        const now = Date.now();
+        const pointCount = data.points.length;
+        const timeSpread = 50;
+        const cutoffTime = now - ACCUMULATION_TIME;
+
+        const newPoints: TimestampedPoint[] = data.points.map((p: any, index: number) => ({
+          x: p.x || 0,
+          y: p.y || 0,
+          z: p.z || 0,
+          r: p.r,
+          timestamp: now - (timeSpread * index / pointCount)
+        }));
+
+        // 滑动窗口
+        pointCloudBufferRef.current = [
+          ...pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime),
+          ...newPoints
+        ];
+      }
+    });
+
+    ws.onopen = () => {
+      console.log('[防区可视化] WebSocket已连接');
+      setIsWsConnected(true);
+    };
+
+    ws.onclose = () => {
+      console.log('[防区可视化] WebSocket已关闭');
+      setIsWsConnected(false);
+    };
+
+    wsRef.current = ws;
+
+    // 渲染定时器
+    renderIntervalRef.current = window.setInterval(() => {
+      const now = Date.now();
+      const cutoffTime = now - ACCUMULATION_TIME;
+      const windowPoints = pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime);
+      pointCloudBufferRef.current = windowPoints;
+
+      if (windowPoints.length > 0) {
+        setRealtimePoints(windowPoints);
+      }
+
+      // 日志
+      if (now - lastLogTimeRef.current >= 3000) {
+        console.log(`[防区可视化] 点数: ${windowPoints.length.toLocaleString()}`);
+        lastLogTimeRef.current = now;
+      }
+    }, 100);
+  };
+
+  const cleanupWebSocket = () => {
+    if (renderIntervalRef.current) {
+      clearInterval(renderIntervalRef.current);
+      renderIntervalRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    pointCloudBufferRef.current = [];
+  };
+
+  // 生成防区边界点云（红色虚拟点）
+  const generateZoneBoundaryPoints = (): Point[] => {
+    const boundaryPoints: Point[] = [];
+    const enabledZones = zones.filter(z => z.enabled);
+
+    enabledZones.forEach(zone => {
+      if (zone.zoneType === 'bounding_box' &&
+        zone.minX != null && zone.maxX != null &&
+        zone.minY != null && zone.maxY != null) {
+        // 为边界框类型的防区生成边界点
+        const minX = zone.minX, maxX = zone.maxX;
+        const minY = zone.minY, maxY = zone.maxY;
+        const minZ = zone.minZ ?? -0.5, maxZ = zone.maxZ ?? 2;
+
+        // 在边界上生成点（网格密度）
+        const step = 0.2; // 每20cm一个点
+
+        // 底面边界
+        for (let x = minX; x <= maxX; x += step) {
+          boundaryPoints.push({ x, y: minY, z: minZ, isZoneBoundary: true });
+          boundaryPoints.push({ x, y: maxY, z: minZ, isZoneBoundary: true });
+        }
+        for (let y = minY; y <= maxY; y += step) {
+          boundaryPoints.push({ x: minX, y, z: minZ, isZoneBoundary: true });
+          boundaryPoints.push({ x: maxX, y, z: minZ, isZoneBoundary: true });
+        }
+
+        // 顶面边界
+        for (let x = minX; x <= maxX; x += step) {
+          boundaryPoints.push({ x, y: minY, z: maxZ, isZoneBoundary: true });
+          boundaryPoints.push({ x, y: maxY, z: maxZ, isZoneBoundary: true });
+        }
+        for (let y = minY; y <= maxY; y += step) {
+          boundaryPoints.push({ x: minX, y, z: maxZ, isZoneBoundary: true });
+          boundaryPoints.push({ x: maxX, y, z: maxZ, isZoneBoundary: true });
+        }
+
+        // 垂直边界
+        for (let z = minZ; z <= maxZ; z += step) {
+          boundaryPoints.push({ x: minX, y: minY, z, isZoneBoundary: true });
+          boundaryPoints.push({ x: maxX, y: minY, z, isZoneBoundary: true });
+          boundaryPoints.push({ x: minX, y: maxY, z, isZoneBoundary: true });
+          boundaryPoints.push({ x: maxX, y: maxY, z, isZoneBoundary: true });
+        }
+      }
+    });
+
+    return boundaryPoints;
+  };
+
+  // 合并实时点云和防区边界点云
+  const getAllDisplayPoints = (): Point[] => {
+    const zoneBoundaryPoints = generateZoneBoundaryPoints();
+    return [
+      ...realtimePoints,
+      ...zoneBoundaryPoints
+    ];
+  };
 
   const loadZones = async () => {
     setIsLoading(true);
@@ -78,12 +224,6 @@ export const RadarDefenseZone: React.FC = () => {
     try {
       const response = await radarService.getBackgrounds(deviceId!);
       setBackgrounds(response.data || []);
-      // 默认选择最新的背景
-      if (response.data && response.data.length > 0) {
-        const latest = response.data.find((bg: any) => bg.status === 'ready') || response.data[0];
-        setSelectedBackgroundId(latest.backgroundId);
-        setFormData({ ...formData, backgroundId: latest.backgroundId });
-      }
     } catch (err: any) {
       console.error('加载背景列表失败', err);
     }
@@ -95,15 +235,6 @@ export const RadarDefenseZone: React.FC = () => {
       setDevices(response.data || []);
     } catch (err: any) {
       console.error('加载设备列表失败', err);
-    }
-  };
-
-  const loadBackgroundPoints = async (backgroundId: string) => {
-    try {
-      const response = await radarService.getBackgroundPoints(deviceId!, backgroundId, 5000);
-      setBackgroundPoints(response.data?.points || []);
-    } catch (err: any) {
-      console.error('加载背景点云失败', err);
     }
   };
 
@@ -176,7 +307,7 @@ export const RadarDefenseZone: React.FC = () => {
         zoneType,
         deviceId
       };
-      
+
       if (activeModal === 'CREATE') {
         await radarService.createZone(deviceId!, zoneData);
         modal.showModal({ message: '创建成功', type: 'success' });
@@ -211,9 +342,9 @@ export const RadarDefenseZone: React.FC = () => {
     try {
       await radarService.toggleZone(deviceId!, zone.zoneId);
       await loadZones();
-      modal.showModal({ 
-        message: zone.enabled ? '防区已禁用' : '防区已启用', 
-        type: 'success' 
+      modal.showModal({
+        message: zone.enabled ? '防区已禁用' : '防区已启用',
+        type: 'success'
       });
     } catch (err: any) {
       modal.showModal({ message: err.message || '操作失败', type: 'error' });
@@ -321,11 +452,10 @@ export const RadarDefenseZone: React.FC = () => {
                     )}
                   </div>
                   <span
-                    className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      zone.enabled
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-700'
-                    }`}
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${zone.enabled
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-700'
+                      }`}
                   >
                     {zone.enabled ? '启用' : '禁用'}
                   </span>
@@ -362,11 +492,10 @@ export const RadarDefenseZone: React.FC = () => {
                 <div className="flex space-x-2 pt-4 border-t border-gray-100">
                   <button
                     onClick={() => handleToggle(zone)}
-                    className={`flex-1 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
-                      zone.enabled
-                        ? 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                        : 'bg-green-50 text-green-600 hover:bg-green-100'
-                    }`}
+                    className={`flex-1 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${zone.enabled
+                      ? 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                      : 'bg-green-50 text-green-600 hover:bg-green-100'
+                      }`}
                     title={zone.enabled ? '禁用' : '启用'}
                   >
                     {zone.enabled ? (
@@ -639,23 +768,62 @@ export const RadarDefenseZone: React.FC = () => {
 
         {/* 3D防区可视化 */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-semibold mb-4">3D防区可视化</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">3D防区可视化</h2>
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${isWsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-gray-600">{isWsConnected ? '实时连接' : '未连接'}</span>
+              </div>
+              {zones.filter(z => z.enabled).length > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  <span className="text-gray-600">防区边界</span>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="w-full h-96 rounded-lg overflow-hidden bg-gray-900">
-            {backgroundPoints.length > 0 ? (
+            {realtimePoints.length > 0 || zones.filter(z => z.enabled).length > 0 ? (
               <PointCloudRenderer
-                points={backgroundPoints}
-                color="#888888"
-                pointSize={0.02}
-                backgroundColor="#000000"
+                points={getAllDisplayPoints()}
+                color={(point: Point) => {
+                  // 防区边界点显示为红色
+                  if ((point as any).isZoneBoundary) {
+                    return '#ff0000';
+                  }
+                  return ''; // 其他点使用 colorMode 处理
+                }}
+                colorMode="reflectivity"
+                pointSize={0.015}
+                backgroundColor="#0a0a0a"
                 showGrid={true}
                 showAxes={true}
+                showRangeRings={true}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
-                <p>选择背景模型后，点云数据将在此显示</p>
+                {isWsConnected ? (
+                  <div className="text-center">
+                    <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+                    <p>等待点云数据...</p>
+                  </div>
+                ) : (
+                  <p>正在连接雷达...</p>
+                )}
               </div>
             )}
           </div>
+          {realtimePoints.length > 0 && (
+            <div className="mt-2 text-xs text-gray-500 text-center">
+              当前显示 {realtimePoints.length.toLocaleString()} 个点
+              {zones.filter(z => z.enabled).length > 0 && (
+                <span className="ml-2 text-red-500">
+                  + {generateZoneBoundaryPoints().length} 个防区边界点
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>

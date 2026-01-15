@@ -20,6 +20,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -33,14 +36,14 @@ public class BackgroundModelService {
     private final Database database;
     private final Connection connection;
     private final RadarBackgroundDAO backgroundDAO;
-    
+
     public RadarBackgroundDAO getBackgroundDAO() {
         return backgroundDAO;
     }
 
     // 采集状态管理
     private final Map<String, CollectionState> collectionStates = new ConcurrentHashMap<>();
-    
+
     // 已加载的背景模型缓存
     private final Map<String, BackgroundModel> loadedModels = new ConcurrentHashMap<>();
 
@@ -48,19 +51,55 @@ public class BackgroundModelService {
         this.database = database;
         this.connection = database.getConnection();
         this.backgroundDAO = new RadarBackgroundDAO(connection);
+
+        // 启动时清理卡住的采集任务
+        cleanupStuckCollections();
+    }
+
+    /**
+     * 清理卡住的采集任务（数据库中状态为collecting但内存中没有对应状态的）
+     */
+    public void cleanupStuckCollections() {
+        try {
+            List<RadarBackground> allBackgrounds = backgroundDAO.getAll();
+            int cleanedCount = 0;
+
+            for (RadarBackground bg : allBackgrounds) {
+                if ("collecting".equals(bg.getStatus())) {
+                    // 检查是否超时（超过设定时长+60秒缓冲）
+                    long elapsedMs = System.currentTimeMillis() - bg.getCreatedAt().getTime();
+                    long maxDurationMs = (bg.getDurationSeconds() + 60) * 1000L;
+
+                    if (elapsedMs > maxDurationMs || !collectionStates.containsKey(bg.getDeviceId())) {
+                        // 标记为过期
+                        bg.setStatus("expired");
+                        backgroundDAO.update(bg);
+                        cleanedCount++;
+                        logger.warn("清理卡住的采集任务: backgroundId={}, 已运行{}秒",
+                                bg.getBackgroundId(), elapsedMs / 1000);
+                    }
+                }
+            }
+
+            if (cleanedCount > 0) {
+                logger.info("共清理 {} 个卡住的采集任务", cleanedCount);
+            }
+        } catch (Exception e) {
+            logger.error("清理卡住的采集任务失败", e);
+        }
     }
 
     /**
      * 开始采集背景
      * 
-     * @param deviceId 设备ID
+     * @param deviceId        设备ID
      * @param durationSeconds 采集时长（秒）
-     * @param gridResolution 网格分辨率（米）
+     * @param gridResolution  网格分辨率（米）
      * @return 背景ID
      */
     public String startCollection(String deviceId, int durationSeconds, float gridResolution) {
         String backgroundId = "bg_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8);
-        
+
         CollectionState state = new CollectionState();
         state.backgroundId = backgroundId;
         state.deviceId = deviceId;
@@ -69,9 +108,12 @@ public class BackgroundModelService {
         state.startTime = System.currentTimeMillis();
         state.frames = Collections.synchronizedList(new ArrayList<>());
         state.gridStats = new ConcurrentHashMap<>();
-        
+
+        // 创建定时任务执行器，用于自动结束采集
+        state.scheduler = Executors.newSingleThreadScheduledExecutor();
+
         collectionStates.put(deviceId, state);
-        
+
         // 创建背景记录
         RadarBackground background = new RadarBackground();
         background.setBackgroundId(backgroundId);
@@ -81,12 +123,18 @@ public class BackgroundModelService {
         background.setStatus("collecting");
         background.setFrameCount(0);
         background.setPointCount(0);
-        
+
         backgroundDAO.save(background);
-        
-        logger.info("开始采集背景: deviceId={}, backgroundId={}, duration={}s, resolution={}m", 
+
+        logger.info("开始采集背景: deviceId={}, backgroundId={}, duration={}s, resolution={}m",
                 deviceId, backgroundId, durationSeconds, gridResolution);
-        
+
+        // 调度自动结束任务
+        state.scheduler.schedule(() -> {
+            logger.info("采集时间到达，自动停止采集: deviceId={}, backgroundId={}", deviceId, backgroundId);
+            stopCollection(deviceId);
+        }, durationSeconds, TimeUnit.SECONDS);
+
         return backgroundId;
     }
 
@@ -107,7 +155,7 @@ public class BackgroundModelService {
 
         state.frames.add(frame);
         state.frameCount.incrementAndGet();
-        
+
         // 累积点到网格统计
         for (Point point : frame.getPoints()) {
             String gridKey = SpatialIndex.getGridKey(point, state.gridResolution);
@@ -126,77 +174,59 @@ public class BackgroundModelService {
             return null;
         }
 
+        // 关闭定时器
+        if (state.scheduler != null) {
+            state.scheduler.shutdownNow();
+        }
+
         try {
-            // 1. 预处理：体素下采样和去噪
+            // 1. 汇总所有采集到的点
             List<Point> allPoints = new ArrayList<>();
             for (PointCloudFrame frame : state.frames) {
                 allPoints.addAll(frame.getPoints());
             }
+            logger.info("汇总原始点数: {}", allPoints.size());
 
-            logger.info("原始点数: {}", allPoints.size());
-
-            // 体素下采样
+            // 2. 预处理：体素下采样
             List<Point> downsampled = PointCloudProcessor.voxelDownsample(allPoints, state.gridResolution);
             logger.info("下采样后点数: {}", downsampled.size());
 
-            // 统计去噪
-            List<Point> denoised = PointCloudProcessor.statisticalOutlierRemoval(downsampled);
-            logger.info("去噪后点数: {}", denoised.size());
-
-            // 2. 生成背景点
-            List<BackgroundPoint> backgroundPoints = new ArrayList<>();
-            for (Point point : denoised) {
-                String gridKey = SpatialIndex.getGridKey(point, state.gridResolution);
-                GridStatistics stats = state.gridStats.get(gridKey);
-                
-                BackgroundPoint bgPoint = new BackgroundPoint();
-                bgPoint.setGridKey(gridKey);
-                bgPoint.setCenterX(point.x);
-                bgPoint.setCenterY(point.y);
-                bgPoint.setCenterZ(point.z);
-                bgPoint.setPointCount(stats != null ? stats.count : 1);
-                bgPoint.setMeanDistance(stats != null ? stats.getMeanDistance() : point.distance());
-                bgPoint.setStdDeviation(stats != null ? stats.getStdDeviation() : 0);
-                
-                backgroundPoints.add(bgPoint);
+            // 3. 统计去噪（点数保护：超过1万点跳过，防止O(N^2)算法卡死）
+            List<Point> denoisePoints = downsampled;
+            if (downsampled.size() < 10000) {
+                logger.info("执行统计去噪...");
+                denoisePoints = PointCloudProcessor.statisticalOutlierRemoval(downsampled);
+                logger.info("去噪后点数: {}", denoisePoints.size());
+            } else {
+                logger.warn("下采样点数过多 ({})，跳过统计去噪以防止阻塞", downsampled.size());
             }
 
-            // 3. 转换为Point列表（用于文件存储）
-            List<Point> pointsForFile = new ArrayList<>();
-            for (BackgroundPoint bgPoint : backgroundPoints) {
-                Point point = new Point(
-                    bgPoint.getCenterX(),
-                    bgPoint.getCenterY(),
-                    bgPoint.getCenterZ(),
-                    (byte)0 // reflectivity
-                );
-                pointsForFile.add(point);
-            }
-            
-            // 4. 保存到文件
-            String filePath = BackgroundPointFileStorage.savePoints(state.backgroundId, pointsForFile);
+            // 4. 保存点云到文件系统
+            String filePath = BackgroundPointFileStorage.savePoints(state.backgroundId, denoisePoints);
 
-            // 5. 更新背景记录（包含文件路径）
+            // 5. 更新数据库状态为 ready
             RadarBackground background = backgroundDAO.getByBackgroundId(state.backgroundId);
             if (background != null) {
                 background.setFrameCount(state.frameCount.get());
-                background.setPointCount(backgroundPoints.size());
+                background.setPointCount(denoisePoints.size());
                 background.setFilePath(filePath);
                 background.setStatus("ready");
-                backgroundDAO.update(background);
+                backgroundDAO.save(background); // 使用 save 确保覆盖所有字段
+                logger.info("背景模型保存成功: backgroundId={}, 状态=ready", state.backgroundId);
             }
-
-            logger.info("背景采集完成: backgroundId={}, frames={}, points={}", 
-                    state.backgroundId, state.frameCount.get(), backgroundPoints.size());
 
             return state.backgroundId;
         } catch (Exception e) {
-            logger.error("停止采集失败: deviceId={}", deviceId, e);
-            // 更新状态为失败
-            RadarBackground background = backgroundDAO.getByBackgroundId(state.backgroundId);
-            if (background != null) {
-                background.setStatus("expired");
-                backgroundDAO.update(background);
+            logger.error("停止采集时发生严重错误: deviceId={}", deviceId, e);
+            // 补偿逻辑：尝试将数据库状态设为失败
+            try {
+                RadarBackground background = backgroundDAO.getByBackgroundId(state.backgroundId);
+                if (background != null) {
+                    background.setStatus("error");
+                    backgroundDAO.save(background);
+                }
+            } catch (Exception dbEx) {
+                logger.error("补偿更新状态失败", dbEx);
             }
             return null;
         }
@@ -243,7 +273,7 @@ public class BackgroundModelService {
 
             // 从数据库加载背景点
             List<RadarBackgroundPoint> dbPoints = backgroundDAO.getPointsByBackgroundId(backgroundId);
-            
+
             BackgroundModel model = new BackgroundModel();
             model.setBackgroundId(backgroundId);
             model.setDeviceId(background.getDeviceId());
@@ -251,7 +281,7 @@ public class BackgroundModelService {
 
             // 转换为BackgroundPoint
             List<BackgroundPoint> points = new ArrayList<>();
-            
+
             for (RadarBackgroundPoint dbPoint : dbPoints) {
                 BackgroundPoint bgPoint = new BackgroundPoint();
                 bgPoint.setGridKey(dbPoint.getGridKey());
@@ -261,13 +291,13 @@ public class BackgroundModelService {
                 bgPoint.setPointCount(dbPoint.getPointCount());
                 bgPoint.setMeanDistance(dbPoint.getMeanDistance());
                 bgPoint.setStdDeviation(dbPoint.getStdDeviation());
-                
+
                 points.add(bgPoint);
             }
 
             model.setPoints(points);
             loadedModels.put(backgroundId, model);
-            
+
             logger.info("背景模型加载成功: backgroundId={}, points={}", backgroundId, points.size());
             return model;
         } catch (Exception e) {
@@ -296,6 +326,7 @@ public class BackgroundModelService {
         List<PointCloudFrame> frames;
         Map<String, GridStatistics> gridStats;
         AtomicInteger frameCount = new AtomicInteger(0);
+        ScheduledExecutorService scheduler; // 自动结束定时器
     }
 
     /**
@@ -318,7 +349,8 @@ public class BackgroundModelService {
         }
 
         float getStdDeviation() {
-            if (count <= 1) return 0;
+            if (count <= 1)
+                return 0;
             float mean = getMeanDistance();
             float variance = 0;
             for (float dist : distances) {
@@ -333,7 +365,8 @@ public class BackgroundModelService {
      * 获取采集中的点云数据（用于实时预览）
      * 注意：实时点云数据应该通过WebSocket推送，此方法仅用于采集过程中的预览
      */
-    public List<com.digital.video.gateway.driver.livox.model.Point> getCollectingPointCloud(String deviceId, int maxPoints) {
+    public List<com.digital.video.gateway.driver.livox.model.Point> getCollectingPointCloud(String deviceId,
+            int maxPoints) {
         CollectionState state = collectionStates.get(deviceId);
         if (state == null || state.frames.isEmpty()) {
             return new ArrayList<>();
@@ -358,11 +391,12 @@ public class BackgroundModelService {
 
         return allPoints;
     }
-    
+
     /**
      * 从文件加载背景点云数据
      */
-    public List<com.digital.video.gateway.driver.livox.model.Point> loadBackgroundPointsFromFile(String backgroundId, int maxPoints) {
+    public List<com.digital.video.gateway.driver.livox.model.Point> loadBackgroundPointsFromFile(String backgroundId,
+            int maxPoints) {
         try {
             return BackgroundPointFileStorage.loadPoints(backgroundId, maxPoints);
         } catch (IOException e) {

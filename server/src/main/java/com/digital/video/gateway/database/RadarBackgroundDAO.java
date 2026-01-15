@@ -24,9 +24,10 @@ public class RadarBackgroundDAO {
      */
     public boolean save(RadarBackground background) {
         if (background.getBackgroundId() == null) {
-            background.setBackgroundId("bg_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8));
+            background.setBackgroundId(
+                    "bg_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8));
         }
-        
+
         String sql = "INSERT OR REPLACE INTO radar_backgrounds " +
                 "(background_id, device_id, assembly_id, frame_count, point_count, grid_resolution, " +
                 "duration_seconds, file_path, status) " +
@@ -85,6 +86,23 @@ public class RadarBackgroundDAO {
     }
 
     /**
+     * 获取所有背景模型
+     */
+    public List<RadarBackground> getAll() {
+        List<RadarBackground> backgrounds = new ArrayList<>();
+        String sql = "SELECT * FROM radar_backgrounds ORDER BY created_at DESC";
+        try (Statement stmt = connection.createStatement()) {
+            ResultSet rs = stmt.executeQuery(sql);
+            while (rs.next()) {
+                backgrounds.add(RadarBackground.fromResultSet(rs));
+            }
+        } catch (SQLException e) {
+            logger.error("查询所有背景模型失败", e);
+        }
+        return backgrounds;
+    }
+
+    /**
      * 更新背景模型
      */
     public boolean update(RadarBackground background) {
@@ -131,7 +149,7 @@ public class RadarBackgroundDAO {
         } catch (SQLException e) {
             logger.error("删除背景点云失败: {}", backgroundId, e);
         }
-        
+
         // 再删除背景模型
         String sql = "DELETE FROM radar_backgrounds WHERE background_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
