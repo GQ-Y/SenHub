@@ -6,6 +6,7 @@ interface Point {
   y: number;
   z: number;
   r?: number;
+  isStaticBackground?: boolean; // 标记是否为静态背景点，用于防止检测时的自误报
 }
 
 interface PointCloudRendererProps {
@@ -336,29 +337,33 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       (backgroundPointsRef.current.material as THREE.Material).dispose();
     }
 
-    // --- 防区逻辑：背景参考 ---
+    // --- 防御模式逻辑：背景参考网格 ---
     const bgSearchGrid: Record<string, number> = {};
-    const bgCellSize = 0.5; // 背景检索步长
+    const bgCellSize = 0.2; // 显著减小步长以提高侵入判定的空间分辨率
     if (defenseBackgroundPoints.length > 0) {
       defenseBackgroundPoints.forEach(p => {
-        const gx = Math.floor(p.x / bgCellSize);
-        const gy = Math.floor(p.y / bgCellSize);
-        const gz = Math.floor(p.z / bgCellSize);
+        // 映射逻辑保持一致：Z 轴为高度
+        const tx = p.x;
+        const ty = p.z; // 三维空间高度
+        const tz = p.y;
+
+        const gx = Math.floor(tx / bgCellSize);
+        const gy = Math.floor(ty / bgCellSize);
+        const gz = Math.floor(tz / bgCellSize);
         const key = `${gx}_${gy}_${gz}`;
-        const distSq = p.x * p.x + p.y * p.y + p.z * p.z;
-        // 在每个格子保存该方向上最远的背景距离
+        const distSq = tx * tx + ty * ty + tz * tz;
         if (!bgSearchGrid[key] || distSq > bgSearchGrid[key]) {
           bgSearchGrid[key] = distSq;
         }
       });
 
-      // 同时渲染背景点（淡色显示作为底图）
+      // 渲染背景点（淡色）作为底图
       const bgGeom = new THREE.BufferGeometry();
       const bgPos = new Float32Array(defenseBackgroundPoints.length * 3);
       defenseBackgroundPoints.forEach((p, i) => {
-        bgPos[i * 3] = p.x;
-        bgPos[i * 3 + 1] = p.y;
-        bgPos[i * 3 + 2] = p.z;
+        bgPos[i * 3] = p.x;     // Three.js X
+        bgPos[i * 3 + 1] = p.z; // Three.js Y (Height, 3.5m)
+        bgPos[i * 3 + 2] = p.y; // Three.js Z
       });
       bgGeom.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
       const bgMat = new THREE.PointsMaterial({ size: 0.005, color: 0x333333, transparent: true, opacity: 0.3 });
@@ -368,23 +373,36 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     }
 
     // 2. 统计信息计算
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
     let minDist = Infinity, maxDist = -Infinity;
     let minR = Infinity, maxR = -Infinity;
+    // 预计算统计信息和坐标轴映射 (通过维度数值判定：3.5m 的 Z 轴应为实际物理高度)
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      // 映射逻辑：Radar.x -> T3.x, Radar.y -> T3.z, Radar.z -> T3.y (高度)
+      const lat = p.x;   // 水平 X
+      const dep = p.y;   // 水平 Y (映射到深度 Z)
+      const h = p.z;     // 垂直高度 (3.5m)
 
-    for (const point of points) {
-      const dist = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
-      minZ = Math.min(minZ, point.z);
-      maxZ = Math.max(maxZ, point.z);
+      minX = Math.min(minX, lat);
+      maxX = Math.max(maxX, lat);
+      minY = Math.min(minY, h);
+      maxY = Math.max(maxY, h);
+      minZ = Math.min(minZ, dep);
+      maxZ = Math.max(maxZ, dep);
+
+      const dist = Math.sqrt(h * h + lat * lat + dep * dep);
       minDist = Math.min(minDist, dist);
       maxDist = Math.max(maxDist, dist);
-      if (point.r !== undefined) {
-        minR = Math.min(minR, point.r);
-        maxR = Math.max(maxR, point.r);
+      if (p.r !== undefined) {
+        minR = Math.min(minR, p.r);
+        maxR = Math.max(maxR, p.r);
       }
     }
 
-    const zRange = maxZ - minZ || 1;
+    const hRange = maxY - minY || 1; // 实际高度范围 (Radar Z)
     const distRange = maxDist - minDist || 1;
     const rRange = maxR - minR || 1;
 
@@ -396,61 +414,61 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
 
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
-      positions[i * 3] = point.x;
-      positions[i * 3 + 1] = point.y;
-      positions[i * 3 + 2] = point.z;
+      // 恢复正常坐标系映射：以 Z 为高度 (3.5m)，X/Y 为平铺坐标
+      const tx = point.x;
+      const ty = point.z; // 三维空间的高度 (Up)
+      const tz = point.y;
 
-      // 侵入检测判定
+      positions[i * 3] = tx;
+      positions[i * 3 + 1] = ty;
+      positions[i * 3 + 2] = tz;
+
+      // 侵入检测判定 (径向距离计算)
       let isIntruder = false;
-      if (defenseBackgroundPoints.length > 0) {
-        const gx = Math.floor(point.x / bgCellSize);
-        const gy = Math.floor(point.y / bgCellSize);
-        const gz = Math.floor(point.z / bgCellSize);
+      // 只有非背景点才需要检测
+      if (defenseBackgroundPoints.length > 0 && !point.isStaticBackground) {
+        const gx = Math.floor(tx / bgCellSize);
+        const gy = Math.floor(ty / bgCellSize);
+        const gz = Math.floor(tz / bgCellSize);
         const key = `${gx}_${gy}_${gz}`;
-        const pDistSq = point.x * point.x + point.y * point.y + point.z * point.z;
+        const pDistSq = tx * tx + ty * ty + tz * tz;
 
-        // 获取该格子的背景距离
         const bgDistSq = bgSearchGrid[key];
         if (bgDistSq) {
           const bgDist = Math.sqrt(bgDistSq);
           const pDist = Math.sqrt(pDistSq);
-          // 如果点比背景点向内缩 shrinkDistance 以上，判定为侵入
           if (pDist < bgDist - shrinkDistance) {
             isIntruder = true;
-          }
-        } else {
-          // 如果在该格子没找到对应的背景，检查周围 1 格
-          outer: for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dz = -1; dz <= 1; dz++) {
-                const k = `${gx + dx}_${gy + dy}_${gz + dz}`;
-                if (bgSearchGrid[k]) {
-                  const bd = Math.sqrt(bgSearchGrid[k]);
-                  const pd = Math.sqrt(pDistSq);
-                  if (pd < bd - shrinkDistance) {
-                    isIntruder = true;
-                    break outer;
-                  }
-                }
-              }
-            }
           }
         }
       }
       isIntruderArr[i] = isIntruder ? 1 : 0;
 
       let r = 1, g = 1, b = 1;
-      if (colorMode === 'defense') {
+
+      // 优先级 1: 检查自定义颜色函数
+      let customColorStr = '';
+      if (typeof color === 'function') {
+        customColorStr = color(point);
+      }
+
+      if (customColorStr) {
+        const c = new THREE.Color(customColorStr);
+        r = c.r; g = c.g; b = c.b;
+      }
+      // 优先级 2: 模式着色
+      else if (colorMode === 'defense') {
         if (isIntruder) {
-          r = 1; g = 0; b = 0; // 侵入点显示为红色
+          r = 1; g = 0; b = 0;
         } else {
-          r = 0.8; g = 0.8; b = 0.8; // 背景内点显示为灰白色
+          r = 0.8; g = 0.8; b = 0.8;
         }
       } else if (colorMode === 'height') {
-        const normalizedZ = (point.z - minZ) / zRange;
-        [r, g, b] = getHeightColor(normalizedZ);
+        // 使用 Radar.z (当前 Three.js Y 轴) 进行高度着色
+        const normalizedH = (ty - minY) / hRange;
+        [r, g, b] = getHeightColor(normalizedH);
       } else if (colorMode === 'distance') {
-        const dist = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
+        const dist = Math.sqrt(tx * tx + ty * ty + tz * tz);
         const normalizedDist = (dist - minDist) / distRange;
         [r, g, b] = getHeightColor(normalizedDist);
       } else if (colorMode === 'reflectivity' && point.r !== undefined) {
@@ -491,9 +509,14 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         // 在防区模式下，只对侵入目标（红色点）进行建模
         if (colorMode === 'defense' && !isIntruderArr[idx]) return;
 
-        const gx = Math.floor(p.x / res);
-        const gy = Math.floor(p.y / res);
-        const gz = Math.floor(p.z / res);
+        // 统一映射逻辑：Radar.z -> Three.js Y (Height)
+        const tx = p.x;
+        const ty = p.z;
+        const tz = p.y;
+
+        const gx = Math.floor(tx / res);
+        const gy = Math.floor(ty / res);
+        const gz = Math.floor(tz / res);
         const key = `${gx}_${gy}_${gz}`;
         if (!grid[key]) grid[key] = [];
         grid[key].push(idx);
@@ -505,9 +528,13 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         // 只处理需要建模的点
         if (colorMode === 'defense' && !isIntruderArr[i]) return;
 
-        const gx = Math.floor(p.x / res);
-        const gy = Math.floor(p.y / res);
-        const gz = Math.floor(p.z / res);
+        const tx = p.x;
+        const ty = p.z;
+        const tz = p.y;
+
+        const gx = Math.floor(tx / res);
+        const gy = Math.floor(ty / res);
+        const gz = Math.floor(tz / res);
         const neighbors: { idx: number, distSq: number }[] = [];
 
         for (let dx = -1; dx <= 1; dx++) {
@@ -519,7 +546,12 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
                 cellPoints.forEach(j => {
                   if (i === j) return;
                   const dp = points[j];
-                  const distSq = (p.x - dp.x) ** 2 + (p.y - dp.y) ** 2 + (p.z - dp.z) ** 2;
+                  // 邻居也需要映射
+                  const dtx = dp.x;
+                  const dty = dp.z;
+                  const dtz = dp.y;
+
+                  const distSq = (tx - dtx) ** 2 + (ty - dty) ** 2 + (tz - dtz) ** 2;
                   if (distSq < maxDistSq) {
                     neighbors.push({ idx: j, distSq });
                   }
@@ -534,7 +566,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         neighbors.slice(0, modelingMaxConnections).forEach(n => {
           if (i < n.idx) { // 避免双向连线重复添加
             const p2 = points[n.idx];
-            linePositions.push(p.x, p.y, p.z, p2.x, p2.y, p2.z);
+            // 写入映射后的坐标到连线缓存
+            linePositions.push(tx, ty, tz, p2.x, p2.z, p2.y);
             const r1 = colors[i * 3], g1 = colors[i * 3 + 1], b1 = colors[i * 3 + 2];
             const r2 = colors[n.idx * 3], g2 = colors[n.idx * 3 + 1], b2 = colors[n.idx * 3 + 2];
             lineColors.push(r1, g1, b1, r2, g2, b2);
