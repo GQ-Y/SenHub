@@ -91,7 +91,7 @@ export const IntrusionHistoryPanel: React.FC<Props> = ({ deviceId, onPlay, class
                             <div className="flex justify-between items-center">
                                 <div className="text-xs text-gray-500">
                                     <div>点数: {rec.pointCount}</div>
-                                    <div>时长: ---</div>
+                                    <div>时长: {rec.duration ? `${(rec.duration / 1000).toFixed(1)}s` : '---'}</div>
                                 </div>
                                 <button
                                     onClick={() => onPlay(rec)}

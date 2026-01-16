@@ -158,6 +158,9 @@ public class RecordingManager {
             record.setZoneId(recorder.zoneId);
             record.setDetectedAt(new Timestamp(recorder.startTime));
             record.setPointCount(totalPoints);
+            long duration = recorder.lastUpdateTime - recorder.startTime;
+            record.setDuration(duration); // 设置侵入时长(毫秒)
+            logger.debug("保存侵入记录: recordId={}, duration={}ms", uuid, duration);
             // record.setFilePath(relativePath); // 假设我们在 Entity 中添加了这个字段，或者复用 clusterId
             // 存路径？
             // 暂时存入 clusterId 字段作为 filepath 的临时存放地，或者我们确实需要添加字段。
@@ -166,7 +169,12 @@ public class RecordingManager {
             // 为了规范，我还是不存 DB 扩展字段了，或者在 clusterId 存 "TRAJECTORY"
             record.setClusterId("TRAJECTORY:" + relativePath);
 
-            recordDAO.save(record);
+            boolean saved = recordDAO.save(record);
+            if (!saved) {
+                logger.error("数据库保存失败: recordId={}, duration={}ms", uuid, duration);
+            } else {
+                logger.debug("数据库保存成功: recordId={}, duration={}ms", uuid, duration);
+            }
 
             logger.info("侵入录制已保存: {}", relativePath);
 

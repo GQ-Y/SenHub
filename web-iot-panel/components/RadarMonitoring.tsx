@@ -67,9 +67,16 @@ export const RadarMonitoring: React.FC = () => {
 
     try {
       const res = await radarService.getIntrusionData(record.recordId);
-      const frames = res.data;
+      console.log('获取侵入数据响应:', res);
+      // API 返回完整的录制对象: { zoneId, deviceId, startTime, duration, frameCount, frames }
+      const recordData = res.data;
+      console.log('解析后的录制数据:', recordData);
+      const frames = recordData?.frames;
+      console.log('帧数据:', frames, '帧数:', frames?.length);
       if (!frames || !Array.isArray(frames)) {
+        console.error('无效的录制数据:', { recordData, frames });
         modal.showModal({ message: '无效的录制数据', type: 'error' });
+        setPlaybackMode(false);
         return;
       }
 
@@ -82,9 +89,15 @@ export const RadarMonitoring: React.FC = () => {
         const frame = frames[i];
         // 确保点云有 zoneId，如果没有则使用记录的 zoneId
         const pts = (frame.points || []).map((p: any) => ({
-          ...p,
+          x: p.x || 0,
+          y: p.y || 0,
+          z: p.z || 0,
+          r: p.r,
           zoneId: p.zoneId || record.zoneId
         }));
+        if (pts.length > 0) {
+          console.log(`回放帧 ${i}/${frames.length}: ${pts.length} 个点`);
+        }
         setPlaybackPoints(pts);
         i++;
       }, 100);

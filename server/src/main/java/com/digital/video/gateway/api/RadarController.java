@@ -672,8 +672,11 @@ public class RadarController {
                 return createErrorResponse(404, "数据文件未找到");
             }
 
-            response.header("Content-Type", "application/json");
-            return new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            // 读取JSON文件并解析为Map，然后包装在标准响应格式中
+            String jsonContent = new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> recordData = objectMapper.readValue(jsonContent, Map.class);
+            return createSuccessResponse(recordData);
         } catch (Exception e) {
             logger.error("读取侵入数据文件失败", e);
             response.status(500);

@@ -64,22 +64,34 @@ public class RadarDefenseZoneTable {
                 "bbox_max_y REAL, " +
                 "bbox_max_z REAL, " +
                 "point_count INTEGER, " +
+                "duration INTEGER, " + // 侵入时长（毫秒）
                 "detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
                 "FOREIGN KEY (device_id) REFERENCES devices(device_id), " +
                 "FOREIGN KEY (zone_id) REFERENCES radar_defense_zones(zone_id)" +
                 ")";
 
         // 创建索引
-        String createIndex = "CREATE INDEX IF NOT EXISTS idx_radar_defense_zones_device_id ON radar_defense_zones(device_id); " +
-                "CREATE INDEX IF NOT EXISTS idx_radar_defense_zones_background_id ON radar_defense_zones(background_id); " +
+        String createIndex = "CREATE INDEX IF NOT EXISTS idx_radar_defense_zones_device_id ON radar_defense_zones(device_id); "
+                +
+                "CREATE INDEX IF NOT EXISTS idx_radar_defense_zones_background_id ON radar_defense_zones(background_id); "
+                +
                 "CREATE INDEX IF NOT EXISTS idx_radar_defense_zones_enabled ON radar_defense_zones(enabled); " +
-                "CREATE INDEX IF NOT EXISTS idx_intrusion_device_time ON radar_intrusion_records(device_id, detected_at); " +
+                "CREATE INDEX IF NOT EXISTS idx_intrusion_device_time ON radar_intrusion_records(device_id, detected_at); "
+                +
                 "CREATE INDEX IF NOT EXISTS idx_intrusion_zone_id ON radar_intrusion_records(zone_id);";
+
+        // 迁移：为现有表添加 duration 字段（如果不存在）
+        String addDurationColumn = "ALTER TABLE radar_intrusion_records ADD COLUMN duration INTEGER;";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createRadarDefenseZonesTable);
             stmt.execute(createRadarIntrusionRecordsTable);
             stmt.execute(createIndex);
+            // 尝试添加新列，忽略已存在错误
+            try {
+                stmt.execute(addDurationColumn);
+            } catch (SQLException ignored) {
+            }
             logger.debug("雷达防区配置表创建成功");
         }
     }

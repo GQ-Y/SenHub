@@ -23,62 +23,161 @@ public class RadarIntrusionRecord {
     private Float bboxMinX, bboxMinY, bboxMinZ;
     private Float bboxMaxX, bboxMaxY, bboxMaxZ;
     private Integer pointCount;
+    private Long duration; // 侵入时长(毫秒)
     private Timestamp detectedAt;
 
     // Getters and Setters
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
+    public int getId() {
+        return id;
+    }
 
-    public String getRecordId() { return recordId; }
-    public void setRecordId(String recordId) { this.recordId = recordId; }
+    public void setId(int id) {
+        this.id = id;
+    }
 
-    public String getDeviceId() { return deviceId; }
-    public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
+    public String getRecordId() {
+        return recordId;
+    }
 
-    public String getAssemblyId() { return assemblyId; }
-    public void setAssemblyId(String assemblyId) { this.assemblyId = assemblyId; }
+    public void setRecordId(String recordId) {
+        this.recordId = recordId;
+    }
 
-    public String getZoneId() { return zoneId; }
-    public void setZoneId(String zoneId) { this.zoneId = zoneId; }
+    public String getDeviceId() {
+        return deviceId;
+    }
 
-    public String getClusterId() { return clusterId; }
-    public void setClusterId(String clusterId) { this.clusterId = clusterId; }
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
 
-    public float getCentroidX() { return centroidX; }
-    public void setCentroidX(float centroidX) { this.centroidX = centroidX; }
+    public String getAssemblyId() {
+        return assemblyId;
+    }
 
-    public float getCentroidY() { return centroidY; }
-    public void setCentroidY(float centroidY) { this.centroidY = centroidY; }
+    public void setAssemblyId(String assemblyId) {
+        this.assemblyId = assemblyId;
+    }
 
-    public float getCentroidZ() { return centroidZ; }
-    public void setCentroidZ(float centroidZ) { this.centroidZ = centroidZ; }
+    public String getZoneId() {
+        return zoneId;
+    }
 
-    public Float getVolume() { return volume; }
-    public void setVolume(Float volume) { this.volume = volume; }
+    public void setZoneId(String zoneId) {
+        this.zoneId = zoneId;
+    }
 
-    public Float getBboxMinX() { return bboxMinX; }
-    public void setBboxMinX(Float bboxMinX) { this.bboxMinX = bboxMinX; }
+    public String getClusterId() {
+        return clusterId;
+    }
 
-    public Float getBboxMinY() { return bboxMinY; }
-    public void setBboxMinY(Float bboxMinY) { this.bboxMinY = bboxMinY; }
+    public void setClusterId(String clusterId) {
+        this.clusterId = clusterId;
+    }
 
-    public Float getBboxMinZ() { return bboxMinZ; }
-    public void setBboxMinZ(Float bboxMinZ) { this.bboxMinZ = bboxMinZ; }
+    public float getCentroidX() {
+        return centroidX;
+    }
 
-    public Float getBboxMaxX() { return bboxMaxX; }
-    public void setBboxMaxX(Float bboxMaxX) { this.bboxMaxX = bboxMaxX; }
+    public void setCentroidX(float centroidX) {
+        this.centroidX = centroidX;
+    }
 
-    public Float getBboxMaxY() { return bboxMaxY; }
-    public void setBboxMaxY(Float bboxMaxY) { this.bboxMaxY = bboxMaxY; }
+    public float getCentroidY() {
+        return centroidY;
+    }
 
-    public Float getBboxMaxZ() { return bboxMaxZ; }
-    public void setBboxMaxZ(Float bboxMaxZ) { this.bboxMaxZ = bboxMaxZ; }
+    public void setCentroidY(float centroidY) {
+        this.centroidY = centroidY;
+    }
 
-    public Integer getPointCount() { return pointCount; }
-    public void setPointCount(Integer pointCount) { this.pointCount = pointCount; }
+    public float getCentroidZ() {
+        return centroidZ;
+    }
 
-    public Timestamp getDetectedAt() { return detectedAt; }
-    public void setDetectedAt(Timestamp detectedAt) { this.detectedAt = detectedAt; }
+    public void setCentroidZ(float centroidZ) {
+        this.centroidZ = centroidZ;
+    }
+
+    public Float getVolume() {
+        return volume;
+    }
+
+    public void setVolume(Float volume) {
+        this.volume = volume;
+    }
+
+    public Float getBboxMinX() {
+        return bboxMinX;
+    }
+
+    public void setBboxMinX(Float bboxMinX) {
+        this.bboxMinX = bboxMinX;
+    }
+
+    public Float getBboxMinY() {
+        return bboxMinY;
+    }
+
+    public void setBboxMinY(Float bboxMinY) {
+        this.bboxMinY = bboxMinY;
+    }
+
+    public Float getBboxMinZ() {
+        return bboxMinZ;
+    }
+
+    public void setBboxMinZ(Float bboxMinZ) {
+        this.bboxMinZ = bboxMinZ;
+    }
+
+    public Float getBboxMaxX() {
+        return bboxMaxX;
+    }
+
+    public void setBboxMaxX(Float bboxMaxX) {
+        this.bboxMaxX = bboxMaxX;
+    }
+
+    public Float getBboxMaxY() {
+        return bboxMaxY;
+    }
+
+    public void setBboxMaxY(Float bboxMaxY) {
+        this.bboxMaxY = bboxMaxY;
+    }
+
+    public Float getBboxMaxZ() {
+        return bboxMaxZ;
+    }
+
+    public void setBboxMaxZ(Float bboxMaxZ) {
+        this.bboxMaxZ = bboxMaxZ;
+    }
+
+    public Integer getPointCount() {
+        return pointCount;
+    }
+
+    public void setPointCount(Integer pointCount) {
+        this.pointCount = pointCount;
+    }
+
+    public Long getDuration() {
+        return duration;
+    }
+
+    public void setDuration(Long duration) {
+        this.duration = duration;
+    }
+
+    public Timestamp getDetectedAt() {
+        return detectedAt;
+    }
+
+    public void setDetectedAt(Timestamp detectedAt) {
+        this.detectedAt = detectedAt;
+    }
 
     public static RadarIntrusionRecord fromResultSet(ResultSet rs) throws SQLException {
         RadarIntrusionRecord record = new RadarIntrusionRecord();
@@ -99,6 +198,7 @@ public class RadarIntrusionRecord {
         record.setBboxMaxY(rs.getObject("bbox_max_y") != null ? rs.getFloat("bbox_max_y") : null);
         record.setBboxMaxZ(rs.getObject("bbox_max_z") != null ? rs.getFloat("bbox_max_z") : null);
         record.setPointCount(rs.getObject("point_count") != null ? rs.getInt("point_count") : null);
+        record.setDuration(rs.getObject("duration") != null ? rs.getLong("duration") : null);
         record.setDetectedAt(rs.getTimestamp("detected_at"));
         return record;
     }
@@ -114,13 +214,14 @@ public class RadarIntrusionRecord {
         map.put("centroid", Map.of("x", centroidX, "y", centroidY, "z", centroidZ));
         map.put("volume", volume);
         map.put("pointCount", pointCount);
+        map.put("duration", duration);
         if (bboxMinX != null) {
             map.put("bbox", Map.of(
-                "min", Map.of("x", bboxMinX, "y", bboxMinY, "z", bboxMinZ),
-                "max", Map.of("x", bboxMaxX, "y", bboxMaxY, "z", bboxMaxZ)
-            ));
+                    "min", Map.of("x", bboxMinX, "y", bboxMinY, "z", bboxMinZ),
+                    "max", Map.of("x", bboxMaxX, "y", bboxMaxY, "z", bboxMaxZ)));
         }
-        if (detectedAt != null) map.put("detectedAt", detectedAt.toString());
+        if (detectedAt != null)
+            map.put("detectedAt", detectedAt.toString());
         return map;
     }
 }

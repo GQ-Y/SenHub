@@ -27,8 +27,8 @@ public class RadarIntrusionRecordDAO {
                 "(record_id, device_id, assembly_id, zone_id, cluster_id, " +
                 "centroid_x, centroid_y, centroid_z, volume, " +
                 "bbox_min_x, bbox_min_y, bbox_min_z, bbox_max_x, bbox_max_y, bbox_max_z, " +
-                "point_count, detected_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "point_count, duration, detected_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, record.getRecordId());
             pstmt.setString(2, record.getDeviceId());
@@ -46,8 +46,15 @@ public class RadarIntrusionRecordDAO {
             pstmt.setObject(14, record.getBboxMaxY());
             pstmt.setObject(15, record.getBboxMaxZ());
             pstmt.setObject(16, record.getPointCount());
-            pstmt.setTimestamp(17, record.getDetectedAt());
+            Long duration = record.getDuration();
+            pstmt.setObject(17, duration);
+            pstmt.setTimestamp(18, record.getDetectedAt());
             pstmt.executeUpdate();
+            if (duration != null) {
+                logger.debug("保存侵入记录: recordId={}, duration={}ms", record.getRecordId(), duration);
+            } else {
+                logger.warn("保存侵入记录: recordId={}, duration为null", record.getRecordId());
+            }
             return true;
         } catch (SQLException e) {
             logger.error("保存侵入记录失败: {}", record.getRecordId(), e);
