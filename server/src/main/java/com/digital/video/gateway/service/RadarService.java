@@ -93,6 +93,9 @@ public class RadarService {
 
             // 启动统计信息打印任务（每秒打印一次）
             startStatsReporter();
+
+            // 服务启动时自动加载所有设备的检测上下文（恢复检测状态）
+            loadAllDeviceDetectionContexts();
         } catch (Exception e) {
             logger.error("启动雷达监听服务失败", e);
         }
@@ -531,6 +534,38 @@ public class RadarService {
             loadZonesForDevice(deviceId);
         }
         return backgroundId;
+    }
+
+    /**
+     * 加载所有设备的检测上下文（用于服务启动时恢复检测状态）
+     * 遍历数据库中所有雷达设备，自动加载防区配置和背景模型
+     */
+    private void loadAllDeviceDetectionContexts() {
+        try {
+            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+            List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
+
+            if (devices.isEmpty()) {
+                logger.info("服务启动: 没有配置雷达设备，跳过检测上下文加载");
+                return;
+            }
+
+            logger.info("服务启动: 开始加载 {} 个雷达设备的检测上下文", devices.size());
+
+            for (com.digital.video.gateway.database.RadarDevice device : devices) {
+                String deviceId = device.getDeviceId();
+                try {
+                    logger.info("服务启动: 加载设备检测上下文 deviceId={}", deviceId);
+                    reloadDeviceDetectionContext(deviceId);
+                } catch (Exception e) {
+                    logger.error("服务启动: 加载设备检测上下文失败 deviceId={}", deviceId, e);
+                }
+            }
+
+            logger.info("服务启动: 检测上下文加载完成，已加载 {} 个设备", devices.size());
+        } catch (Exception e) {
+            logger.error("服务启动: 加载检测上下文失败", e);
+        }
     }
 
     /**

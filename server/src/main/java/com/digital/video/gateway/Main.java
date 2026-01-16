@@ -145,17 +145,12 @@ public class Main {
             speakerService = new SpeakerService(database);
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
 
-            // 检查数据库是否有雷达设备，没有则不启动雷达服务
+            // 始终初始化雷达服务（即使数据库中暂时没有设备，后续可通过API添加）
+            radarService = new RadarService(ptzService, database);
+            radarService.start();
             RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
             List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
-            if (radarDevices.isEmpty()) {
-                logger.info("数据库中没有雷达设备，跳过雷达服务启动");
-                radarService = null; // 设置为null，避免后续使用
-            } else {
-                radarService = new RadarService(ptzService, database);
-                radarService.start();
-                logger.info("雷达服务已启动，配置了 {} 个雷达设备", radarDevices.size());
-            }
+            logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
 
             radarTestService = new RadarTestService();
             logger.info("新增服务初始化成功");
