@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { radarService } from '../src/api/services';
-import { PlayCircle, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
+import { PlayCircle, Clock, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
 export const IntrusionHistoryPanel: React.FC<Props> = ({ deviceId, onPlay, className }) => {
     const [records, setRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
+    const [clearing, setClearing] = useState(false);
     const { t } = useAppContext();
 
     const loadRecords = async () => {
@@ -26,6 +27,19 @@ export const IntrusionHistoryPanel: React.FC<Props> = ({ deviceId, onPlay, class
         }
     };
 
+    const handleClearAll = async () => {
+        if (!confirm('确定要清空所有侵入记录吗？此操作不可撤销。')) return;
+        setClearing(true);
+        try {
+            await radarService.clearIntrusions(deviceId);
+            setRecords([]);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setClearing(false);
+        }
+    };
+
     useEffect(() => {
         loadRecords();
     }, [deviceId]);
@@ -37,14 +51,24 @@ export const IntrusionHistoryPanel: React.FC<Props> = ({ deviceId, onPlay, class
                     <AlertTriangle className="mr-2 text-orange-500" size={18} />
                     侵入记录
                 </h3>
-                <button
-                    onClick={loadRecords}
-                    disabled={loading}
-                    className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="刷新"
-                >
-                    <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={handleClearAll}
+                        disabled={clearing || records.length === 0}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                        title="清空记录"
+                    >
+                        <Trash2 size={16} className={clearing ? 'animate-pulse' : ''} />
+                    </button>
+                    <button
+                        onClick={loadRecords}
+                        disabled={loading}
+                        className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="刷新"
+                    >
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">

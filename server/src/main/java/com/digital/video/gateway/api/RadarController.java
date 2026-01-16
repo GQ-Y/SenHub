@@ -628,6 +628,25 @@ public class RadarController {
     }
 
     /**
+     * 清空侵入记录
+     * DELETE /api/radar/:deviceId/intrusions
+     */
+    public Object clearIntrusions(Request request, Response response) {
+        try {
+            String deviceId = request.params("deviceId");
+            int count = intrusionDetectionService.clearIntrusionRecords(deviceId);
+            Map<String, Object> result = new HashMap<>();
+            result.put("deletedCount", count);
+            logger.info("清空侵入记录: deviceId={}, 删除数量={}", deviceId, count);
+            return createSuccessResponse(result);
+        } catch (Exception e) {
+            logger.error("清空侵入记录失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
      * 获取侵入数据文件
      * GET /api/radar/intrusions/:id/data
      */

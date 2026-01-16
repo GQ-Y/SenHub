@@ -116,4 +116,24 @@ public class RadarIntrusionRecordDAO {
         }
         return records;
     }
+
+    /**
+     * 删除设备的所有侵入记录
+     */
+    public int deleteAll(String deviceId) {
+        String sql = deviceId != null
+                ? "DELETE FROM radar_intrusion_records WHERE device_id = ?"
+                : "DELETE FROM radar_intrusion_records";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            if (deviceId != null) {
+                pstmt.setString(1, deviceId);
+            }
+            int count = pstmt.executeUpdate();
+            logger.info("删除侵入记录: deviceId={}, 删除数量={}", deviceId, count);
+            return count;
+        } catch (SQLException e) {
+            logger.error("删除侵入记录失败: deviceId={}", deviceId, e);
+            return 0;
+        }
+    }
 }

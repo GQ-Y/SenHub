@@ -1,5 +1,7 @@
 package com.digital.video.gateway.driver.livox.model;
 
+import com.digital.video.gateway.service.RadialBoundaryGrid;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,6 +17,7 @@ public class BackgroundModel {
     private float gridResolution; // 网格分辨率（米）
     private List<BackgroundPoint> points; // 背景点列表
     private Map<String, BackgroundPoint> gridIndex; // 空间哈希索引：gridKey -> BackgroundPoint
+    private RadialBoundaryGrid boundaryGrid; // 径向边界网格（用于O(1)侵入检测）
 
     public BackgroundModel() {
         this.points = new ArrayList<>();
@@ -51,6 +54,33 @@ public class BackgroundModel {
      */
     public boolean containsGridKey(String gridKey) {
         return gridIndex.containsKey(gridKey);
+    }
+
+    /**
+     * 构建径向边界网格（用于快速侵入检测）
+     * 
+     * @param shrinkDistanceCm 收缩距离（厘米）
+     */
+    public void buildBoundaryGrid(float shrinkDistanceCm) {
+        if (points == null || points.isEmpty()) {
+            return;
+        }
+        this.boundaryGrid = new RadialBoundaryGrid();
+        this.boundaryGrid.buildFromBackground(points, shrinkDistanceCm / 100.0f);
+    }
+
+    /**
+     * 获取边界网格
+     */
+    public RadialBoundaryGrid getBoundaryGrid() {
+        return boundaryGrid;
+    }
+
+    /**
+     * 设置边界网格
+     */
+    public void setBoundaryGrid(RadialBoundaryGrid boundaryGrid) {
+        this.boundaryGrid = boundaryGrid;
     }
 
     public String getBackgroundId() {

@@ -539,6 +539,7 @@ public class Main {
         Spark.get("/api/radar/:deviceId/backgrounds", radarController::getBackgrounds);
         Spark.delete("/api/radar/:deviceId/backgrounds/:backgroundId", radarController::deleteBackground);
         Spark.get("/api/radar/:deviceId/intrusions", radarController::getIntrusions);
+        Spark.delete("/api/radar/:deviceId/intrusions", radarController::clearIntrusions);
         Spark.get("/api/radar/intrusions/:id/data", radarController::getIntrusionData);
 
         // 报警规则路由

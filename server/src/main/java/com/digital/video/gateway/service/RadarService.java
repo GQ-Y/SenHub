@@ -553,21 +553,29 @@ public class RadarService {
         // 2. 查找防区中使用的背景，并加载
         List<DefenseZone> zones = deviceZones.get(deviceId);
         if (zones != null && !zones.isEmpty()) {
-            // 取第一个启用的防区的背景ID（假设一个设备使用一个背景）
-            String backgroundId = zones.stream()
+            // 取第一个启用的防区的背景ID和shrinkDistance（假设一个设备使用一个背景）
+            DefenseZone shrinkZone = zones.stream()
                     .filter(DefenseZone::getEnabled)
-                    .map(DefenseZone::getBackgroundId)
-                    .filter(id -> id != null && !id.isEmpty())
+                    .filter(z -> z.getBackgroundId() != null && !z.getBackgroundId().isEmpty())
                     .findFirst()
                     .orElse(null);
 
-            if (backgroundId != null) {
+            if (shrinkZone != null) {
+                String backgroundId = shrinkZone.getBackgroundId();
                 BackgroundModel background = backgroundService.loadBackground(backgroundId);
                 if (background != null) {
+                    // 构建径向边界网格用于O(1)侵入检测
+                    float shrinkDistanceCm = shrinkZone.getShrinkDistanceCm() != null
+                            ? shrinkZone.getShrinkDistanceCm()
+                            : 20.0f;
+                    background.buildBoundaryGrid(shrinkDistanceCm);
+
                     loadedBackgrounds.put(deviceId, background);
                     deviceStates.put(deviceId, "detecting");
-                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}",
-                            deviceId, backgroundId, background.getPoints().size());
+                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}",
+                            deviceId, backgroundId, background.getPoints().size(),
+                            background.getBoundaryGrid() != null ? background.getBoundaryGrid().getValidDirections()
+                                    : 0);
                 } else {
                     logger.warn("背景模型加载失败: deviceId={}, backgroundId={}", deviceId, backgroundId);
                 }

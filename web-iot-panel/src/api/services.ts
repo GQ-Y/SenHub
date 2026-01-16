@@ -681,6 +681,14 @@ export const radarService = {
   },
 
   /**
+   * 清空侵入记录
+   */
+  async clearIntrusions(deviceId: string) {
+    const response = await del<{ deletedCount: number }>(`/radar/${encodeURIComponent(deviceId)}/intrusions`);
+    return response;
+  },
+
+  /**
    * 获取侵入记录的轨迹数据
    */
   async getIntrusionData(recordId: string) {

@@ -171,6 +171,13 @@ public class IntrusionDetectionService {
     }
 
     /**
+     * 清空侵入记录
+     */
+    public int clearIntrusionRecords(String deviceId) {
+        return recordDAO.deleteAll(deviceId);
+    }
+
+    /**
      * 标记侵入点（直接修改 Point 对象的 zoneId）
      * 
      * @param currentPoints 当前点云
@@ -188,17 +195,6 @@ public class IntrusionDetectionService {
             logger.debug("标记侵入点: 总点数={}, 启用防区数={}", currentPoints.size(), enabledZones);
         }
 
-        // 构建空间索引（如果需要Shrink防区）
-        SpatialIndex spatialIndex = null;
-        boolean hasShrinkZone = zones.stream().anyMatch(z -> DefenseZone.ZONE_TYPE_SHRINK.equals(z.getZoneType()));
-
-        if (hasShrinkZone && background != null) {
-            spatialIndex = new SpatialIndex(background.getGridResolution());
-            for (BackgroundPoint bgPoint : background.getPoints()) {
-                spatialIndex.addPoint(bgPoint);
-            }
-        }
-
         // 遍历所有点
         for (Point point : currentPoints) {
             // 对每个点，检查是否在任意已启用的防区内
@@ -211,22 +207,10 @@ public class IntrusionDetectionService {
                 if (DefenseZone.ZONE_TYPE_BOUNDING_BOX.equals(zone.getZoneType())) {
                     // 边界框检测
                     isIntruder = zone.isPointInZone(point);
-                } else if (DefenseZone.ZONE_TYPE_SHRINK.equals(zone.getZoneType()) && spatialIndex != null) {
-                    // 缩小距离检测 (Radial Shrink)
-                    // 逻辑：找到最近的背景点，如果当前点比背景点显著更靠近雷达（大于 shrinkDistance），则是侵入
-
-                    // 搜索半径设为 0.5米，确保能找到对应的墙体点
-                    BackgroundPoint bgPoint = spatialIndex.findNearest(point, 0.5f);
-                    if (bgPoint != null) {
-                        float pDist = point.distance(); // 点到雷达距离
-                        float bgDist = bgPoint.toPoint().distance(); // 背景到雷达距离
-                        float shrinkM = zone.getShrinkDistanceCm() != null ? zone.getShrinkDistanceCm() / 100.0f : 0.0f;
-
-                        // 判定：点必须比背景更近，且差距大于 shrinkDistance
-                        // 并且，点要在背景点附近（角度接近），通过 findNearest 已经保证了空间位置接近
-                        if (pDist < bgDist - shrinkM) {
-                            isIntruder = true;
-                        }
+                } else if (DefenseZone.ZONE_TYPE_SHRINK.equals(zone.getZoneType())) {
+                    // 缩小距离检测 - 使用预计算的径向边界网格 O(1) 查找
+                    if (background != null && background.getBoundaryGrid() != null) {
+                        isIntruder = background.getBoundaryGrid().isIntrusion(point);
                     }
                 }
 
