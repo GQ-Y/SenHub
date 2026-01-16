@@ -45,6 +45,9 @@ export const DeviceDetail: React.FC = () => {
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'config'>('preview');
 
+  // 云台控制速率 (1-100)
+  const [ptzRate, setPtzRate] = useState<number>(50);
+
   // 弹窗管理
   const modal = useModal();
 
@@ -116,15 +119,17 @@ export const DeviceDetail: React.FC = () => {
 
   // 初始化时间范围 - 必须在所有条件返回之前调用
   useEffect(() => {
-    // 设置默认时间为当前时间往前推1小时
+    // 设置默认起始时间为当前时间往前推1小时，结束时间为当前时间
     const now = new Date();
-    const end = new Date(now);
-    const start = new Date(now.getTime() - 60 * 60 * 1000); // 当前时间 - 1小时
+    const start = new Date(now.getTime() - 60 * 60 * 1000);
 
-    setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
-    setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
-    // 同步更新选中日期为当前日期
-    setSelectedDate(now.toISOString().split('T')[0]);
+    // 格式化为 HH:mm
+    const formatTime = (date: Date) => {
+      return date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    };
+
+    setPlaybackStartTime(formatTime(start));
+    setPlaybackEndTime(formatTime(now));
   }, []); // 只在组件挂载时执行一次
 
   // 条件返回必须在所有 Hooks 调用之后
@@ -196,7 +201,7 @@ export const DeviceDetail: React.FC = () => {
 
   const handlePtzControl = async (command: string, action: 'start' | 'stop' = 'start') => {
     try {
-      await deviceService.ptzControl(deviceId, command, action, 1);
+      await deviceService.ptzControl(deviceId, command, action, ptzRate);
 
       // PTZ控制结束时（stop），自动抓图并更新显示
       if (action === 'stop') {
@@ -229,7 +234,6 @@ export const DeviceDetail: React.FC = () => {
       type: 'info',
     });
   };
-
   // 启动录像回放下载
   const handleStartPlayback = async () => {
     if (!playbackStartTime || !playbackEndTime) {
@@ -242,17 +246,26 @@ export const DeviceDetail: React.FC = () => {
 
     if (!deviceId) return;
 
-    // 验证时间范围：所有设备限制1小时
-    const startTime = new Date(playbackStartTime.replace(' ', 'T'));
-    const endTime = new Date(playbackEndTime.replace(' ', 'T'));
-    const timeDiff = endTime.getTime() - startTime.getTime();
-    const oneHourInMillis = 60 * 60 * 1000; // 1小时的毫秒数
+    setIsLoadingPlayback(true);
+    setDownloadProgress(0);
+    setPlaybackVideoUrl(null);
+
+    // 组合日期和时间
+    const fullStartTime = `${selectedDate} ${playbackStartTime}:00`;
+    const fullEndTime = `${selectedDate} ${playbackEndTime}:00`;
+
+    // 验证时间范围：限制1小时
+    const startTimeDate = new Date(`${selectedDate}T${playbackStartTime}`);
+    const endTimeDate = new Date(`${selectedDate}T${playbackEndTime}`);
+    const timeDiff = endTimeDate.getTime() - startTimeDate.getTime();
+    const oneHourInMillis = 60 * 60 * 1000;
 
     if (timeDiff > oneHourInMillis) {
       modal.showModal({
-        message: '设备录像回放时间范围不能超过1小时',
+        message: '录像回放时间范围不能超过1小时',
         type: 'error',
       });
+      setIsLoadingPlayback(false);
       return;
     }
 
@@ -261,16 +274,13 @@ export const DeviceDetail: React.FC = () => {
         message: '结束时间必须晚于开始时间',
         type: 'error',
       });
+      setIsLoadingPlayback(false);
       return;
     }
 
-    setIsLoadingPlayback(true);
-    setDownloadProgress(0);
-    setPlaybackVideoUrl(null);
-
     try {
       // 启动下载
-      const response = await deviceService.playback(deviceId, playbackStartTime, playbackEndTime, 1);
+      const response = await deviceService.playback(deviceId, fullStartTime, fullEndTime, 1);
 
       // 检查响应数据
       if (!response || !response.data) {
@@ -361,30 +371,7 @@ export const DeviceDetail: React.FC = () => {
   // 根据选择的日期设置默认时间范围（最新1小时）
   const handleDateChange = (date: string) => {
     setSelectedDate(date);
-
-    // 当日期改变时，设置为该日期的最新1小时（当前时间往前推1小时）
-    const now = new Date();
-    const end = new Date(now);
-    const start = new Date(now.getTime() - 60 * 60 * 1000); // 当前时间 - 1小时
-
-    // 如果选中的日期不是今天，则设置为该日期的最后1小时（23:00:00 - 23:59:59）
-    const selected = new Date(date);
-    const today = new Date();
-    const isToday = selected.toDateString() === today.toDateString();
-
-    if (!isToday) {
-      // 不是今天，设置为选中日期的最后1小时
-      const endDate = new Date(selected);
-      endDate.setHours(23, 59, 59, 999);
-      const startDate = new Date(selected);
-      startDate.setHours(22, 59, 59, 999);
-      setPlaybackStartTime(startDate.toISOString().slice(0, 19).replace('T', ' '));
-      setPlaybackEndTime(endDate.toISOString().slice(0, 19).replace('T', ' '));
-    } else {
-      // 是今天，设置为当前时间往前推1小时
-      setPlaybackStartTime(start.toISOString().slice(0, 19).replace('T', ' '));
-      setPlaybackEndTime(end.toISOString().slice(0, 19).replace('T', ' '));
-    }
+    // 日期改变时不强制改变时间，除非需要限制逻辑
   };
 
   const handleFullscreen = async () => {
@@ -630,65 +617,35 @@ export const DeviceDetail: React.FC = () => {
                       />
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">开始时间</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">开始时间</label>
                           <input
-                            type="datetime-local"
-                            value={playbackStartTime ? playbackStartTime.replace(' ', 'T') : ''}
-                            onChange={(e) => {
-                              const newStartTime = e.target.value.replace('T', ' ');
-                              setPlaybackStartTime(newStartTime);
-                              // 如果结束时间已设置，确保不超过1小时限制
-                              if (playbackEndTime) {
-                                const start = new Date(newStartTime.replace(' ', 'T'));
-                                const end = new Date(playbackEndTime.replace(' ', 'T'));
-                                const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
-                                if (end > maxEnd) {
-                                  setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
-                                }
-                              }
-                            }}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                            type="time"
+                            step="60"
+                            value={playbackStartTime}
+                            onChange={(e) => setPlaybackStartTime(e.target.value)}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">结束时间（最多1小时）</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">结束时间</label>
                           <input
-                            type="datetime-local"
-                            value={playbackEndTime ? playbackEndTime.replace(' ', 'T') : ''}
-                            onChange={(e) => {
-                              const newEndTime = e.target.value.replace('T', ' ');
-                              if (playbackStartTime) {
-                                const start = new Date(playbackStartTime.replace(' ', 'T'));
-                                const end = new Date(newEndTime.replace(' ', 'T'));
-                                const maxEnd = new Date(start.getTime() + 60 * 60 * 1000); // 开始时间+1小时
-                                if (end > maxEnd) {
-                                  modal.showModal({
-                                    message: '结束时间不能超过开始时间1小时',
-                                    type: 'warning',
-                                  });
-                                  setPlaybackEndTime(maxEnd.toISOString().slice(0, 16).replace('T', ' '));
-                                  return;
-                                }
-                              }
-                              setPlaybackEndTime(newEndTime);
-                            }}
-                            min={playbackStartTime ? (() => {
-                              const start = new Date(playbackStartTime.replace(' ', 'T'));
-                              return start.toISOString().slice(0, 16);
-                            })() : undefined}
-                            max={playbackStartTime ? (() => {
-                              const start = new Date(playbackStartTime.replace(' ', 'T'));
-                              const maxEnd = new Date(start.getTime() + 60 * 60 * 1000);
-                              return maxEnd.toISOString().slice(0, 16);
-                            })() : undefined}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                            type="time"
+                            step="60"
+                            value={playbackEndTime}
+                            onChange={(e) => setPlaybackEndTime(e.target.value)}
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           />
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">提示：录像回放时间范围限制为1小时</p>
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                        <p className="text-xs text-blue-600 flex items-center">
+                          <Download size={12} className="mr-1" />
+                          提示：录像回放时间范围最大限时1小时（24小时制）
+                        </p>
+                      </div>
 
                       <div className="flex items-center space-x-2">
                         <button
@@ -772,6 +729,27 @@ export const DeviceDetail: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Speed/Rate Control */}
+                    <div className="mb-6 px-2">
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="text-xs font-medium text-gray-600">{language === 'zh' ? '云台速率' : 'PTZ Rate'}</label>
+                        <span className="text-xs font-bold text-blue-600">{ptzRate}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value={ptzRate}
+                        onChange={(e) => setPtzRate(parseInt(e.target.value))}
+                        className="w-full h-2 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                        <span>1</span>
+                        <span>50</span>
+                        <span>100</span>
+                      </div>
+                    </div>
+
                     <div className="flex justify-between items-center px-4">
                       <div className="flex flex-col items-center space-y-2">
                         <button
@@ -823,7 +801,7 @@ export const DeviceDetail: React.FC = () => {
             {activeTab === 'config' && deviceId && <DeviceConfig deviceId={deviceId} />}
           </div>
         </div>
-      </div>
+      </div >
     </>
   );
 };

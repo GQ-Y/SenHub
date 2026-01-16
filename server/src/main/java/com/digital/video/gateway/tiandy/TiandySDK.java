@@ -179,7 +179,6 @@ public class TiandySDK implements DeviceSDK {
                 logger.warn("设置本地库路径异常: {}（继续初始化）", e.getMessage());
             }
 
-            // ⚠️ 关键修复：必须先设置回调函数，再启动SDK
             // 参考官方示例JavaClientDemo.java:188-200的初始化顺序
             logger.debug("步骤1: 设置回调函数");
             int setNotifyRet = nvssdkLibrary.NetClient_SetNotifyFunction_V4(
@@ -274,7 +273,6 @@ public class TiandySDK implements DeviceSDK {
             System.setProperty("java.library.path", newLibPath);
             logger.debug("设置java.library.path: {}", newLibPath);
 
-            // 根据官方示例，使用库名加载（而不是绝对路径）
             // 官方示例使用：Native.loadLibrary("nvssdk", NvssdkLibrary.class)
             // 这样JNA会从java.library.path中查找libnvssdk.so
             try {
@@ -965,7 +963,7 @@ public class TiandySDK implements DeviceSDK {
 
             TiandySDKStructure.DOWNLOAD_TIMESPAN tDownloadTimeSpan = new TiandySDKStructure.DOWNLOAD_TIMESPAN();
             tDownloadTimeSpan.m_iSize = tDownloadTimeSpan.size();
-            tDownloadTimeSpan.m_iSaveFileType = NvssdkLibrary.DOWNLOAD_FILE_TYPE_SDV; // SDV格式
+            tDownloadTimeSpan.m_iSaveFileType = NvssdkLibrary.DOWNLOAD_FILE_TYPE_ZFMP4; // MP4格式（默认）
             tDownloadTimeSpan.m_iFileFlag = 0; // 0-下载多个文件，1-下载为单个文件
             tDownloadTimeSpan.m_iChannelNO = channelNo; // 通道号（0-based）
             tDownloadTimeSpan.m_iStreamNo = streamType; // 码流号：0-主码流，1-子码流
@@ -1020,6 +1018,182 @@ public class TiandySDK implements DeviceSDK {
             }
         } catch (Exception e) {
             logger.error("天地伟业按时间范围下载异常: userId={}, channel={}", userId, channel, e);
+            return -1;
+        }
+    }
+
+    /**
+     * 调整下载速度
+     * 参考官方示例Playback.java:495-502的DOWNLOAD_CMD_CONTROL调速
+     * 
+     * @param downloadId 下载连接ID
+     * @param speed      下载速度：1,2,4,8,16,32，0表示暂停
+     * @return 成功返回true
+     */
+    public boolean adjustDownloadSpeed(int downloadId, int speed) {
+        if (!initialized || nvssdkLibrary == null) {
+            logger.error("天地伟业SDK未初始化");
+            return false;
+        }
+
+        if (downloadId < 0) {
+            logger.error("无效的下载ID: {}", downloadId);
+            return false;
+        }
+
+        try {
+            TiandySDKStructure.DOWNLOAD_CONTROL tControl = new TiandySDKStructure.DOWNLOAD_CONTROL();
+            tControl.m_iSize = tControl.size();
+            tControl.m_iPosition = -1; // 不使用定位
+            tControl.m_iSpeed = speed; // 下载速度
+            tControl.m_iIFrame = 0; // 全帧
+            tControl.m_iReqMode = 1; // 帧模式
+            tControl.write();
+
+            IntByReference iConnID = new IntByReference(downloadId);
+            // 注意：DOWNLOAD_CMD_CONTROL 使用现有的 downloadId，不需要 userId 参数
+            // 但官方API需要传入userId，这里传入0（SDK内部会使用已有连接）
+            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, 0,
+                    NvssdkLibrary.DOWNLOAD_CMD_CONTROL, tControl.getPointer(), tControl.size());
+
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                logger.info("天地伟业下载调速成功: downloadId={}, speed={}x", downloadId, speed);
+                return true;
+            } else {
+                logger.error("天地伟业下载调速失败: downloadId={}, speed={}, 错误码={}", downloadId, speed, iRet);
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error("天地伟业下载调速异常: downloadId={}", downloadId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 下载报警事件录像（便捷方法）
+     * 用于报警事件触发时下载事件前后指定秒数的录像
+     * 
+     * @param userId        登录句柄
+     * @param channel       通道号（1-based）
+     * @param eventTime     事件发生时间
+     * @param beforeSeconds 事件前的秒数（如15秒）
+     * @param afterSeconds  事件后的秒数（如15秒）
+     * @param localFilePath 本地保存路径
+     * @param fileType      文件类型：0-SDV, 3-PS, 4-MP4
+     * @return 下载ID，失败返回-1
+     */
+    public int downloadAlarmClip(int userId, int channel, Date eventTime,
+            int beforeSeconds, int afterSeconds, String localFilePath, int fileType) {
+        if (eventTime == null) {
+            logger.error("事件时间不能为空");
+            return -1;
+        }
+
+        // 计算开始时间和结束时间
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(eventTime);
+
+        // 开始时间 = 事件时间 - beforeSeconds
+        cal.add(Calendar.SECOND, -beforeSeconds);
+        Date startTime = cal.getTime();
+
+        // 结束时间 = 事件时间 + afterSeconds
+        cal.setTime(eventTime);
+        cal.add(Calendar.SECOND, afterSeconds);
+        Date endTime = cal.getTime();
+
+        logger.info("下载报警录像: eventTime={}, 范围=[{} ~ {}], channel={}, filePath={}",
+                eventTime, startTime, endTime, channel, localFilePath);
+
+        // 调用按时间范围下载（使用指定的文件类型）
+        return downloadPlaybackByTimeRangeWithType(userId, channel, startTime, endTime, localFilePath, 0, fileType);
+    }
+
+    /**
+     * 按时间范围下载录像（支持指定文件类型）
+     * 
+     * @param userId        登录句柄
+     * @param channel       通道号（1-based）
+     * @param startTime     开始时间
+     * @param endTime       结束时间
+     * @param localFilePath 本地保存路径
+     * @param streamType    码流类型：0-主码流，1-子码流
+     * @param fileType      文件类型：0-SDV, 3-PS, 4-MP4
+     * @return 下载ID，失败返回-1
+     */
+    public int downloadPlaybackByTimeRangeWithType(int userId, int channel, Date startTime, Date endTime,
+            String localFilePath, int streamType, int fileType) {
+        if (!initialized || nvssdkLibrary == null) {
+            logger.error("天地伟业SDK未初始化");
+            return -1;
+        }
+
+        if (userId < 0) {
+            logger.error("无效的登录句柄: {}", userId);
+            return -1;
+        }
+
+        try {
+            int channelNo = channel > 0 ? channel - 1 : 0;
+
+            TiandySDKStructure.DOWNLOAD_TIMESPAN tDownloadTimeSpan = new TiandySDKStructure.DOWNLOAD_TIMESPAN();
+            tDownloadTimeSpan.m_iSize = tDownloadTimeSpan.size();
+            tDownloadTimeSpan.m_iSaveFileType = fileType; // 使用指定的文件类型
+            tDownloadTimeSpan.m_iFileFlag = 1; // 1-下载为单个文件（便于报警录像）
+            tDownloadTimeSpan.m_iChannelNO = channelNo;
+            tDownloadTimeSpan.m_iStreamNo = streamType;
+            tDownloadTimeSpan.m_iPosition = -1;
+            tDownloadTimeSpan.m_iSpeed = 32; // 先用32倍速启动
+            tDownloadTimeSpan.m_iIFrame = 0;
+            tDownloadTimeSpan.m_iReqMode = 1;
+            tDownloadTimeSpan.m_iVodTransEnable = 0;
+            tDownloadTimeSpan.m_iFileAttr = 0;
+
+            // 设置本地保存文件名
+            byte[] filenameBytes = localFilePath.getBytes();
+            int copyLen = Math.min(filenameBytes.length, tDownloadTimeSpan.m_cLocalFilename.length - 1);
+            System.arraycopy(filenameBytes, 0, tDownloadTimeSpan.m_cLocalFilename, 0, copyLen);
+            tDownloadTimeSpan.m_cLocalFilename[copyLen] = 0;
+
+            // 设置时间范围
+            Calendar cal = Calendar.getInstance();
+            cal.setTime(startTime);
+            tDownloadTimeSpan.m_tTimeBegin.iYear = (short) cal.get(Calendar.YEAR);
+            tDownloadTimeSpan.m_tTimeBegin.iMonth = (short) (cal.get(Calendar.MONTH) + 1);
+            tDownloadTimeSpan.m_tTimeBegin.iDay = (short) cal.get(Calendar.DAY_OF_MONTH);
+            tDownloadTimeSpan.m_tTimeBegin.iHour = (short) cal.get(Calendar.HOUR_OF_DAY);
+            tDownloadTimeSpan.m_tTimeBegin.iMinute = (short) cal.get(Calendar.MINUTE);
+            tDownloadTimeSpan.m_tTimeBegin.iSecond = (short) cal.get(Calendar.SECOND);
+
+            cal.setTime(endTime);
+            tDownloadTimeSpan.m_tTimeEnd.iYear = (short) cal.get(Calendar.YEAR);
+            tDownloadTimeSpan.m_tTimeEnd.iMonth = (short) (cal.get(Calendar.MONTH) + 1);
+            tDownloadTimeSpan.m_tTimeEnd.iDay = (short) cal.get(Calendar.DAY_OF_MONTH);
+            tDownloadTimeSpan.m_tTimeEnd.iHour = (short) cal.get(Calendar.HOUR_OF_DAY);
+            tDownloadTimeSpan.m_tTimeEnd.iMinute = (short) cal.get(Calendar.MINUTE);
+            tDownloadTimeSpan.m_tTimeEnd.iSecond = (short) cal.get(Calendar.SECOND);
+
+            tDownloadTimeSpan.write();
+
+            IntByReference iConnID = new IntByReference();
+            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId,
+                    NvssdkLibrary.DOWNLOAD_CMD_TIMESPAN, tDownloadTimeSpan.getPointer(), tDownloadTimeSpan.size());
+
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                int downloadId = iConnID.getValue();
+
+                // 参考官方示例：下载启动成功后调整为16倍速
+                adjustDownloadSpeed(downloadId, 16);
+
+                logger.info("天地伟业录像下载启动成功: userId={}, channel={}, startTime={}, endTime={}, " +
+                        "fileType={}, downloadId={}", userId, channel, startTime, endTime, fileType, downloadId);
+                return downloadId;
+            } else {
+                logger.error("天地伟业录像下载启动失败: userId={}, channel={}, 错误码={}", userId, channel, iRet);
+                return -1;
+            }
+        } catch (Exception e) {
+            logger.error("天地伟业录像下载异常: userId={}, channel={}", userId, channel, e);
             return -1;
         }
     }

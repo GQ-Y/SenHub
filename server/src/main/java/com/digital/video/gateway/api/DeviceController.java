@@ -1086,6 +1086,7 @@ public class DeviceController {
             }
 
             int userId = deviceManager.getDeviceUserId(deviceId);
+            // 注意：天地伟业SDK登录成功后返回的logonID可以是0，只有-1才表示未登录
             if (userId < 0) {
                 response.status(500);
                 return createErrorResponse(500, "设备未登录");
@@ -1099,8 +1100,8 @@ public class DeviceController {
             }
 
             // 生成本地保存文件路径
-            // 根据设备品牌选择文件扩展名：天地伟业使用.sdv，其他使用.mp4
-            String fileExtension = "tiandy".equalsIgnoreCase(device.getBrand()) ? ".sdv" : ".mp4";
+            // 天地伟业使用MP4格式下载（DOWNLOAD_FILE_TYPE_ZFMP4）
+            String fileExtension = ".mp4";
             String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
             String localFilePath = downloadDir + "/playback_" + deviceId.replaceAll("[^a-zA-Z0-9]", "_") + "_"
                     + timestamp + fileExtension;

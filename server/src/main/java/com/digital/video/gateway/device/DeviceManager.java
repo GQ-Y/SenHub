@@ -50,9 +50,10 @@ public class DeviceManager {
         // 同步块，确保同一设备不会并发登录
         synchronized (lock) {
             // 再次检查是否已登录（双重检查锁定模式）
+            // 注意：天地伟业SDK登录成功后返回的logonID可以是0，所以这里检查 >= 0
             if (deviceLoginMap.containsKey(deviceId)) {
                 int userId = deviceLoginMap.get(deviceId);
-                if (userId > 0) {
+                if (userId >= 0) {
                     logger.debug("设备已登录: {} (userId: {})", deviceId, userId);
                     return true;
                 }
@@ -221,8 +222,9 @@ public class DeviceManager {
      * 获取设备登录状态
      */
     public boolean isDeviceLoggedIn(String deviceId) {
+        // 注意：天地伟业SDK登录成功后返回的logonID可以是0
         Integer userId = deviceLoginMap.get(deviceId);
-        return userId != null && userId > 0;
+        return userId != null && userId >= 0;
     }
 
     /**

@@ -37,6 +37,6 @@ docker run --rm -it \
     --platform linux/arm64 \
     -v "$(pwd):/app" \
     -v "$(pwd)/../sdk:/app/../sdk:ro" \
-    -e LD_LIBRARY_PATH="/app/lib:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/tiandy:/app/lib/dahua" \
+    -e LD_LIBRARY_PATH="/app/lib:/app/lib/x86/tiandy:/app/lib/linux:/app/lib/hikvision:/app/lib/hikvision/HCNetSDKCom:/app/lib/dahua" \
     video-gateway-service:latest \
     "$@"
