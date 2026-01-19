@@ -300,7 +300,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
 
       {/* 执行动作 */}
       <div className="space-y-4">
-        <h3 className="font-bold text-gray-800">{t('actions')}</h3>
+        <h3 className="font-bold text-gray-800">{t('alarm_actions')}</h3>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
           <p className="text-sm text-blue-800">
             {formData.alarmType === AlarmType.INPUT_PORT

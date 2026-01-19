@@ -142,7 +142,7 @@ export const translations = {
     min_confidence: "Min Confidence",
     area_limit: "Area Limit",
     distance_range: "Distance Range",
-    actions: "Actions",
+    alarm_actions: "Actions",
     auto_capture: "Auto Capture",
     record_duration: "Record Duration (seconds)",
     upload_oss: "Upload to OSS",
@@ -155,7 +155,6 @@ export const translations = {
     input_port: "Input Port",
     radar_pointcloud: "Radar Point Cloud",
     // Common
-    configure: "Configure",
     quick_config: "Quick Config",
     device_config: "Device Config",
     alarm_history: "Alarm History",
@@ -313,7 +312,7 @@ export const translations = {
     min_confidence: "最小置信度",
     area_limit: "区域限制",
     distance_range: "距离范围",
-    actions: "执行动作",
+    alarm_actions: "执行动作",
     auto_capture: "自动抓拍",
     record_duration: "录像时长（秒）",
     upload_oss: "上传到OSS",
@@ -326,7 +325,6 @@ export const translations = {
     input_port: "输入端口",
     radar_pointcloud: "雷达点云",
     // Common
-    configure: "配置",
     quick_config: "快速配置",
     device_config: "设备配置",
     alarm_history: "报警历史",
