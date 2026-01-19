@@ -98,7 +98,7 @@ public class AlarmRuleService {
         if (rule.getRuleId() == null || rule.getRuleId().isEmpty()) {
             rule.setRuleId(UUID.randomUUID().toString());
         }
-        String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, flow_id, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getRuleId());
@@ -109,8 +109,9 @@ public class AlarmRuleService {
             pstmt.setString(6, rule.getAssemblyId());
             pstmt.setInt(7, rule.isEnabled() ? 1 : 0);
             pstmt.setInt(8, rule.getPriority());
-            pstmt.setString(9, rule.getActions());
-            pstmt.setString(10, rule.getConditions());
+            pstmt.setString(9, rule.getFlowId());
+            pstmt.setString(10, rule.getActions());
+            pstmt.setString(11, rule.getConditions());
             pstmt.executeUpdate();
             return getAlarmRule(rule.getRuleId());
         } catch (SQLException e) {
@@ -123,7 +124,7 @@ public class AlarmRuleService {
      * 更新规则
      */
     public AlarmRule updateAlarmRule(String ruleId, AlarmRule rule) {
-        String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
+        String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, flow_id = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
         Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getName());
@@ -133,9 +134,10 @@ public class AlarmRuleService {
             pstmt.setString(5, rule.getAssemblyId());
             pstmt.setInt(6, rule.isEnabled() ? 1 : 0);
             pstmt.setInt(7, rule.getPriority());
-            pstmt.setString(8, rule.getActions());
-            pstmt.setString(9, rule.getConditions());
-            pstmt.setString(10, ruleId);
+            pstmt.setString(8, rule.getFlowId());
+            pstmt.setString(9, rule.getActions());
+            pstmt.setString(10, rule.getConditions());
+            pstmt.setString(11, ruleId);
             pstmt.executeUpdate();
             return getAlarmRule(ruleId);
         } catch (SQLException e) {

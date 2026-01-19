@@ -7,6 +7,11 @@ import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.database.RecordingTask;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.digital.video.gateway.database.AlarmFlow;
+import com.digital.video.gateway.workflow.FlowContext;
+import com.digital.video.gateway.workflow.FlowDefinition;
+import com.digital.video.gateway.workflow.FlowExecutor;
+import com.digital.video.gateway.workflow.FlowService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +36,8 @@ public class AlarmService {
     private SpeakerService speakerService;
     private PTZService ptzService;
     private com.digital.video.gateway.mqtt.MqttClient mqttClient;
+    private FlowService flowService;
+    private FlowExecutor flowExecutor;
     private boolean enabled = true;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -87,6 +94,20 @@ public class AlarmService {
      */
     public void setMqttClient(com.digital.video.gateway.mqtt.MqttClient mqttClient) {
         this.mqttClient = mqttClient;
+    }
+
+    /**
+    * 设置流程服务
+    */
+    public void setFlowService(FlowService flowService) {
+        this.flowService = flowService;
+    }
+
+    /**
+     * 设置流程执行器
+     */
+    public void setFlowExecutor(FlowExecutor flowExecutor) {
+        this.flowExecutor = flowExecutor;
     }
     
     /**
@@ -176,143 +197,29 @@ public class AlarmService {
             
             String captureUrl = null;
             String videoUrl = null;
+            FlowContext baseContext = buildFlowContext(deviceId, assemblyId, alarmType, alarmMessage, channel, alarmData);
             
             // 执行规则动作
             if (!matchedRules.isEmpty()) {
                 for (AlarmRule rule : matchedRules) {
-                    try {
-                        Map<String, Object> actions = objectMapper.readValue(rule.getActions(), new TypeReference<Map<String, Object>>() {});
-                        
-                        // 抓拍
-                        if (Boolean.TRUE.equals(actions.get("capture"))) {
-                            int actualChannel = channel > 0 ? channel : device.getChannel();
-                            String capturePath = captureService.captureSnapshot(deviceId, actualChannel);
-                            if (capturePath != null) {
-                                logger.info("报警自动抓图成功: deviceId={}, channel={}, filePath={}", 
-                                    deviceId, actualChannel, capturePath);
-                                
-                                // 上传到OSS
-                                if (Boolean.TRUE.equals(actions.get("upload")) && ossService != null && ossService.isEnabled()) {
-                                    try {
-                                        String ossPath = "alarm/" + deviceId + "/" + 
-                                            new SimpleDateFormat("yyyyMMdd").format(new Date()) + 
-                                            "/" + new File(capturePath).getName();
-                                        captureUrl = ossService.uploadFile(capturePath, ossPath);
-                                        if (captureUrl != null) {
-                                            logger.info("报警抓图已上传到OSS: deviceId={}, ossUrl={}", deviceId, captureUrl);
-                                        }
-                                    } catch (Exception e) {
-                                        logger.error("上传报警抓图到OSS异常: deviceId={}", deviceId, e);
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // 录像
-                        if (Boolean.TRUE.equals(actions.get("record"))) {
-                            if (recordingTaskService != null) {
-                                try {
-                                    // 计算报警时间前后的时间段（默认前后各30秒）
-                                    long currentTime = System.currentTimeMillis();
-                                    long beforeSeconds = 30;
-                                    long afterSeconds = 30;
-                                    
-                                    // 从规则条件中获取录像时长配置（如果有）
-                                    if (rule.getConditions() != null && !rule.getConditions().isEmpty()) {
-                                        try {
-                                            Map<String, Object> conditions = objectMapper.readValue(rule.getConditions(), new TypeReference<Map<String, Object>>() {});
-                                            if (conditions.containsKey("recordBeforeSeconds")) {
-                                                beforeSeconds = ((Number) conditions.get("recordBeforeSeconds")).longValue();
-                                            }
-                                            if (conditions.containsKey("recordAfterSeconds")) {
-                                                afterSeconds = ((Number) conditions.get("recordAfterSeconds")).longValue();
-                                            }
-                                        } catch (Exception e) {
-                                            logger.warn("解析规则条件失败，使用默认录像时长", e);
-                                        }
-                                    }
-                                    
-                                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-                                    String startTime = sdf.format(new java.util.Date(currentTime - beforeSeconds * 1000));
-                                    String endTime = sdf.format(new java.util.Date(currentTime + afterSeconds * 1000));
-                                    
-                                    int actualChannel = channel > 0 ? channel : device.getChannel();
-                                    RecordingTask task = recordingTaskService.downloadRecording(deviceId, actualChannel, startTime, endTime);
-                                    if (task != null) {
-                                        logger.info("创建报警录像任务成功: deviceId={}, taskId={}, startTime={}, endTime={}", 
-                                            deviceId, task.getTaskId(), startTime, endTime);
-                                        
-                                        // 如果启用了OSS上传，等待录像完成后上传
-                                        if (Boolean.TRUE.equals(actions.get("upload")) && ossService != null && ossService.isEnabled()) {
-                                            // 这里可以启动一个后台任务来监控录像任务完成并上传
-                                            // TODO: 实现录像任务完成后的OSS上传逻辑
-                                            logger.info("录像任务创建成功，等待完成后上传OSS: taskId={}", task.getTaskId());
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    logger.error("创建报警录像任务失败: deviceId={}", deviceId, e);
-                                }
-                            } else {
-                                logger.warn("录像任务服务未初始化，无法创建录像任务: deviceId={}", deviceId);
-                            }
-                        }
-                        
-                        // MQTT上报
-                        if (Boolean.TRUE.equals(actions.get("mqtt")) && mqttClient != null) {
-                            try {
-                                Map<String, Object> mqttMessage = new HashMap<>();
-                                mqttMessage.put("alarmId", alarmRecord.getAlarmId());
-                                mqttMessage.put("deviceId", deviceId);
-                                mqttMessage.put("assemblyId", assemblyId);
-                                mqttMessage.put("alarmType", alarmType);
-                                mqttMessage.put("alarmLevel", alarmRecord.getAlarmLevel());
-                                mqttMessage.put("channel", channel);
-                                mqttMessage.put("captureUrl", captureUrl);
-                                mqttMessage.put("videoUrl", videoUrl);
-                                mqttMessage.put("timestamp", System.currentTimeMillis());
-                                
-                                String topic = "alarm/report/" + deviceId;
-                                mqttClient.publish(topic, objectMapper.writeValueAsString(mqttMessage));
-                                alarmRecord.setMqttSent(true);
-                                logger.info("报警MQTT上报成功: deviceId={}, topic={}", deviceId, topic);
-                            } catch (Exception e) {
-                                logger.error("报警MQTT上报失败: deviceId={}", deviceId, e);
-                            }
-                        }
-                        
-                        // 音柱播报
-                        if (Boolean.TRUE.equals(actions.get("speaker")) && speakerService != null) {
-                            // 查找装置中的音柱设备
-                            if (assemblyId != null && database != null) {
-                                com.digital.video.gateway.service.AssemblyService assemblyService = 
-                                    new com.digital.video.gateway.service.AssemblyService(database);
-                                List<com.digital.video.gateway.database.AssemblyDevice> devices = assemblyService.getAssemblyDevices(assemblyId);
-                                for (com.digital.video.gateway.database.AssemblyDevice ad : devices) {
-                                    if ("speaker".equals(ad.getDeviceRole())) {
-                                        speakerService.playVoice(ad.getDeviceId(), "检测到" + alarmType + "报警");
-                                        alarmRecord.setSpeakerTriggered(true);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.error("执行规则动作失败: ruleId={}", rule.getRuleId(), e);
+                    FlowContext ctx = cloneFlowContext(baseContext);
+                    boolean flowExecuted = executeFlowIfAvailable(rule, ctx);
+                    if (flowExecuted) {
+                        captureUrl = firstNonNullUrl(captureUrl, ctx);
+                        videoUrl = firstVideoUrl(videoUrl, ctx);
+                    } else {
+                        logger.warn("规则未关联流程或执行失败: ruleId={}", rule.getRuleId());
                     }
                 }
             } else {
-                // 没有匹配的规则，执行默认动作（抓图）
-                int actualChannel = channel > 0 ? channel : device.getChannel();
-                String capturePath = captureService.captureSnapshot(deviceId, actualChannel);
-                if (capturePath != null && ossService != null && ossService.isEnabled()) {
-                    try {
-                        String ossPath = "alarm/" + deviceId + "/" + 
-                            new SimpleDateFormat("yyyyMMdd").format(new Date()) + 
-                            "/" + new File(capturePath).getName();
-                        captureUrl = ossService.uploadFile(capturePath, ossPath);
-                    } catch (Exception e) {
-                        logger.error("上传报警抓图到OSS异常: deviceId={}", deviceId, e);
-                    }
+                // 没有匹配的规则，尝试执行默认流程；如果失败则执行默认抓图动作
+                FlowContext defaultContext = cloneFlowContext(baseContext);
+                boolean defaultFlowExecuted = executeDefaultFlow(defaultContext);
+                if (defaultFlowExecuted) {
+                    captureUrl = firstNonNullUrl(captureUrl, defaultContext);
+                    videoUrl = firstVideoUrl(videoUrl, defaultContext);
+                } else {
+                    logger.warn("无匹配规则且默认流程不存在，未执行任何报警处理");
                 }
             }
             
@@ -367,5 +274,107 @@ public class AlarmService {
     
     public void setDatabase(com.digital.video.gateway.database.Database database) {
         this.database = database;
+    }
+
+    private FlowContext buildFlowContext(String deviceId, String assemblyId, String alarmType,
+            String alarmMessage, int channel, Map<String, Object> alarmData) {
+        FlowContext context = new FlowContext();
+        context.setDeviceId(deviceId);
+        context.setAssemblyId(assemblyId);
+        context.setAlarmType(alarmType);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("alarmMessage", alarmMessage);
+        payload.put("channel", channel);
+        if (alarmData != null) {
+            payload.put("alarmData", alarmData);
+        }
+        context.setPayload(payload);
+        return context;
+    }
+
+    private FlowContext cloneFlowContext(FlowContext source) {
+        FlowContext ctx = new FlowContext();
+        ctx.setFlowId(source.getFlowId());
+        ctx.setDeviceId(source.getDeviceId());
+        ctx.setAssemblyId(source.getAssemblyId());
+        ctx.setAlarmType(source.getAlarmType());
+        ctx.setPayload(new HashMap<>(source.getPayload() != null ? source.getPayload() : new HashMap<>()));
+        ctx.setVariables(new java.util.concurrent.ConcurrentHashMap<>(source.getVariables()));
+        return ctx;
+    }
+
+    private boolean executeFlowIfAvailable(AlarmRule rule, FlowContext context) {
+        if (flowService == null || flowExecutor == null || rule.getFlowId() == null || rule.getFlowId().isEmpty()) {
+            return false;
+        }
+        try {
+            AlarmFlow flow = flowService.getFlow(rule.getFlowId());
+            if (flow == null) {
+                logger.warn("未找到匹配的流程: flowId={}", rule.getFlowId());
+                return false;
+            }
+            FlowDefinition definition = flowService.toDefinition(flow);
+            if (definition == null) {
+                logger.warn("流程定义解析失败: flowId={}", rule.getFlowId());
+                return false;
+            }
+            flowExecutor.execute(definition, context);
+            return true;
+        } catch (Exception e) {
+            logger.error("执行流程失败: flowId={}", rule.getFlowId(), e);
+            return false;
+        }
+    }
+
+    private boolean executeDefaultFlow(FlowContext context) {
+        if (flowService == null || flowExecutor == null) {
+            return false;
+        }
+        try {
+            List<AlarmFlow> flows = flowService.listFlows();
+            if (flows == null || flows.isEmpty()) {
+                return false;
+            }
+            AlarmFlow defaultFlow = flows.stream()
+                    .filter(AlarmFlow::isDefault)
+                    .findFirst()
+                    .orElse(flows.get(0));
+            FlowDefinition definition = flowService.toDefinition(defaultFlow);
+            if (definition == null) {
+                return false;
+            }
+            flowExecutor.execute(definition, context);
+            return true;
+        } catch (Exception e) {
+            logger.error("执行默认流程失败", e);
+            return false;
+        }
+    }
+
+    private String firstNonNullUrl(String existing, FlowContext context) {
+        if (existing != null) {
+            return existing;
+        }
+        Object capture = context.getVariables().get("captureUrl");
+        if (capture instanceof String) {
+            return (String) capture;
+        }
+        Object oss = context.getVariables().get("ossUrl");
+        if (oss instanceof String) {
+            return (String) oss;
+        }
+        return null;
+    }
+
+    private String firstVideoUrl(String existing, FlowContext context) {
+        if (existing != null) {
+            return existing;
+        }
+        Object video = context.getVariables().get("videoUrl");
+        if (video instanceof String) {
+            return (String) video;
+        }
+        return null;
     }
 }

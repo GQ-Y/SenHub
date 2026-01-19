@@ -47,7 +47,8 @@ export type ViewState =
   | 'ASSEMBLY_MANAGEMENT'
   | 'ASSEMBLY_DETAIL'
   | 'ALARM_RULES'
-  | 'RADAR';
+  | 'RADAR'
+  | 'WORKFLOW';
 
 export interface AppState {
   currentView: ViewState;
@@ -160,4 +161,80 @@ export interface AlarmRecord {
   // 显示用的关联信息
   deviceName?: string;
   assemblyName?: string;
+}
+
+// 流程定义
+export interface FlowNodeDefinition {
+  nodeId: string;
+  type: string;
+  config?: Record<string, any>;
+}
+
+export interface FlowConnection {
+  from: string;
+  to: string;
+  fromPort?: 'default' | 'yes' | 'no';  // 用于条件分支
+  condition?: string;
+}
+
+export interface AlarmFlow {
+  id?: string;
+  flowId: string;
+  name: string;
+  description?: string;
+  flowType?: string;
+  nodes: FlowNodeDefinition[];
+  connections: FlowConnection[];
+  isDefault?: boolean;
+  enabled?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// 画布节点类型
+export type FlowNodeType = 
+  | 'event_trigger'   // 事件触发器（起始节点）
+  | 'condition'       // 条件判断 (if/else)
+  | 'capture'         // 抓拍
+  | 'record'          // 录像
+  | 'ptz_control'     // 云台控制
+  | 'mqtt_publish'    // MQTT上报
+  | 'oss_upload'      // OSS上传
+  | 'speaker_play'    // 音柱播报
+  | 'webhook'         // Webhook推送（企业微信等）
+  | 'end';            // 结束节点
+
+// 画布节点（包含位置信息）
+export interface CanvasNode {
+  id: string;
+  type: FlowNodeType;
+  label: string;
+  x: number;
+  y: number;
+  config?: Record<string, any>;
+}
+
+// 画布连接线
+export interface CanvasConnection {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  fromPort: 'default' | 'yes' | 'no';  // default为普通节点，yes/no用于条件分支
+  condition?: string;
+}
+
+// 工作流画布数据（用于完整序列化）
+export interface CanvasFlowData {
+  nodes: CanvasNode[];
+  connections: CanvasConnection[];
+}
+
+// 内置组件定义
+export interface FlowComponentDefinition {
+  type: FlowNodeType;
+  label: string;
+  icon: string;
+  category: 'trigger' | 'action' | 'logic' | 'output';
+  defaultConfig?: Record<string, any>;
+  hasConditionPorts?: boolean;  // 是否有条件分支端口(yes/no)
 }

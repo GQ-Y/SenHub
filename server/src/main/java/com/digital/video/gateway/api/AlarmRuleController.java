@@ -87,7 +87,9 @@ public class AlarmRuleController {
             rule.setAssemblyId((String) body.get("assemblyId"));
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
-            rule.setActions(objectMapper.writeValueAsString(body.get("actions")));
+            rule.setFlowId((String) body.get("flowId"));
+            Object actions = body.get("actions");
+            rule.setActions(objectMapper.writeValueAsString(actions != null ? actions : new java.util.HashMap<>()));
             rule.setConditions(body.get("conditions") != null ? objectMapper.writeValueAsString(body.get("conditions")) : null);
             
             AlarmRule created = alarmRuleService.createAlarmRule(rule);
@@ -121,7 +123,9 @@ public class AlarmRuleController {
             rule.setAssemblyId((String) body.get("assemblyId"));
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
-            rule.setActions(objectMapper.writeValueAsString(body.get("actions")));
+            rule.setFlowId((String) body.get("flowId"));
+            Object actions = body.get("actions");
+            rule.setActions(objectMapper.writeValueAsString(actions != null ? actions : new java.util.HashMap<>()));
             rule.setConditions(body.get("conditions") != null ? objectMapper.writeValueAsString(body.get("conditions")) : null);
             
             AlarmRule updated = alarmRuleService.updateAlarmRule(ruleId, rule);

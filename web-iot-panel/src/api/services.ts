@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { get, post, put, del, setToken } from './client';
 import { API_CONFIG } from './config';
-import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus } from '../../types';
+import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus, AlarmFlow } from '../../types';
 
 /**
  * 助手函数：转换后端设备数据格式到前端格式
@@ -217,6 +217,39 @@ export const deviceService = {
    */
   async getDeviceAssemblies(deviceId: string) {
     const response = await get<Assembly[]>(`/devices/${encodeURIComponent(deviceId)}/assemblies`);
+    return response;
+  },
+};
+
+// ==================== 流程管理 ====================
+export const flowService = {
+  async listFlows() {
+    const response = await get<AlarmFlow[]>('/flows');
+    return response;
+  },
+
+  async getFlow(flowId: string) {
+    const response = await get<AlarmFlow>(`/flows/${encodeURIComponent(flowId)}`);
+    return response;
+  },
+
+  async createFlow(payload: Partial<AlarmFlow>) {
+    const response = await post<AlarmFlow>('/flows', payload);
+    return response;
+  },
+
+  async updateFlow(flowId: string, payload: Partial<AlarmFlow>) {
+    const response = await put<AlarmFlow>(`/flows/${encodeURIComponent(flowId)}`, payload);
+    return response;
+  },
+
+  async deleteFlow(flowId: string) {
+    const response = await del<{ message: string }>(`/flows/${encodeURIComponent(flowId)}`);
+    return response;
+  },
+
+  async testFlow(flowId: string) {
+    const response = await post<{ message: string }>(`/flows/${encodeURIComponent(flowId)}/test`);
     return response;
   },
 };

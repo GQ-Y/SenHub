@@ -30,6 +30,14 @@ import com.digital.video.gateway.service.AlarmRecordService;
 import com.digital.video.gateway.service.SpeakerService;
 import com.digital.video.gateway.service.RecordingTaskService;
 import com.digital.video.gateway.database.RadarDeviceDAO;
+import com.digital.video.gateway.workflow.FlowExecutor;
+import com.digital.video.gateway.workflow.handlers.CaptureHandler;
+import com.digital.video.gateway.workflow.handlers.MqttPublishHandler;
+import com.digital.video.gateway.workflow.handlers.OssUploadHandler;
+import com.digital.video.gateway.workflow.handlers.SpeakerPlayHandler;
+import com.digital.video.gateway.workflow.handlers.WebhookHandler;
+import com.digital.video.gateway.workflow.handlers.RecordHandler;
+import com.digital.video.gateway.workflow.handlers.PTZControlHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Spark;
@@ -67,6 +75,9 @@ public class Main {
     private RadarService radarService;
     private RadarTestService radarTestService;
     private RadarController radarController;
+    private com.digital.video.gateway.workflow.FlowService flowService;
+    private com.digital.video.gateway.api.FlowController flowController;
+    private FlowExecutor flowExecutor;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -144,9 +155,15 @@ public class Main {
             alarmRecordService = new AlarmRecordService(database);
             speakerService = new SpeakerService(database);
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
+            flowService = new com.digital.video.gateway.workflow.FlowService(database);
+            // 确保默认报警流程存在
+            flowService.ensureDefaultAlarmFlow();
 
             // 始终初始化雷达服务（即使数据库中暂时没有设备，后续可通过API添加）
             radarService = new RadarService(ptzService, database);
+            if (config.getLog() != null) {
+                radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
+            }
             radarService.start();
             RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
             List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
@@ -182,9 +199,18 @@ public class Main {
                 logger.info("MQTT客户端连接成功");
             }
 
+            // 配置报警服务的MQTT与流程执行器
+            alarmService.setMqttClient(mqttClient);
+            flowExecutor = createFlowExecutor();
+            alarmService.setFlowService(flowService);
+            alarmService.setFlowExecutor(flowExecutor);
+
             // 7.5. 设置DeviceManager的MQTT客户端（用于状态通知）
             deviceManager.setMqttClient(mqttClient);
             logger.info("DeviceManager已设置MQTT客户端");
+
+            // 7.6. 启动时自动连接已有设备，确保在线状态
+            autoConnectExistingDevices();
 
             // 7.6. 设置SDK状态回调（用于设备离线/在线监听）
             HikvisionSDK hikvisionSDK = (HikvisionSDK) SDKFactory.getSDK("hikvision");
@@ -272,6 +298,21 @@ public class Main {
     }
 
     /**
+     * 初始化流程执行器并注册节点处理器
+     */
+    private FlowExecutor createFlowExecutor() {
+        FlowExecutor executor = new FlowExecutor();
+        executor.registerHandler("capture", new CaptureHandler(captureService));
+        executor.registerHandler("mqtt_publish", new MqttPublishHandler(mqttClient));
+        executor.registerHandler("oss_upload", new OssUploadHandler(ossService));
+        executor.registerHandler("speaker_play", new SpeakerPlayHandler(speakerService));
+        executor.registerHandler("webhook", new WebhookHandler());
+        executor.registerHandler("record", new RecordHandler(recordingTaskService));
+        executor.registerHandler("ptz_control", new PTZControlHandler(ptzService));
+        return executor;
+    }
+
+    /**
      * 为所有已存在的设备启动录制
      * 确保设备在线后再启动录制
      */
@@ -318,6 +359,37 @@ public class Main {
             logger.info("已存在的设备录制启动完成");
         } catch (Exception e) {
             logger.error("为已存在的设备启动录制失败", e);
+        }
+    }
+
+    /**
+     * 启动时自动连接数据库中已存在的设备
+     */
+    private void autoConnectExistingDevices() {
+        try {
+            List<DeviceInfo> devices = deviceManager.getAllDevices();
+            logger.info("启动自动连接已有设备，数量: {}", devices.size());
+
+            for (DeviceInfo device : devices) {
+                String deviceId = device.getDeviceId();
+
+                // 已在线且已登录则跳过
+                if (deviceManager.isDeviceLoggedIn(deviceId)) {
+                    logger.debug("设备已登录，跳过自动连接: {}", deviceId);
+                    continue;
+                }
+
+                boolean success = deviceManager.loginDevice(device);
+                if (success) {
+                    publishDeviceStatus(device, 1);
+                    logger.info("自动登录成功: {}", deviceId);
+                } else {
+                    publishDeviceStatus(device, 0);
+                    logger.warn("自动登录失败: {}", deviceId);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("自动连接已有设备失败", e);
         }
     }
 
@@ -446,6 +518,7 @@ public class Main {
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
+        flowController = new FlowController(flowService);
 
         // 初始化雷达相关服务
         BackgroundModelService backgroundModelService = new BackgroundModelService(database);
@@ -570,6 +643,14 @@ public class Main {
         Spark.put("/api/recording-tasks/:taskId", recordingTaskController::updateRecordingTask);
         Spark.post("/api/recording-tasks/download", recordingTaskController::downloadRecording);
         Spark.get("/api/recording-tasks/:taskId/file", recordingTaskController::downloadRecordingFile);
+
+        // 流程管理路由
+        Spark.get("/api/flows", flowController::listFlows);
+        Spark.get("/api/flows/:flowId", flowController::getFlow);
+        Spark.post("/api/flows", flowController::createFlow);
+        Spark.put("/api/flows/:flowId", flowController::updateFlow);
+        Spark.delete("/api/flows/:flowId", flowController::deleteFlow);
+        Spark.post("/api/flows/:flowId/test", flowController::testFlow);
 
         // 异常处理
         Spark.exception(Exception.class, (exception, request, response) -> {

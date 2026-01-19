@@ -102,8 +102,8 @@ async function request<T = any>(
     // 解析响应
     const data: ApiResponse<T> = await response.json();
 
-    // 检查业务状态码
-    if (data.code !== 200) {
+    // 检查业务状态码（后端成功码：0或200）
+    if (data.code !== 0 && data.code !== 200) {
       throw new Error(data.message || '请求失败');
     }
 

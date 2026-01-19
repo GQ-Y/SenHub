@@ -43,52 +43,49 @@ public class SDKFactory {
                 logger.info("使用默认SDK配置");
             }
             
+            Map<String, Boolean> sdkAvailability = detectAvailableSDKs(sdkConfig);
+            
             // 预先设置大华SDK库路径，避免NetSDKLib静态初始化时找不到库
             // 必须在任何SDK初始化之前设置，因为NetSDKLib.NETSDK_INSTANCE是静态的
-            try {
-                String libDir = LibraryPathHelper.getSDKLibPath("dahua");
-                if (libDir != null) {
-                    java.io.File libDirFile = new java.io.File(libDir);
-                    if (libDirFile.exists()) {
-                        com.digital.video.gateway.dahua.lib.LibraryLoad.setExtractPath(libDir);
-                        logger.debug("大华SDK库路径已设置: {}", libDir);
-                    }
+            prepareDahuaLibPath(sdkConfig);
+            
+            // 初始化海康SDK（检测到库后再初始化）
+            if (Boolean.TRUE.equals(sdkAvailability.get("hikvision"))) {
+                logger.info("尝试初始化海康SDK...");
+                hikvisionSDK = HikvisionSDK.getInstance();
+                if (hikvisionSDK.init(sdkConfig)) {
+                    logger.info("✓ 海康SDK初始化成功");
+                } else {
+                    logger.warn("✗ 海康SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
                 }
-            } catch (Exception e) {
-                logger.debug("设置大华SDK库路径失败: {}", e.getMessage());
+            } else {
+                logger.info("跳过海康SDK初始化：未检测到可用库文件");
             }
             
-            // 初始化海康SDK（不依赖config.getSdk()，SDK内部会检查库文件和架构）
-            logger.info("尝试初始化海康SDK...");
-            hikvisionSDK = HikvisionSDK.getInstance();
-            if (hikvisionSDK.init(sdkConfig)) {
-                logger.info("✓ 海康SDK初始化成功");
-            } else {
-                logger.warn("✗ 海康SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
-            }
-            
-            // 初始化天地伟业SDK（不依赖config.getSdk()，SDK内部会检查库文件和架构）
-            // 注意：天地伟业仅支持x86架构，在ARM系统上会自动跳过
-            logger.info("尝试初始化天地伟业SDK...");
-            String archDir = LibraryPathHelper.getArchitectureDir();
-            if ("arm".equals(archDir)) {
-                logger.info("✗ 天地伟业SDK仅支持x86架构，当前系统为ARM，跳过初始化");
-            } else {
+            // 初始化天地伟业SDK（仅x86且检测到库后）
+            if (Boolean.TRUE.equals(sdkAvailability.get("tiandy"))) {
+                logger.info("尝试初始化天地伟业SDK...");
                 tiandySDK = TiandySDK.getInstance();
                 if (tiandySDK.init(sdkConfig)) {
                     logger.info("✓ 天地伟业SDK初始化成功");
                 } else {
                     logger.warn("✗ 天地伟业SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
                 }
+            } else {
+                logger.info("跳过天地伟业SDK初始化：未检测到可用库文件或架构不支持");
             }
             
-            // 初始化大华SDK（不依赖config.getSdk()，SDK内部会检查库文件和架构）
-            logger.info("尝试初始化大华SDK...");
-            dahuaSDK = DahuaSDK.getInstance();
-            if (dahuaSDK.init(sdkConfig)) {
-                logger.info("✓ 大华SDK初始化成功");
+            // 初始化大华SDK（检测到库后再初始化）
+            if (Boolean.TRUE.equals(sdkAvailability.get("dahua"))) {
+                logger.info("尝试初始化大华SDK...");
+                dahuaSDK = DahuaSDK.getInstance();
+                if (dahuaSDK.init(sdkConfig)) {
+                    logger.info("✓ 大华SDK初始化成功");
+                } else {
+                    logger.warn("✗ 大华SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
+                }
             } else {
-                logger.warn("✗ 大华SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
+                logger.info("跳过大华SDK初始化：未检测到可用库文件");
             }
             
             initialized = true;
@@ -96,6 +93,67 @@ public class SDKFactory {
             
         } catch (Exception e) {
             logger.error("SDK工厂初始化异常", e);
+        }
+    }
+
+    /**
+     * 检测各品牌SDK库文件是否存在并与架构匹配
+     */
+    private static Map<String, Boolean> detectAvailableSDKs(Config.SdkConfig sdkConfig) {
+        java.util.Map<String, Boolean> result = new java.util.HashMap<>();
+        String archDir = LibraryPathHelper.getArchitectureDir();
+
+        // 海康：arm/x86 均支持
+        result.put("hikvision", checkLibExists(sdkConfig, "hikvision"));
+
+        // 天地伟业：仅x86
+        if ("arm".equals(archDir)) {
+            result.put("tiandy", false);
+        } else {
+            result.put("tiandy", checkLibExists(sdkConfig, "tiandy"));
+        }
+
+        // 大华：arm/x86 均支持
+        result.put("dahua", checkLibExists(sdkConfig, "dahua"));
+
+        logger.info("SDK可用性检测结果: {}", result);
+        return result;
+    }
+
+    private static boolean checkLibExists(Config.SdkConfig sdkConfig, String sdkName) {
+        try {
+            String libDir = LibraryPathHelper.getSDKLibPath(
+                    sdkConfig != null ? sdkConfig.getLibPath() : null,
+                    sdkName);
+            if (libDir == null) {
+                return false;
+            }
+            java.io.File dir = new java.io.File(libDir);
+            boolean exists = dir.exists() && dir.isDirectory();
+            if (!exists && logger.isDebugEnabled()) {
+                logger.debug("未找到SDK库目录: {}", libDir);
+            }
+            return exists;
+        } catch (Exception e) {
+            logger.debug("检测SDK库目录异常: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private static void prepareDahuaLibPath(Config.SdkConfig sdkConfig) {
+        try {
+            String libDir = LibraryPathHelper.getSDKLibPath(
+                    sdkConfig != null ? sdkConfig.getLibPath() : null,
+                    "dahua");
+            if (libDir != null) {
+                java.io.File libDirFile = new java.io.File(libDir);
+                if (libDirFile.exists()) {
+                    com.digital.video.gateway.dahua.lib.LibraryLoad.setExtractPath(libDir);
+                    logger.debug("大华SDK库路径已设置: {}", libDir);
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("设置大华SDK库路径失败: {}", e.getMessage());
         }
     }
     

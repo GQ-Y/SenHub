@@ -64,6 +64,7 @@ public class RadarService {
     private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
     private ScheduledExecutorService statsExecutor;
     private RadarStatusMonitor statusMonitor;
+    private int statsLogIntervalSeconds = 60; // 点云统计日志间隔（秒）
 
     // 降噪配置参数
     private boolean enableDenoising = true; // 默认启用降噪
@@ -104,7 +105,7 @@ public class RadarService {
             
             logger.info("雷达监听服务已启动 (JNI Driver)");
 
-            // 启动统计信息打印任务（每秒打印一次）
+            // 启动统计信息打印任务（按配置间隔打印）
             startStatsReporter();
 
             // 服务启动时自动加载所有设备的检测上下文（恢复检测状态）
@@ -273,7 +274,7 @@ public class RadarService {
     }
 
     /**
-     * 启动统计信息报告器（每秒打印一次）
+     * 启动统计信息报告器（按配置的间隔打印）
      */
     private void startStatsReporter() {
         statsExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -282,6 +283,11 @@ public class RadarService {
             return t;
         });
 
+        if (statsLogIntervalSeconds <= 0) {
+            logger.info("点云统计报告器未启动：日志间隔配置为{}", statsLogIntervalSeconds);
+            return;
+        }
+
         final AtomicLong lastTotalFrames = new AtomicLong(0);
         final AtomicLong lastTotalPoints = new AtomicLong(0);
 
@@ -289,18 +295,17 @@ public class RadarService {
             long currentFrames = totalPointCloudFrames.get();
             long currentPoints = totalPointCloudPoints.get();
 
-            long framesThisSecond = currentFrames - lastTotalFrames.get();
-            long pointsThisSecond = currentPoints - lastTotalPoints.get();
+            long framesThisPeriod = currentFrames - lastTotalFrames.get();
+            long pointsThisPeriod = currentPoints - lastTotalPoints.get();
 
             lastTotalFrames.set(currentFrames);
             lastTotalPoints.set(currentPoints);
 
-            // 每秒都打印，即使没有新数据也显示累计统计
-            logger.info("[点云统计] 本秒接收: {} 帧, {} 点 | 累计: {} 帧, {} 点",
-                    framesThisSecond, pointsThisSecond, currentFrames, currentPoints);
-        }, 1, 1, TimeUnit.SECONDS);
+            logger.info("[点云统计] 本周期接收: {} 帧, {} 点 | 累计: {} 帧, {} 点",
+                    framesThisPeriod, pointsThisPeriod, currentFrames, currentPoints);
+        }, statsLogIntervalSeconds, statsLogIntervalSeconds, TimeUnit.SECONDS);
 
-        logger.info("点云统计报告器已启动（每秒打印一次）");
+        logger.info("点云统计报告器已启动（每{}秒打印一次）", statsLogIntervalSeconds);
     }
 
     /**
@@ -878,5 +883,14 @@ public class RadarService {
         config.put("enableVoxelDownsample", enableVoxelDownsample);
         config.put("voxelResolution", voxelResolution);
         return config;
+    }
+
+    /**
+     * 设置点云统计日志的打印间隔（秒）
+     */
+    public void setStatsLogIntervalSeconds(int statsLogIntervalSeconds) {
+        if (statsLogIntervalSeconds > 0) {
+            this.statsLogIntervalSeconds = statsLogIntervalSeconds;
+        }
     }
 }

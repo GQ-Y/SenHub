@@ -386,6 +386,10 @@ public class Config {
         @JsonProperty("bucket_name")
         private String bucketName;
         private String region;
+        @JsonProperty("form_data_upload_path")
+        private String formDataUploadPath = "/upload/file_upload/formDataUpload";
+        @JsonProperty("base64_upload_path")
+        private String base64UploadPath = "/upload/file_upload/imgUpload";
 
         // Getters and Setters
         public boolean isEnabled() {
@@ -443,6 +447,22 @@ public class Config {
         public void setRegion(String region) {
             this.region = region;
         }
+
+        public String getFormDataUploadPath() {
+            return formDataUploadPath != null ? formDataUploadPath : "/upload/file_upload/formDataUpload";
+        }
+
+        public void setFormDataUploadPath(String formDataUploadPath) {
+            this.formDataUploadPath = formDataUploadPath;
+        }
+
+        public String getBase64UploadPath() {
+            return base64UploadPath != null ? base64UploadPath : "/upload/file_upload/imgUpload";
+        }
+
+        public void setBase64UploadPath(String base64UploadPath) {
+            this.base64UploadPath = base64UploadPath;
+        }
     }
 
     public static class DatabaseConfig {
@@ -467,6 +487,12 @@ public class Config {
         private int maxBackups;
         @JsonProperty("max_age")
         private int maxAge;
+        @JsonProperty("debug_mode")
+        private boolean debugMode;
+        @JsonProperty("sdk_log_file")
+        private String sdkLogFile;
+        @JsonProperty("pointcloud_log_interval")
+        private int pointcloudLogInterval = 60;
 
         // Getters and Setters
         public String getLevel() {
@@ -507,6 +533,30 @@ public class Config {
 
         public void setMaxAge(int maxAge) {
             this.maxAge = maxAge;
+        }
+
+        public boolean isDebugMode() {
+            return debugMode;
+        }
+
+        public void setDebugMode(boolean debugMode) {
+            this.debugMode = debugMode;
+        }
+
+        public String getSdkLogFile() {
+            return sdkLogFile != null && !sdkLogFile.isEmpty() ? sdkLogFile : "./logs/sdk.log";
+        }
+
+        public void setSdkLogFile(String sdkLogFile) {
+            this.sdkLogFile = sdkLogFile;
+        }
+
+        public int getPointcloudLogInterval() {
+            return pointcloudLogInterval > 0 ? pointcloudLogInterval : 60;
+        }
+
+        public void setPointcloudLogInterval(int pointcloudLogInterval) {
+            this.pointcloudLogInterval = pointcloudLogInterval;
         }
     }
 

@@ -175,6 +175,7 @@ public class Database {
             AssemblyTable.createTables(connection);
             AlarmRuleTable.createTables(connection);
             AlarmRecordTable.createTables(connection);
+            AlarmFlowTable.createTables(connection);
             SpeakerTable.createTables(connection);
             RecordingTaskTable.createTables(connection);
 

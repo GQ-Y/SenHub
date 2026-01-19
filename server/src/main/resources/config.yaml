@@ -41,11 +41,14 @@ keeper:
 # OSS配置（用于录像上传）
 oss:
   enabled: false  # 是否启用OSS上传
+  type: "aliyun"  # aliyun|minio|aws|custom
   endpoint: ""  # OSS端点
   access_key_id: ""  # AccessKey ID
   access_key_secret: ""  # AccessKey Secret
   bucket_name: ""  # 存储桶名称
   region: ""  # 区域
+  form_data_upload_path: "/upload/file_upload/formDataUpload"  # 自定义OSS表单上传路径
+  base64_upload_path: "/upload/file_upload/imgUpload"          # 自定义OSS Base64上传路径
 
 # 数据库配置
 database:
@@ -58,6 +61,9 @@ log:
   max_size: 100  # 日志文件最大大小（MB）
   max_backups: 7  # 保留的日志文件数量
   max_age: 30  # 日志文件保留天数
+  debug_mode: false  # 调试模式，开启后更多设备日志输出到SDK日志
+  sdk_log_file: "./logs/sdk.log"  # SDK调用日志文件
+  pointcloud_log_interval: 60  # 雷达点云日志打印间隔（秒）
 
 # SDK配置（支持多品牌：海康、天地伟业、大华）
 # 所有品牌SDK共享此配置，库文件路径会根据系统架构自动识别

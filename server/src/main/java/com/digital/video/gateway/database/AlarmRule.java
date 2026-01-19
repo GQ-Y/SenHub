@@ -21,6 +21,7 @@ public class AlarmRule {
     private int priority;
     private String actions; // JSON string
     private String conditions; // JSON string
+    private String flowId; // 关联的流程定义
     private Timestamp createdAt;
     private Timestamp updatedAt;
 
@@ -58,6 +59,9 @@ public class AlarmRule {
     public String getConditions() { return conditions; }
     public void setConditions(String conditions) { this.conditions = conditions; }
 
+    public String getFlowId() { return flowId; }
+    public void setFlowId(String flowId) { this.flowId = flowId; }
+
     public Timestamp getCreatedAt() { return createdAt; }
     public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
 
@@ -80,6 +84,11 @@ public class AlarmRule {
         rule.setPriority(rs.getInt("priority"));
         rule.setActions(rs.getString("actions"));
         rule.setConditions(rs.getString("conditions"));
+        try {
+            rule.setFlowId(rs.getString("flow_id"));
+        } catch (SQLException ignore) {
+            // 兼容旧表
+        }
         rule.setCreatedAt(rs.getTimestamp("created_at"));
         rule.setUpdatedAt(rs.getTimestamp("updated_at"));
         return rule;
@@ -101,6 +110,7 @@ public class AlarmRule {
         map.put("priority", priority);
         map.put("actions", actions);
         map.put("conditions", conditions);
+        map.put("flowId", flowId);
         if (createdAt != null) map.put("createdAt", createdAt.toString());
         if (updatedAt != null) map.put("updatedAt", updatedAt.toString());
         return map;

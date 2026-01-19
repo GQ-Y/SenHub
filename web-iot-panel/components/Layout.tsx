@@ -91,6 +91,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
       case 'RADAR':
         navigate('/radar');
         break;
+      case 'WORKFLOW':
+        navigate('/flows');
+        break;
       default:
         navigate('/');
     }
@@ -236,6 +239,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               label={t('alarm_rules')} 
               isActive={currentView === 'ALARM_RULES'} 
               onClick={() => handleNavigate('ALARM_RULES')}
+            />
+            <SidebarItem 
+              icon={Package} 
+              label={t('workflow_mgmt')} 
+              isActive={currentView === 'WORKFLOW'} 
+              onClick={() => handleNavigate('WORKFLOW')}
             />
             <SidebarItem 
               icon={Settings} 

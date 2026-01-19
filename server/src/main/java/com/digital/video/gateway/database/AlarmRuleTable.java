@@ -28,6 +28,7 @@ public class AlarmRuleTable {
             "assembly_id TEXT, " +
             "enabled INTEGER DEFAULT 1, " +
             "priority INTEGER DEFAULT 0, " +
+            "flow_id TEXT, " +
             "actions TEXT NOT NULL, " +
             "conditions TEXT, " +
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
@@ -40,11 +41,25 @@ public class AlarmRuleTable {
             "CREATE INDEX IF NOT EXISTS idx_alarm_rules_scope ON alarm_rules(scope); " +
             "CREATE INDEX IF NOT EXISTS idx_alarm_rules_device_id ON alarm_rules(device_id); " +
             "CREATE INDEX IF NOT EXISTS idx_alarm_rules_assembly_id ON alarm_rules(assembly_id); " +
-            "CREATE INDEX IF NOT EXISTS idx_alarm_rules_enabled ON alarm_rules(enabled);";
+            "CREATE INDEX IF NOT EXISTS idx_alarm_rules_enabled ON alarm_rules(enabled); " +
+            "CREATE INDEX IF NOT EXISTS idx_alarm_rules_flow_id ON alarm_rules(flow_id);";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createAlarmRulesTable);
             stmt.execute(createIndex);
+
+            // 兼容旧表：新增flow_id列
+            try {
+                stmt.executeQuery("SELECT flow_id FROM alarm_rules LIMIT 1");
+            } catch (SQLException e) {
+                logger.info("检测到缺少flow_id列，正在添加...");
+                try {
+                    stmt.execute("ALTER TABLE alarm_rules ADD COLUMN flow_id TEXT");
+                    logger.info("已添加flow_id列");
+                } catch (SQLException ex) {
+                    logger.debug("添加flow_id列失败（可能已存在）: {}", ex.getMessage());
+                }
+            }
             logger.info("报警规则表创建成功");
         }
     }

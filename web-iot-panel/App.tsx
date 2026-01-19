@@ -15,6 +15,7 @@ import { RadarManagement } from './components/RadarManagement';
 import { RadarBackgroundCollection } from './components/RadarBackgroundCollection';
 import { RadarDefenseZone } from './components/RadarDefenseZone';
 import { RadarMonitoring } from './components/RadarMonitoring';
+import { FlowManagement } from './components/FlowManagement';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 
 // 路由守卫组件
@@ -41,6 +42,7 @@ const getViewFromPath = (pathname: string): string => {
   if (pathname === '/mqtt') return 'MQTT_CONFIG';
   if (pathname === '/settings') return 'SYSTEM_CONFIG';
   if (pathname.startsWith('/radar')) return 'RADAR';
+  if (pathname.startsWith('/flows')) return 'WORKFLOW';
   return 'DASHBOARD';
 };
 
@@ -160,6 +162,14 @@ const AppContent: React.FC = () => {
           element={
             <ProtectedRoute>
               <RadarMonitoring />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/flows"
+          element={
+            <ProtectedRoute>
+              <FlowManagement />
             </ProtectedRoute>
           }
         />
