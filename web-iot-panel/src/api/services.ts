@@ -580,6 +580,22 @@ export const radarService = {
   },
 
   /**
+   * 更新雷达设备
+   */
+  async updateRadarDevice(deviceId: string, device: { radarIp?: string; radarName?: string; assemblyId?: string }) {
+    const response = await put<any>(`/radar/devices/${encodeURIComponent(deviceId)}`, device);
+    return response;
+  },
+
+  /**
+   * 删除雷达设备（级联删除所有关联数据）
+   */
+  async deleteRadarDevice(deviceId: string) {
+    const response = await del<any>(`/radar/devices/${encodeURIComponent(deviceId)}`);
+    return response;
+  },
+
+  /**
    * 测试雷达连通性（获取序列号）
    */
   async testRadarConnection(ip: string) {

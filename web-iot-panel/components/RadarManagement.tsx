@@ -167,20 +167,23 @@ export const RadarManagement: React.FC = () => {
       return;
     }
 
-    if (!formData.radarSerial?.trim()) {
-      modal.showModal({
-        message: '请输入雷达序列号（SN）',
-        type: 'warning',
-      });
-      return;
-    }
+    // 新增时必须有序列号和检测结果；编辑时序列号已存在，可以只修改其他字段
+    if (activeModal === 'CREATE') {
+      if (!formData.radarSerial?.trim()) {
+        modal.showModal({
+          message: '请输入雷达序列号（SN）',
+          type: 'warning',
+        });
+        return;
+      }
 
-    if (!detectResult?.reachable) {
-      modal.showModal({
-        message: '请先成功检测雷达连通性后再添加',
-        type: 'warning',
-      });
-      return;
+      if (!detectResult?.reachable) {
+        modal.showModal({
+          message: '请先成功检测雷达连通性后再添加',
+          type: 'warning',
+        });
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -192,10 +195,14 @@ export const RadarManagement: React.FC = () => {
           type: 'success',
         });
       } else if (activeModal === 'EDIT' && selectedDevice) {
-        // TODO: 实现更新接口
+        await radarService.updateRadarDevice(selectedDevice.deviceId, {
+          radarIp: formData.radarIp,
+          radarName: formData.radarName,
+          assemblyId: formData.assemblyId,
+        });
         modal.showModal({
-          message: '更新功能待实现',
-          type: 'info',
+          message: '更新成功',
+          type: 'success',
         });
       }
       handleCloseModal();
@@ -216,10 +223,11 @@ export const RadarManagement: React.FC = () => {
     if (!selectedDevice) return;
     setIsSaving(true);
     try {
-      // TODO: 实现删除接口
+      const result = await radarService.deleteRadarDevice(selectedDevice.deviceId);
+      const data = result.data || {};
       modal.showModal({
-        message: '删除功能待实现',
-        type: 'info',
+        message: `雷达设备已删除\n- 删除背景模型: ${data.deletedBackgrounds || 0} 个\n- 删除防区: ${data.deletedZones || 0} 个\n- 删除侵入记录: ${data.deletedIntrusions || 0} 条`,
+        type: 'success',
       });
       handleCloseModal();
       await loadDevices();
@@ -228,6 +236,7 @@ export const RadarManagement: React.FC = () => {
         message: err.message || '删除失败',
         type: 'error',
       });
+    } finally {
       setIsSaving(false);
     }
   };

@@ -523,6 +523,8 @@ public class Main {
         Spark.post("/api/radar/test", radarController::testConnection);
         Spark.get("/api/radar/devices", radarController::getRadarDevices);
         Spark.post("/api/radar/devices", radarController::addRadarDevice);
+        Spark.put("/api/radar/devices/:deviceId", radarController::updateRadarDevice);
+        Spark.delete("/api/radar/devices/:deviceId", radarController::deleteRadarDevice);
         Spark.post("/api/radar/:deviceId/background/start", radarController::startBackgroundCollection);
         Spark.post("/api/radar/:deviceId/background/stop", radarController::stopBackgroundCollection);
         Spark.get("/api/radar/:deviceId/background/status", radarController::getBackgroundStatus);

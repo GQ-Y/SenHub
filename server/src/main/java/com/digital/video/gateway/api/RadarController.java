@@ -183,6 +183,129 @@ public class RadarController {
     }
 
     /**
+     * 更新雷达设备
+     * PUT /api/radar/devices/:deviceId
+     */
+    public Object updateRadarDevice(Request request, Response response) {
+        try {
+            String deviceId = request.params("deviceId");
+            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            
+            // 查找现有设备
+            RadarDevice existingDevice = radarDeviceDAO.getByDeviceId(deviceId);
+            if (existingDevice == null) {
+                response.status(404);
+                return createErrorResponse(404, "雷达设备不存在: " + deviceId);
+            }
+            
+            // 更新字段
+            String radarIp = (String) body.get("radarIp");
+            String radarName = (String) body.get("radarName");
+            String assemblyId = (String) body.get("assemblyId");
+            
+            if (radarIp != null && !radarIp.trim().isEmpty()) {
+                if (!isValidIpAddress(radarIp)) {
+                    response.status(400);
+                    return createErrorResponse(400, "无效的IP地址格式");
+                }
+                // 检查IP是否被其他设备占用
+                List<RadarDevice> allDevices = radarDeviceDAO.getAll();
+                for (RadarDevice d : allDevices) {
+                    if (radarIp.equals(d.getRadarIp()) && !deviceId.equals(d.getDeviceId())) {
+                        response.status(400);
+                        return createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp);
+                    }
+                }
+                existingDevice.setRadarIp(radarIp.trim());
+            }
+            
+            if (radarName != null && !radarName.trim().isEmpty()) {
+                existingDevice.setRadarName(radarName.trim());
+            }
+            
+            if (body.containsKey("assemblyId")) {
+                existingDevice.setAssemblyId(assemblyId);
+            }
+            
+            if (radarDeviceDAO.saveOrUpdate(existingDevice)) {
+                logger.info("雷达设备已更新: deviceId={}", deviceId);
+                return createSuccessResponse(existingDevice.toMap());
+            } else {
+                response.status(400);
+                return createErrorResponse(400, "更新雷达设备失败");
+            }
+        } catch (Exception e) {
+            logger.error("更新雷达设备失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
+     * 删除雷达设备
+     * DELETE /api/radar/devices/:deviceId
+     * 级联删除所有关联数据：背景模型、防区、侵入记录
+     */
+    public Object deleteRadarDevice(Request request, Response response) {
+        try {
+            String deviceId = request.params("deviceId");
+            
+            // 查找现有设备
+            RadarDevice existingDevice = radarDeviceDAO.getByDeviceId(deviceId);
+            if (existingDevice == null) {
+                response.status(404);
+                return createErrorResponse(404, "雷达设备不存在: " + deviceId);
+            }
+            
+            logger.info("开始删除雷达设备及关联数据: deviceId={}", deviceId);
+            
+            // 1. 删除侵入记录
+            int deletedIntrusions = intrusionDetectionService.clearIntrusionRecords(deviceId);
+            logger.info("已删除侵入记录: deviceId={}, 数量={}", deviceId, deletedIntrusions);
+            
+            // 2. 删除防区
+            List<DefenseZone> zones = defenseZoneService.getZonesByDeviceId(deviceId);
+            int deletedZones = 0;
+            for (DefenseZone zone : zones) {
+                if (defenseZoneService.deleteZone(zone.getZoneId())) {
+                    deletedZones++;
+                }
+            }
+            logger.info("已删除防区: deviceId={}, 数量={}", deviceId, deletedZones);
+            
+            // 3. 删除背景模型
+            List<RadarBackground> backgrounds = backgroundService.getBackgroundDAO().getByDeviceId(deviceId);
+            int deletedBackgrounds = 0;
+            for (RadarBackground bg : backgrounds) {
+                if (backgroundService.deleteBackground(bg.getBackgroundId())) {
+                    deletedBackgrounds++;
+                }
+            }
+            logger.info("已删除背景模型: deviceId={}, 数量={}", deviceId, deletedBackgrounds);
+            
+            // 4. 删除雷达设备
+            if (radarDeviceDAO.delete(deviceId)) {
+                logger.info("雷达设备已删除: deviceId={}", deviceId);
+                
+                Map<String, Object> result = new HashMap<>();
+                result.put("deviceId", deviceId);
+                result.put("deletedIntrusions", deletedIntrusions);
+                result.put("deletedZones", deletedZones);
+                result.put("deletedBackgrounds", deletedBackgrounds);
+                
+                return createSuccessResponse(result);
+            } else {
+                response.status(400);
+                return createErrorResponse(400, "删除雷达设备失败");
+            }
+        } catch (Exception e) {
+            logger.error("删除雷达设备失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
      * 验证IP地址格式
      */
     private boolean isValidIpAddress(String ip) {
