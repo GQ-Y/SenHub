@@ -2,8 +2,7 @@ package com.digital.video.gateway.driver.livox;
 
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
 import com.digital.video.gateway.database.Database;
-import com.livox.demo.LivoxJNI;
-import com.livox.demo.PointCloudCallback;
+// 使用项目内部的 LivoxJNI（包含设备信息回调支持）
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -363,5 +362,21 @@ public class LivoxDriver {
                 legacyCallback.onPointCloud(packet);
             }
         };
+    }
+
+    /**
+     * 占位：通过IP获取设备信息（序列号等）
+     * 如果未来JNI层暴露更多能力，可以在此处调用。
+     */
+    public DeviceInfo getDeviceInfo(String ip) {
+        // 当前JNI未暴露设备信息查询接口，返回占位对象，保留扩展点
+        log.debug("getDeviceInfo 占位调用，当前未集成SDK查询逻辑, ip={}", ip);
+        return null;
+    }
+
+    public static class DeviceInfo {
+        public String serial;
+        public String model;
+        public String firmware;
     }
 }

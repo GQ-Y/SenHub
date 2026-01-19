@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { get, post, put, del, setToken } from './client';
 import { API_CONFIG } from './config';
 import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus } from '../../types';
@@ -573,8 +574,16 @@ export const radarService = {
   /**
    * 添加雷达设备
    */
-  async addRadarDevice(device: { deviceId: string; radarIp: string; radarName?: string; assemblyId?: string }) {
+  async addRadarDevice(device: { deviceId?: string; radarIp: string; radarName?: string; assemblyId?: string; radarSerial?: string }) {
     const response = await post<any>('/radar/devices', device);
+    return response;
+  },
+
+  /**
+   * 测试雷达连通性（获取序列号）
+   */
+  async testRadarConnection(ip: string) {
+    const response = await get<any>('/radar/test', { ip });
     return response;
   },
 

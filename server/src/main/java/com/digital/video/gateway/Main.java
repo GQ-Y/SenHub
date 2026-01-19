@@ -152,8 +152,8 @@ public class Main {
             List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
             logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
 
-            radarTestService = new RadarTestService();
-            logger.info("新增服务初始化成功");
+            radarTestService = new RadarTestService(radarService);
+            logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
 
             // 5.8. 注入依赖到AlarmService
             alarmService.setAlarmRuleService(alarmRuleService);
@@ -519,6 +519,7 @@ public class Main {
         Spark.get("/api/devices/:deviceId/assemblies", assemblyController::getAssembliesByDevice);
 
         // 雷达路由
+        Spark.get("/api/radar/test", radarController::testConnection); // 兼容GET方式检测
         Spark.post("/api/radar/test", radarController::testConnection);
         Spark.get("/api/radar/devices", radarController::getRadarDevices);
         Spark.post("/api/radar/devices", radarController::addRadarDevice);

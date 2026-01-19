@@ -22,10 +22,13 @@ export const RadarManagement: React.FC = () => {
   const [formData, setFormData] = useState({
     radarIp: '',
     radarName: '',
-    assemblyId: ''
+    assemblyId: '',
+    radarSerial: ''
   });
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectResult, setDetectResult] = useState<{ reachable?: boolean; radarSerial?: string; message?: string } | null>(null);
 
   // 加载雷达设备列表
   const loadDevices = async () => {
@@ -59,7 +62,8 @@ export const RadarManagement: React.FC = () => {
   };
 
   const openCreateModal = () => {
-    setFormData({ radarIp: '', radarName: '', assemblyId: '' });
+    setFormData({ radarIp: '', radarName: '', assemblyId: '', radarSerial: '' });
+    setDetectResult(null);
     setActiveModal('CREATE');
   };
 
@@ -68,8 +72,10 @@ export const RadarManagement: React.FC = () => {
     setFormData({
       radarIp: device.radarIp || '',
       radarName: device.radarName || '',
-      assemblyId: device.assemblyId || ''
+      assemblyId: device.assemblyId || '',
+      radarSerial: device.radarSerial || ''
     });
+    setDetectResult(null);
     setActiveModal('EDIT');
   };
 
@@ -82,6 +88,56 @@ export const RadarManagement: React.FC = () => {
     setActiveModal('NONE');
     setSelectedDevice(null);
     setIsSaving(false);
+    setIsDetecting(false);
+    setDetectResult(null);
+  };
+
+  const handleDetect = async () => {
+    if (!formData.radarIp?.trim()) {
+      modal.showModal({
+        message: '请输入雷达IP地址',
+        type: 'warning',
+      });
+      return;
+    }
+    const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipPattern.test(formData.radarIp.trim())) {
+      modal.showModal({
+        message: '请输入有效的IP地址格式',
+        type: 'warning',
+      });
+      return;
+    }
+    setIsDetecting(true);
+    setDetectResult(null);
+    try {
+      const res = await radarService.testRadarConnection(formData.radarIp.trim());
+      const data = res.data || {};
+      setDetectResult({
+        reachable: data.reachable,
+        radarSerial: data.radarSerial,
+        message: data.message,
+      });
+      if (!data.reachable) {
+        modal.showModal({
+          message: data.message || '无法连接到雷达',
+          type: 'warning',
+        });
+      } else {
+        setFormData((prev) => ({ ...prev, radarSerial: data.radarSerial || prev.radarSerial }));
+        modal.showModal({
+          message: '检测成功' + (data.radarSerial ? `，序列号：${data.radarSerial}` : ''),
+          type: 'success',
+        });
+      }
+    } catch (err: any) {
+      modal.showModal({
+        message: err.message || '检测失败',
+        type: 'error',
+      });
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   const handleSave = async () => {
@@ -111,6 +167,22 @@ export const RadarManagement: React.FC = () => {
       return;
     }
 
+    if (!formData.radarSerial?.trim()) {
+      modal.showModal({
+        message: '请输入雷达序列号（SN）',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (!detectResult?.reachable) {
+      modal.showModal({
+        message: '请先成功检测雷达连通性后再添加',
+        type: 'warning',
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       if (activeModal === 'CREATE') {
@@ -127,7 +199,8 @@ export const RadarManagement: React.FC = () => {
         });
       }
       handleCloseModal();
-      setFormData({ radarIp: '', radarName: '', assemblyId: '' });
+      setFormData({ radarIp: '', radarName: '', assemblyId: '', radarSerial: '' });
+      setDetectResult(null);
       await loadDevices();
     } catch (err: any) {
       modal.showModal({
@@ -401,6 +474,40 @@ export const RadarManagement: React.FC = () => {
                     placeholder="192.168.1.115"
                   />
                   <p className="mt-1 text-xs text-gray-500">设备ID将自动生成</p>
+                  <div className="mt-3 flex items-center space-x-2">
+                    <button
+                      onClick={handleDetect}
+                      disabled={isDetecting}
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors disabled:opacity-60"
+                    >
+                      {isDetecting ? '检测中...' : '检测雷达'}
+                    </button>
+                    {detectResult && (
+                      <span className={`text-sm ${detectResult.reachable ? 'text-green-600' : 'text-red-600'}`}>
+                        {detectResult.reachable ? '已连接' : '未连接'}
+                        {detectResult.radarSerial ? ` · 序列号: ${detectResult.radarSerial}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  {detectResult?.message && (
+                    <p className="mt-1 text-xs text-gray-500 whitespace-pre-line">{detectResult.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    雷达序列号(SN) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.radarSerial}
+                    readOnly={!!detectResult?.radarSerial}
+                    onChange={(e) => setFormData({ ...formData, radarSerial: e.target.value })}
+                    placeholder="请输入SN，例如 47MCN980033214"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    将作为唯一设备ID存储{detectResult?.radarSerial ? '（已自动填充）' : '，请确保准确'}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

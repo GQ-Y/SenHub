@@ -1,14 +1,15 @@
 package com.digital.video.gateway.service;
 
 import com.digital.video.gateway.driver.livox.LivoxDriver;
+import com.digital.video.gateway.driver.livox.LivoxJNI;
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
 import com.digital.video.gateway.driver.livox.model.*;
 import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
 import com.digital.video.gateway.driver.livox.algorithm.PointCloudProcessor;
 import com.digital.video.gateway.database.Database;
+import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.RadarDeviceDAO;
 import com.digital.video.gateway.api.RadarWebSocketHandler;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,11 +52,18 @@ public class RadarService {
                                                                                               // BackgroundModel
     private final Map<String, List<DefenseZone>> deviceZones = new ConcurrentHashMap<>(); // deviceId ->
                                                                                           // List<DefenseZone>
+    private final Map<String, String> deviceSerialMap = new ConcurrentHashMap<>(); // deviceId -> radarSerial
+    private final Map<String, Boolean> deviceConnectionStatus = new ConcurrentHashMap<>(); // deviceId -> connected
+    
+    // SDK 设备信息缓存：handle -> (serial, ip)
+    private final Map<Integer, String[]> sdkDeviceInfoCache = new ConcurrentHashMap<>(); // handle -> [serial, ip]
+    private final Map<String, Integer> ipToHandleMap = new ConcurrentHashMap<>(); // ip -> handle
 
     // 点云数据统计
     private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
     private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
     private ScheduledExecutorService statsExecutor;
+    private RadarStatusMonitor statusMonitor;
 
     // 降噪配置参数
     private boolean enableDenoising = true; // 默认启用降噪
@@ -73,6 +81,7 @@ public class RadarService {
         this.intrusionDetectionService = new IntrusionDetectionService(database);
         this.recordingManager = new RecordingManager(database);
         this.webSocketHandler = new RadarWebSocketHandler(this);
+        this.statusMonitor = new RadarStatusMonitor(database);
     }
 
     /**
@@ -89,6 +98,10 @@ public class RadarService {
         try {
             livoxDriver.start();
             livoxDriver.setPointCloudCallback(this::handlePacket);
+            
+            // 注册设备信息变化回调（用于获取 SN 和检测设备连接/断开）
+            registerDeviceInfoCallback();
+            
             logger.info("雷达监听服务已启动 (JNI Driver)");
 
             // 启动统计信息打印任务（每秒打印一次）
@@ -96,9 +109,167 @@ public class RadarService {
 
             // 服务启动时自动加载所有设备的检测上下文（恢复检测状态）
             loadAllDeviceDetectionContexts();
+            if (statusMonitor != null) {
+                statusMonitor.start();
+            }
         } catch (Exception e) {
             logger.error("启动雷达监听服务失败", e);
         }
+    }
+    
+    /**
+     * 注册设备信息变化回调
+     * SDK 会在设备连接/断开时自动调用，提供设备的 SN 和 IP
+     */
+    private void registerDeviceInfoCallback() {
+        try {
+            LivoxJNI.setDeviceInfoCallback((handle, devType, serial, ip) -> {
+                logger.info("SDK 设备信息回调: handle={}, devType={}, serial={}, ip={}", 
+                        handle, devType, serial, ip);
+                
+                // 缓存设备信息
+                if (serial != null && ip != null) {
+                    sdkDeviceInfoCache.put(handle, new String[]{serial, ip});
+                    ipToHandleMap.put(ip, handle);
+                    
+                    // 更新数据库中的设备状态为在线
+                    updateDeviceStatusByIpOrSerial(ip, serial, true);
+                }
+            });
+            logger.info("已注册 SDK 设备信息回调");
+        } catch (UnsatisfiedLinkError e) {
+            logger.warn("JNI 设备信息回调不可用（可能需要重新编译 JNI 库）: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.warn("注册设备信息回调失败", e);
+        }
+    }
+    
+    /**
+     * 根据 IP 或 SN 更新设备状态
+     * 如果通过 SN 找到设备且 IP 发生变化，自动同步新 IP
+     */
+    private void updateDeviceStatusByIpOrSerial(String ip, String serial, boolean online) {
+        RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+        
+        // 优先通过序列号查找
+        RadarDevice device = dao.getBySerial(serial);
+        if (device != null) {
+            String oldIp = device.getRadarIp();
+            boolean ipChanged = oldIp != null && !oldIp.equals(ip);
+            
+            if (ipChanged) {
+                // IP 发生变化，同时更新 IP 和状态
+                dao.updateIpAndStatus(device.getDeviceId(), ip, online ? 1 : 0);
+                logger.info("检测到雷达IP变化，已自动同步: deviceId={}, serial={}, oldIp={} -> newIp={}", 
+                        device.getDeviceId(), serial, oldIp, ip);
+            } else {
+                // IP 未变化，只更新状态
+                dao.updateStatus(device.getDeviceId(), online ? 1 : 0);
+                logger.info("通过序列号更新设备状态: deviceId={}, serial={}, online={}", 
+                        device.getDeviceId(), serial, online);
+            }
+            
+            deviceConnectionStatus.put(device.getDeviceId(), online);
+            // 更新内存中的序列号映射
+            deviceSerialMap.put(device.getDeviceId(), serial);
+            return;
+        }
+        
+        // 通过 IP 查找（用于序列号为空的旧设备）
+        List<RadarDevice> devices = dao.getAll();
+        for (RadarDevice d : devices) {
+            if (ip.equals(d.getRadarIp())) {
+                // 如果设备没有序列号，自动补充序列号
+                if (d.getRadarSerial() == null || d.getRadarSerial().isEmpty()) {
+                    d.setRadarSerial(serial);
+                    dao.saveOrUpdate(d);
+                    logger.info("为已有设备补充序列号: deviceId={}, ip={}, serial={}", 
+                            d.getDeviceId(), ip, serial);
+                }
+                dao.updateStatus(d.getDeviceId(), online ? 1 : 0);
+                deviceConnectionStatus.put(d.getDeviceId(), online);
+                deviceSerialMap.put(d.getDeviceId(), serial);
+                logger.info("通过IP更新设备状态: deviceId={}, ip={}, online={}", 
+                        d.getDeviceId(), ip, online);
+                return;
+            }
+        }
+        
+        logger.debug("未找到匹配的设备: ip={}, serial={}", ip, serial);
+    }
+    
+    /**
+     * 根据 IP 获取 SDK 检测到的设备序列号
+     * 用于 RadarTestService 进行设备检测
+     * @param ip 设备 IP 地址
+     * @return 设备序列号，如果未检测到返回 null
+     */
+    public String getDeviceSerialByIp(String ip) {
+        // 先从 JNI 缓存查询
+        try {
+            String serial = LivoxJNI.getDeviceSerialByIp(ip);
+            if (serial != null && !serial.isEmpty()) {
+                logger.debug("从 JNI 缓存获取到设备序列号: ip={}, serial={}", ip, serial);
+                return serial;
+            }
+        } catch (UnsatisfiedLinkError e) {
+            logger.debug("JNI 查询不可用: {}", e.getMessage());
+        }
+        
+        // 从内存缓存查询
+        Integer handle = ipToHandleMap.get(ip);
+        if (handle != null) {
+            String[] info = sdkDeviceInfoCache.get(handle);
+            if (info != null && info.length > 0) {
+                logger.debug("从内存缓存获取到设备序列号: ip={}, serial={}", ip, info[0]);
+                return info[0];
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 检查指定 IP 的设备是否已被 SDK 检测到
+     * @param ip 设备 IP 地址
+     * @return 如果 SDK 已检测到该设备返回 true
+     */
+    public boolean isDeviceDetectedBySDK(String ip) {
+        return getDeviceSerialByIp(ip) != null;
+    }
+    
+    /**
+     * 获取所有 SDK 检测到的设备信息
+     * @return Map: IP -> Serial
+     */
+    public Map<String, String> getAllDetectedDevices() {
+        Map<String, String> devices = new HashMap<>();
+        
+        // 从 JNI 获取所有连接的设备
+        try {
+            int[] handles = LivoxJNI.getConnectedDeviceHandles();
+            if (handles != null) {
+                for (int handle : handles) {
+                    String serial = LivoxJNI.getDeviceSerial(handle);
+                    String ip = LivoxJNI.getDeviceIp(handle);
+                    if (serial != null && ip != null) {
+                        devices.put(ip, serial);
+                    }
+                }
+            }
+        } catch (UnsatisfiedLinkError e) {
+            logger.debug("JNI 查询不可用，使用内存缓存: {}", e.getMessage());
+        }
+        
+        // 补充内存缓存中的数据
+        for (Map.Entry<Integer, String[]> entry : sdkDeviceInfoCache.entrySet()) {
+            String[] info = entry.getValue();
+            if (info != null && info.length >= 2) {
+                devices.putIfAbsent(info[1], info[0]); // ip -> serial
+            }
+        }
+        
+        return devices;
     }
 
     /**
@@ -151,6 +322,9 @@ public class RadarService {
 
         livoxDriver.stop();
         logger.info("雷达监听服务已停止");
+        if (statusMonitor != null) {
+            statusMonitor.stop();
+        }
     }
 
     /**
@@ -219,7 +393,7 @@ public class RadarService {
             int yInt = bb.getInt(); // 4 bytes, mm
             int zInt = bb.getInt(); // 4 bytes, mm
             byte reflectivity = bb.get(); // 1 byte
-            byte tag = bb.get(); // 1 byte (忽略)
+            bb.get(); // 1 byte (忽略 tag)
 
             // mm -> m
             float x = xInt / 1000.0f;
@@ -253,7 +427,7 @@ public class RadarService {
             short yShort = bb.getShort(); // 2 bytes, cm
             short zShort = bb.getShort(); // 2 bytes, cm
             byte reflectivity = bb.get(); // 1 byte
-            byte tag = bb.get(); // 1 byte (忽略)
+            bb.get(); // 1 byte (忽略 tag)
 
             // cm -> m
             float x = xShort / 100.0f;
@@ -274,6 +448,11 @@ public class RadarService {
         if (deviceId == null) {
             // 没有配置雷达设备，忽略点云数据
             return;
+        }
+
+        // 收到数据即视为在线，进行状态同步
+        if (!Boolean.TRUE.equals(deviceConnectionStatus.get(deviceId))) {
+            syncDeviceStatus(deviceId, true);
         }
 
         // 降噪处理（可选）
@@ -444,7 +623,7 @@ public class RadarService {
 
         // 坐标系转换
         DefenseZone.CoordinateTransform transform = zone.getCoordinateTransform();
-        com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform coordTransform = new com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform(
+        CoordinateTransform coordTransform = new CoordinateTransform(
                 transform.translationX, transform.translationY, transform.translationZ,
                 transform.rotationX, transform.rotationY, transform.rotationZ,
                 transform.scale);
@@ -480,7 +659,9 @@ public class RadarService {
             return null;
         } else if (devices.size() == 1) {
             // 只有一个雷达设备，直接使用
-            return devices.get(0).getDeviceId();
+            com.digital.video.gateway.database.RadarDevice device = devices.get(0);
+            cacheSerial(device);
+            return device.getDeviceId();
         } else {
             // 多个雷达设备，优先使用配置指定的，否则使用第一个
             String configuredDeviceId = database.getConfig("radar.current_device_id");
@@ -488,13 +669,16 @@ public class RadarService {
                 // 检查配置的设备ID是否存在
                 for (com.digital.video.gateway.database.RadarDevice device : devices) {
                     if (configuredDeviceId.equals(device.getDeviceId())) {
+                        cacheSerial(device);
                         return device.getDeviceId();
                     }
                 }
             }
             // 使用第一个设备
-            logger.debug("多个雷达设备，使用第一个: {}", devices.get(0).getDeviceId());
-            return devices.get(0).getDeviceId();
+            com.digital.video.gateway.database.RadarDevice first = devices.get(0);
+            cacheSerial(first);
+            logger.debug("多个雷达设备，使用第一个: {}", first.getDeviceId());
+            return first.getDeviceId();
         }
     }
 
@@ -502,10 +686,29 @@ public class RadarService {
      * 根据handle获取设备ID（简化实现：如果只有一个设备，直接返回）
      * TODO: 未来可以通过JNI扩展获取handle对应的设备IP/SN进行精确匹配
      */
+    @SuppressWarnings("unused")
     private String getDeviceIdByHandle(int handle) {
         // 简化实现：返回第一个设备的ID
         // 实际应该通过handle查询设备信息进行匹配
         return getCurrentDeviceId();
+    }
+
+    /**
+     * 缓存设备序列号映射，便于状态同步
+     */
+    private void cacheSerial(com.digital.video.gateway.database.RadarDevice device) {
+        if (device != null && device.getRadarSerial() != null) {
+            deviceSerialMap.put(device.getDeviceId(), device.getRadarSerial());
+        }
+    }
+
+    /**
+     * 同步设备在线状态到数据库
+     */
+    public void syncDeviceStatus(String deviceId, boolean connected) {
+        deviceConnectionStatus.put(deviceId, connected);
+        RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+        dao.updateStatus(deviceId, connected ? 1 : 0);
     }
 
     // ==================== 公共API方法 ====================

@@ -39,6 +39,46 @@ JNIEXPORT void JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_stop
 JNIEXPORT void JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_setPointCloudCallback
   (JNIEnv *, jclass, jobject);
 
+/*
+ * Class:     com_digital_video_gateway_driver_livox_LivoxJNI
+ * Method:    setDeviceInfoCallback
+ * Signature: (Lcom/digital/video/gateway/driver/livox/DeviceInfoCallback;)V
+ */
+JNIEXPORT void JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_setDeviceInfoCallback
+  (JNIEnv *, jclass, jobject);
+
+/*
+ * Class:     com_digital_video_gateway_driver_livox_LivoxJNI
+ * Method:    getDeviceSerial
+ * Signature: (I)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_getDeviceSerial
+  (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     com_digital_video_gateway_driver_livox_LivoxJNI
+ * Method:    getDeviceIp
+ * Signature: (I)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_getDeviceIp
+  (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     com_digital_video_gateway_driver_livox_LivoxJNI
+ * Method:    getConnectedDeviceHandles
+ * Signature: ()[I
+ */
+JNIEXPORT jintArray JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_getConnectedDeviceHandles
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     com_digital_video_gateway_driver_livox_LivoxJNI
+ * Method:    getDeviceSerialByIp
+ * Signature: (Ljava/lang/String;)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_digital_video_gateway_driver_livox_LivoxJNI_getDeviceSerialByIp
+  (JNIEnv *, jclass, jstring);
+
 #ifdef __cplusplus
 }
 #endif

@@ -72,4 +72,38 @@ public class LivoxJNI {
      * @param callback 回调接口
      */
     public static native void setPointCloudCallback(PointCloudCallback callback);
+    
+    /**
+     * 设置设备信息变化回调
+     * SDK 会自动检测设备连接/断开并通过此回调通知
+     * @param callback 回调接口
+     */
+    public static native void setDeviceInfoCallback(DeviceInfoCallback callback);
+    
+    /**
+     * 根据设备句柄获取设备序列号
+     * @param handle 设备句柄
+     * @return 设备序列号，如果不存在返回 null
+     */
+    public static native String getDeviceSerial(int handle);
+    
+    /**
+     * 根据设备句柄获取设备 IP
+     * @param handle 设备句柄
+     * @return 设备 IP，如果不存在返回 null
+     */
+    public static native String getDeviceIp(int handle);
+    
+    /**
+     * 获取所有已连接设备的句柄
+     * @return 设备句柄数组
+     */
+    public static native int[] getConnectedDeviceHandles();
+    
+    /**
+     * 根据 IP 地址获取设备序列号
+     * @param ip 设备 IP 地址
+     * @return 设备序列号，如果不存在返回 null
+     */
+    public static native String getDeviceSerialByIp(String ip);
 }

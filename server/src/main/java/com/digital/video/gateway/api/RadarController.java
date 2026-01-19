@@ -1,6 +1,7 @@
 package com.digital.video.gateway.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.RadarDeviceDAO;
@@ -62,8 +63,16 @@ public class RadarController {
     public Object testConnection(Request request, Response response) {
         try {
             String ip = request.queryParams("ip") != null ? request.queryParams("ip") : "192.168.1.115";
-            String resultText = radarTestService.testConnection(ip);
-            return createSuccessResponse(resultText);
+            RadarTestService.RadarDetectionResult result = radarTestService.testConnection(ip);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("reachable", result.isReachable());
+            payload.put("message", result.getMessage());
+            payload.put("ip", result.getIp());
+            if (result.getRadarSerial() != null) {
+                payload.put("radarSerial", result.getRadarSerial());
+            }
+            return createSuccessResponse(payload);
         } catch (Exception e) {
             logger.error("测试雷达连接失败", e);
             response.status(500);
@@ -97,11 +106,12 @@ public class RadarController {
      */
     public Object addRadarDevice(Request request, Response response) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
 
             // 验证必填字段
             String radarIp = (String) body.get("radarIp");
             String radarName = (String) body.get("radarName");
+            String radarSerial = (String) body.get("radarSerial");
 
             if (radarIp == null || radarIp.trim().isEmpty()) {
                 response.status(400);
@@ -119,33 +129,51 @@ public class RadarController {
                 return createErrorResponse(400, "无效的IP地址格式");
             }
 
-            // 检查IP是否已存在
+            // 序列号必须提供，作为唯一ID
+            if (radarSerial == null || radarSerial.trim().isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "雷达序列号不能为空");
+            }
+            radarSerial = radarSerial.trim();
+
+            // 查询是否已有同序列号设备
+            RadarDevice existingBySerial = radarDeviceDAO.getBySerial(radarSerial);
+
+            // 检查IP是否被其他设备占用（不同序列号）
             List<RadarDevice> existingDevices = radarDeviceDAO.getAll();
             for (RadarDevice existing : existingDevices) {
-                if (radarIp.equals(existing.getRadarIp())) {
+                if (radarIp.equals(existing.getRadarIp()) &&
+                        (existingBySerial == null || !existing.getDeviceId().equals(existingBySerial.getDeviceId()))) {
                     response.status(400);
                     return createErrorResponse(400, "该IP地址已存在: " + radarIp);
                 }
             }
 
-            // 自动生成deviceId
-            String deviceId = "radar_" + System.currentTimeMillis() + "_" +
-                    UUID.randomUUID().toString().substring(0, 8);
+            // 设备ID取序列号
+            String deviceId = radarSerial;
 
             RadarDevice device = new RadarDevice();
             device.setDeviceId(deviceId);
             device.setRadarIp(radarIp.trim());
             device.setRadarName(radarName.trim());
             device.setAssemblyId((String) body.get("assemblyId")); // 可选
-            device.setStatus(0);
+            device.setRadarSerial(radarSerial);
+
+            if (existingBySerial != null) {
+                // 已存在该序列号 -> 更新IP/名称/关联
+                device.setStatus(existingBySerial.getStatus());
+            } else {
+                device.setStatus(0);
+            }
 
             if (radarDeviceDAO.saveOrUpdate(device)) {
-                logger.info("雷达设备添加成功: deviceId={}, radarIp={}, radarName={}",
+                logger.info("雷达设备已{}: deviceId={}, radarIp={}, radarName={}",
+                        existingBySerial != null ? "更新" : "添加",
                         deviceId, radarIp, radarName);
                 return createSuccessResponse(device.toMap());
             } else {
                 response.status(400);
-                return createErrorResponse(400, "添加雷达设备失败");
+                return createErrorResponse(400, existingBySerial != null ? "更新雷达设备失败" : "添加雷达设备失败");
             }
         } catch (Exception e) {
             logger.error("添加雷达设备失败", e);
@@ -192,7 +220,7 @@ public class RadarController {
             }
 
             String deviceId = request.params("deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
             int durationSeconds = body.get("durationSeconds") != null
                     ? ((Number) body.get("durationSeconds")).intValue()
                     : 10;
@@ -202,7 +230,6 @@ public class RadarController {
 
             String backgroundId = radarService.startBackgroundCollection(deviceId, durationSeconds, gridResolution);
 
-            @SuppressWarnings("unchecked")
             Map<String, Object> result = new HashMap<>();
             result.put("backgroundId", backgroundId);
             result.put("status", "collecting");
@@ -316,7 +343,6 @@ public class RadarController {
      */
     public Object getBackgroundPoints(Request request, Response response) {
         try {
-            String deviceId = request.params("deviceId");
             String backgroundId = request.params("backgroundId");
             int maxPoints = request.queryParams("maxPoints") != null
                     ? Integer.parseInt(request.queryParams("maxPoints"))
@@ -380,7 +406,7 @@ public class RadarController {
     public Object createZone(Request request, Response response) {
         try {
             String deviceId = request.params("deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
 
             DefenseZone zone = new DefenseZone();
             zone.setDeviceId(deviceId);
@@ -431,7 +457,7 @@ public class RadarController {
         try {
             String deviceId = request.params("deviceId");
             String zoneId = request.params("zoneId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
 
             DefenseZone zone = new DefenseZone();
             zone.setZoneId(zoneId);
@@ -608,12 +634,10 @@ public class RadarController {
             List<RadarIntrusionRecord> records = intrusionDetectionService.getIntrusionRecords(
                     deviceId, zoneId, startTime, endTime, page, pageSize);
 
-            @SuppressWarnings("unchecked")
             List<Map<String, Object>> recordList = records.stream()
                     .map(RadarIntrusionRecord::toMap)
                     .collect(Collectors.toList());
 
-            @SuppressWarnings("unchecked")
             Map<String, Object> result = new HashMap<>();
             result.put("records", recordList);
             result.put("page", page);
@@ -674,8 +698,7 @@ public class RadarController {
 
             // 读取JSON文件并解析为Map，然后包装在标准响应格式中
             String jsonContent = new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> recordData = objectMapper.readValue(jsonContent, Map.class);
+            Map<String, Object> recordData = objectMapper.readValue(jsonContent, new TypeReference<Map<String, Object>>() {});
             return createSuccessResponse(recordData);
         } catch (Exception e) {
             logger.error("读取侵入数据文件失败", e);

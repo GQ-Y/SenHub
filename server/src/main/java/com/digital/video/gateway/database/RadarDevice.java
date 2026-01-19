@@ -15,6 +15,7 @@ public class RadarDevice {
     private String radarIp; // 雷达IP地址
     private String radarName;
     private String assemblyId; // 所属装置ID
+    private String radarSerial; // 雷达唯一序列号
     private int status; // 0:离线, 1:在线, 2:采集背景中
     private String currentBackgroundId; // 当前使用的背景模型ID
     private String coordinateTransform; // JSON格式的坐标系转换参数
@@ -60,6 +61,14 @@ public class RadarDevice {
 
     public void setAssemblyId(String assemblyId) {
         this.assemblyId = assemblyId;
+    }
+
+    public String getRadarSerial() {
+        return radarSerial;
+    }
+
+    public void setRadarSerial(String radarSerial) {
+        this.radarSerial = radarSerial;
     }
 
     public int getStatus() {
@@ -112,6 +121,7 @@ public class RadarDevice {
         device.setRadarIp(rs.getString("radar_ip"));
         device.setRadarName(rs.getString("radar_name"));
         device.setAssemblyId(rs.getString("assembly_id"));
+        device.setRadarSerial(rs.getString("radar_serial"));
         device.setStatus(rs.getInt("status"));
         device.setCurrentBackgroundId(rs.getString("current_background_id"));
         device.setCoordinateTransform(rs.getString("coordinate_transform"));
@@ -130,6 +140,7 @@ public class RadarDevice {
         map.put("radarIp", radarIp);
         map.put("radarName", radarName);
         map.put("assemblyId", assemblyId);
+        map.put("radarSerial", radarSerial);
         map.put("status", status);
         map.put("currentBackgroundId", currentBackgroundId);
         map.put("coordinateTransform", coordinateTransform);

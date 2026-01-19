@@ -23,17 +23,18 @@ public class RadarDeviceDAO {
      */
     public boolean saveOrUpdate(RadarDevice device) {
         String sql = "INSERT OR REPLACE INTO radar_devices " +
-                "(device_id, radar_ip, radar_name, assembly_id, status, current_background_id, " +
+                "(device_id, radar_ip, radar_name, assembly_id, radar_serial, status, current_background_id, " +
                 "coordinate_transform, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
             pstmt.setString(2, device.getRadarIp());
             pstmt.setString(3, device.getRadarName());
             pstmt.setString(4, device.getAssemblyId());
-            pstmt.setInt(5, device.getStatus());
-            pstmt.setString(6, device.getCurrentBackgroundId());
-            pstmt.setString(7, device.getCoordinateTransform());
+            pstmt.setString(5, device.getRadarSerial());
+            pstmt.setInt(6, device.getStatus());
+            pstmt.setString(7, device.getCurrentBackgroundId());
+            pstmt.setString(8, device.getCoordinateTransform());
             pstmt.executeUpdate();
             logger.debug("雷达设备已保存: {}", device.getDeviceId());
             return true;
@@ -78,6 +79,23 @@ public class RadarDeviceDAO {
     }
 
     /**
+     * 根据序列号获取雷达设备
+     */
+    public RadarDevice getBySerial(String radarSerial) {
+        String sql = "SELECT * FROM radar_devices WHERE radar_serial = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, radarSerial);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return RadarDevice.fromResultSet(rs);
+            }
+        } catch (SQLException e) {
+            logger.error("根据序列号查询雷达设备失败: {}", radarSerial, e);
+        }
+        return null;
+    }
+
+    /**
      * 更新雷达设备状态
      */
     public boolean updateStatus(String deviceId, int status) {
@@ -88,6 +106,61 @@ public class RadarDeviceDAO {
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
             logger.error("更新雷达设备状态失败: {}", deviceId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 根据序列号更新雷达设备状态
+     */
+    public boolean updateStatusBySerial(String radarSerial, int status) {
+        String sql = "UPDATE radar_devices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE radar_serial = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, status);
+            pstmt.setString(2, radarSerial);
+            return pstmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("根据序列号更新雷达设备状态失败: {}", radarSerial, e);
+            return false;
+        }
+    }
+    
+    /**
+     * 根据序列号更新雷达设备的 IP 地址
+     * 用于 SDK 自动发现设备后同步 IP 变化
+     */
+    public boolean updateIpBySerial(String radarSerial, String newIp) {
+        String sql = "UPDATE radar_devices SET radar_ip = ?, updated_at = CURRENT_TIMESTAMP WHERE radar_serial = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, newIp);
+            pstmt.setString(2, radarSerial);
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                logger.info("根据序列号更新雷达设备IP: serial={}, newIp={}", radarSerial, newIp);
+            }
+            return rows > 0;
+        } catch (SQLException e) {
+            logger.error("根据序列号更新雷达设备IP失败: serial={}, newIp={}", radarSerial, newIp, e);
+            return false;
+        }
+    }
+    
+    /**
+     * 更新设备的 IP 和状态（同时更新）
+     */
+    public boolean updateIpAndStatus(String deviceId, String newIp, int status) {
+        String sql = "UPDATE radar_devices SET radar_ip = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, newIp);
+            pstmt.setInt(2, status);
+            pstmt.setString(3, deviceId);
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                logger.info("更新雷达设备IP和状态: deviceId={}, newIp={}, status={}", deviceId, newIp, status);
+            }
+            return rows > 0;
+        } catch (SQLException e) {
+            logger.error("更新雷达设备IP和状态失败: deviceId={}", deviceId, e);
             return false;
         }
     }
