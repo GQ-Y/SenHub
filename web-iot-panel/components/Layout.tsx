@@ -411,9 +411,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
         </header>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-auto p-8">
-          <div className="max-w-7xl mx-auto animate-fade-in">
-            {children}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-auto p-6">
+            <div className={`h-full animate-fade-in ${currentView === 'WORKFLOW' ? '' : 'max-w-7xl mx-auto'}`}>
+              {children}
+            </div>
           </div>
         </div>
       </main>

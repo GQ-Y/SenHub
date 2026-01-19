@@ -4,7 +4,8 @@ import { AlarmFlow, CanvasConnection, CanvasNode, FlowComponentDefinition, FlowN
 import { useAppContext } from '../contexts/AppContext';
 import {
   Plus, Trash2, RefreshCw, Save, X, Download, Upload, ZoomIn, ZoomOut,
-  Play, Square, GitBranch, Camera, Video, Radio, Cloud, Volume2, Send, Zap, Settings, Move
+  Play, Square, GitBranch, Camera, Video, Radio, Cloud, Volume2, Send, Zap, Settings, Move,
+  Maximize2, Minimize2
 } from 'lucide-react';
 
 // 内置组件定义
@@ -94,8 +95,12 @@ export const FlowManagement: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [importJson, setImportJson] = useState('');
 
+  // 全屏状态
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 解析流程数据
   const parseFlow = (flow: any): AlarmFlow => ({
@@ -505,6 +510,22 @@ export const FlowManagement: React.FC = () => {
     navigator.clipboard.writeText(exportJson);
   };
 
+  // 切换全屏
+  const toggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
+  };
+
+  // ESC 退出全屏
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
   // 下载JSON文件
   const downloadJson = () => {
     const blob = new Blob([exportJson], { type: 'application/json' });
@@ -822,9 +843,13 @@ export const FlowManagement: React.FC = () => {
   const formValid = useMemo(() => form.name.trim().length > 0, [form.name]);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
-      {/* 左侧流程列表 */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+    <div 
+      ref={containerRef}
+      className={`flex ${isFullscreen ? 'fixed inset-0 z-50 bg-gray-50' : 'h-full min-h-[calc(100vh-10rem)]'}`}
+      style={{ height: isFullscreen ? '100vh' : '100%' }}
+    >
+      {/* 左侧流程列表 - 全屏时隐藏 */}
+      <div className={`w-64 bg-white border-r border-gray-200 flex flex-col ${isFullscreen ? 'hidden' : ''}`}>
         <div className="p-3 border-b border-gray-100">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold text-gray-800">{t('flow_list')}</h3>
@@ -911,34 +936,44 @@ export const FlowManagement: React.FC = () => {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowImportModal(true)}
-              className="inline-flex items-center px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+              title={t('import_flow')}
             >
-              <Upload size={14} className="mr-1" /> {t('import_flow')}
+              <Upload size={16} className="text-gray-600" />
             </button>
             <button
               onClick={() => setShowExportModal(true)}
-              className="inline-flex items-center px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+              title={t('export_flow')}
             >
-              <Download size={14} className="mr-1" /> {t('export_flow')}
+              <Download size={16} className="text-gray-600" />
             </button>
             <button
               onClick={clearCanvas}
-              className="inline-flex items-center px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-red-600"
+              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+              title={t('clear_canvas')}
             >
-              <Trash2 size={14} className="mr-1" /> {t('clear_canvas')}
+              <Trash2 size={16} className="text-red-500" />
             </button>
             <div className="h-5 w-px bg-gray-300" />
-            <button onClick={() => setScale(s => Math.max(s - 0.1, 0.3))} className="p-1 text-gray-500 hover:text-gray-700">
+            <button onClick={() => setScale(s => Math.max(s - 0.1, 0.3))} className="p-1 text-gray-500 hover:text-gray-700" title={t('zoom_out')}>
               <ZoomOut size={18} />
             </button>
             <span className="text-sm text-gray-600 w-12 text-center">{Math.round(scale * 100)}%</span>
-            <button onClick={() => setScale(s => Math.min(s + 0.1, 2))} className="p-1 text-gray-500 hover:text-gray-700">
+            <button onClick={() => setScale(s => Math.min(s + 0.1, 2))} className="p-1 text-gray-500 hover:text-gray-700" title={t('zoom_in')}>
               <ZoomIn size={18} />
             </button>
             <button onClick={fitView} className="px-2 py-1 text-sm text-gray-600 hover:text-gray-800">
               {t('zoom_fit')}
             </button>
             <div className="h-5 w-px bg-gray-300" />
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+              title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
+            >
+              {isFullscreen ? <Minimize2 size={16} className="text-gray-600" /> : <Maximize2 size={16} className="text-gray-600" />}
+            </button>
             <button
               disabled={!formValid || saving}
               onClick={handleSubmit}
@@ -957,38 +992,7 @@ export const FlowManagement: React.FC = () => {
         )}
 
         {/* 画布区域 */}
-        <div className="flex-1 flex relative">
-          {/* 组件面板 - 左下角 */}
-          <div className="absolute left-4 bottom-4 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-10 max-h-80 overflow-auto">
-            <div className="px-3 py-2 border-b border-gray-100 sticky top-0 bg-white">
-              <h4 className="font-semibold text-gray-800 text-sm">{t('flow_components')}</h4>
-              <p className="text-xs text-gray-500">{t('drag_hint')}</p>
-            </div>
-            <div className="p-2 space-y-2">
-              {CATEGORY_ORDER.map(cat => (
-                <div key={cat}>
-                  <div className="text-xs font-medium text-gray-500 uppercase mb-1">{t(`category_${cat}`)}</div>
-                  <div className="space-y-1">
-                    {groupedComponents[cat].map(comp => {
-                      const IconComp = ICON_MAP[comp.icon] || Settings;
-                      return (
-                        <div
-                          key={comp.type}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, comp)}
-                          className="flex items-center space-x-2 px-2 py-1.5 rounded border border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 cursor-grab active:cursor-grabbing transition"
-                        >
-                          <IconComp size={14} className="text-gray-600" />
-                          <span className="text-xs text-gray-700">{t(comp.label)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
+        <div className="flex-1 flex relative overflow-hidden">
           {/* 画布 */}
           <div
             ref={canvasRef}
@@ -1057,6 +1061,37 @@ export const FlowManagement: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* 组件面板 - 右侧边栏 */}
+          <div className="w-48 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 bg-white">
+              <h4 className="font-semibold text-gray-800 text-sm">{t('flow_components')}</h4>
+              <p className="text-xs text-gray-500">{t('drag_hint')}</p>
+            </div>
+            <div className="flex-1 overflow-auto p-2 space-y-2">
+              {CATEGORY_ORDER.map(cat => (
+                <div key={cat}>
+                  <div className="text-xs font-medium text-gray-500 uppercase mb-1">{t(`category_${cat}`)}</div>
+                  <div className="space-y-1">
+                    {groupedComponents[cat].map(comp => {
+                      const IconComp = ICON_MAP[comp.icon] || Settings;
+                      return (
+                        <div
+                          key={comp.type}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, comp)}
+                          className="flex items-center space-x-2 px-2 py-1.5 rounded border border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 cursor-grab active:cursor-grabbing transition"
+                        >
+                          <IconComp size={14} className="text-gray-600" />
+                          <span className="text-xs text-gray-700">{t(comp.label)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

@@ -383,6 +383,17 @@ export const systemService = {
     const response = await get<{ file: string; lines: number; content: string[] }>('/system/logs', lines ? { lines: lines.toString() } : undefined);
     return response;
   },
+
+  /**
+   * 测试通知发送
+   */
+  async testNotification(channel: 'wechat' | 'dingtalk' | 'feishu', config: { webhookUrl: string; secret?: string }) {
+    const response = await post<{ success: boolean; message: string }>(`/system/notification/test`, {
+      channel,
+      ...config,
+    });
+    return response;
+  },
 };
 
 // ==================== 仪表板服务 ====================

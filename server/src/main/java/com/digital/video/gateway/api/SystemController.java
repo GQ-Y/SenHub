@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.mqtt.MqttClient;
 import com.digital.video.gateway.service.ConfigService;
+import com.digital.video.gateway.service.NotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -25,16 +26,22 @@ public class SystemController {
     private static final Logger logger = LoggerFactory.getLogger(SystemController.class);
     private final ConfigService configService;
     private final MqttClient mqttClient;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SystemController(ConfigService configService) {
         this.configService = configService;
         this.mqttClient = null;
+        this.notificationService = null;
     }
 
     public SystemController(ConfigService configService, MqttClient mqttClient) {
         this.configService = configService;
         this.mqttClient = mqttClient;
+        Config config = configService.getConfig();
+        this.notificationService = config.getNotification() != null 
+            ? new NotificationService(config.getNotification()) 
+            : null;
     }
 
     /**
@@ -52,15 +59,49 @@ public class SystemController {
                 Map<String, Object> scanner = new HashMap<>();
                 scanner.put("enabled", config.getScanner().isEnabled());
                 scanner.put("interval", config.getScanner().getInterval());
-                scanner.put("ports", "80, 8000, 554, 37777"); // 从配置中获取或默认值
+                scanner.put("ports", "80, 8000, 554, 37777");
+                scanner.put("scanSegment", config.getScanner().getScanSegment());
+                scanner.put("scanRangeStart", config.getScanner().getScanRangeStart());
+                scanner.put("scanRangeEnd", config.getScanner().getScanRangeEnd());
                 systemConfig.put("scanner", scanner);
             }
             
-            // Auth配置
+            // Auth配置（包含品牌预设）
             if (config.getDevice() != null) {
                 Map<String, Object> auth = new HashMap<>();
-                auth.put("defaultUser", config.getDevice().getDefaultUsername());
-                auth.put("timeout", config.getDevice().getLoginTimeout());
+                auth.put("timeout", config.getDevice().getLoginTimeout() * 1000); // 转换为毫秒
+                
+                // 品牌预设
+                Map<String, Object> presets = new HashMap<>();
+                
+                Config.BrandPreset hik = config.getDevice().getHikvision();
+                if (hik != null) {
+                    Map<String, Object> hikPreset = new HashMap<>();
+                    hikPreset.put("port", hik.getPort());
+                    hikPreset.put("username", hik.getUsername());
+                    hikPreset.put("password", hik.getPassword());
+                    presets.put("hikvision", hikPreset);
+                }
+                
+                Config.BrandPreset tiandy = config.getDevice().getTiandy();
+                if (tiandy != null) {
+                    Map<String, Object> tiandyPreset = new HashMap<>();
+                    tiandyPreset.put("port", tiandy.getPort());
+                    tiandyPreset.put("username", tiandy.getUsername());
+                    tiandyPreset.put("password", tiandy.getPassword());
+                    presets.put("tiandy", tiandyPreset);
+                }
+                
+                Config.BrandPreset dahua = config.getDevice().getDahua();
+                if (dahua != null) {
+                    Map<String, Object> dahuaPreset = new HashMap<>();
+                    dahuaPreset.put("port", dahua.getPort());
+                    dahuaPreset.put("username", dahua.getUsername());
+                    dahuaPreset.put("password", dahua.getPassword());
+                    presets.put("dahua", dahuaPreset);
+                }
+                
+                auth.put("presets", presets);
                 systemConfig.put("auth", auth);
             }
             
@@ -76,8 +117,11 @@ public class SystemController {
             if (config.getOss() != null) {
                 Map<String, Object> oss = new HashMap<>();
                 oss.put("enabled", config.getOss().isEnabled());
+                oss.put("type", config.getOss().getType());
                 oss.put("endpoint", config.getOss().getEndpoint());
                 oss.put("bucket", config.getOss().getBucketName());
+                oss.put("accessKeyId", config.getOss().getAccessKeyId());
+                oss.put("accessKeySecret", ""); // 不返回密钥
                 systemConfig.put("oss", oss);
             }
             
@@ -87,6 +131,38 @@ public class SystemController {
                 log.put("level", config.getLog().getLevel());
                 log.put("retentionDays", config.getLog().getMaxAge());
                 systemConfig.put("log", log);
+            }
+            
+            // Notification配置
+            if (config.getNotification() != null) {
+                Map<String, Object> notification = new HashMap<>();
+                
+                Config.NotificationChannel wechat = config.getNotification().getWechat();
+                if (wechat != null) {
+                    Map<String, Object> wechatConfig = new HashMap<>();
+                    wechatConfig.put("enabled", wechat.isEnabled());
+                    wechatConfig.put("webhookUrl", wechat.getWebhookUrl());
+                    notification.put("wechat", wechatConfig);
+                }
+                
+                Config.NotificationChannel dingtalk = config.getNotification().getDingtalk();
+                if (dingtalk != null) {
+                    Map<String, Object> dingtalkConfig = new HashMap<>();
+                    dingtalkConfig.put("enabled", dingtalk.isEnabled());
+                    dingtalkConfig.put("webhookUrl", dingtalk.getWebhookUrl());
+                    dingtalkConfig.put("secret", dingtalk.getSecret());
+                    notification.put("dingtalk", dingtalkConfig);
+                }
+                
+                Config.NotificationChannel feishu = config.getNotification().getFeishu();
+                if (feishu != null) {
+                    Map<String, Object> feishuConfig = new HashMap<>();
+                    feishuConfig.put("enabled", feishu.isEnabled());
+                    feishuConfig.put("webhookUrl", feishu.getWebhookUrl());
+                    notification.put("feishu", feishuConfig);
+                }
+                
+                systemConfig.put("notification", notification);
             }
             
             response.status(200);
@@ -119,18 +195,66 @@ public class SystemController {
                     if (scannerData.containsKey("interval")) {
                         config.getScanner().setInterval(((Number) scannerData.get("interval")).intValue());
                     }
+                    if (scannerData.containsKey("scanSegment")) {
+                        config.getScanner().setScanSegment((String) scannerData.get("scanSegment"));
+                    }
+                    if (scannerData.containsKey("scanRangeStart")) {
+                        config.getScanner().setScanRangeStart(((Number) scannerData.get("scanRangeStart")).intValue());
+                    }
+                    if (scannerData.containsKey("scanRangeEnd")) {
+                        config.getScanner().setScanRangeEnd(((Number) scannerData.get("scanRangeEnd")).intValue());
+                    }
                 }
             }
             
-            // 更新Auth配置
+            // 更新Auth配置（包含品牌预设）
             if (body.containsKey("auth")) {
                 Map<String, Object> authData = (Map<String, Object>) body.get("auth");
                 if (config.getDevice() != null) {
-                    if (authData.containsKey("defaultUser")) {
-                        config.getDevice().setDefaultUsername((String) authData.get("defaultUser"));
-                    }
                     if (authData.containsKey("timeout")) {
-                        config.getDevice().setLoginTimeout(((Number) authData.get("timeout")).intValue());
+                        int timeout = ((Number) authData.get("timeout")).intValue();
+                        config.getDevice().setLoginTimeout(timeout / 1000); // 转换为秒
+                    }
+                    
+                    // 更新品牌预设
+                    if (authData.containsKey("presets")) {
+                        Map<String, Object> presets = (Map<String, Object>) authData.get("presets");
+                        
+                        if (presets.containsKey("hikvision")) {
+                            Map<String, Object> hikData = (Map<String, Object>) presets.get("hikvision");
+                            Config.BrandPreset hik = config.getDevice().getHikvision();
+                            if (hik == null) {
+                                hik = new Config.BrandPreset(8000, "admin", "");
+                                config.getDevice().setHikvision(hik);
+                            }
+                            if (hikData.containsKey("port")) hik.setPort(((Number) hikData.get("port")).intValue());
+                            if (hikData.containsKey("username")) hik.setUsername((String) hikData.get("username"));
+                            if (hikData.containsKey("password")) hik.setPassword((String) hikData.get("password"));
+                        }
+                        
+                        if (presets.containsKey("tiandy")) {
+                            Map<String, Object> tiandyData = (Map<String, Object>) presets.get("tiandy");
+                            Config.BrandPreset tiandy = config.getDevice().getTiandy();
+                            if (tiandy == null) {
+                                tiandy = new Config.BrandPreset(8000, "Admin", "");
+                                config.getDevice().setTiandy(tiandy);
+                            }
+                            if (tiandyData.containsKey("port")) tiandy.setPort(((Number) tiandyData.get("port")).intValue());
+                            if (tiandyData.containsKey("username")) tiandy.setUsername((String) tiandyData.get("username"));
+                            if (tiandyData.containsKey("password")) tiandy.setPassword((String) tiandyData.get("password"));
+                        }
+                        
+                        if (presets.containsKey("dahua")) {
+                            Map<String, Object> dahuaData = (Map<String, Object>) presets.get("dahua");
+                            Config.BrandPreset dahua = config.getDevice().getDahua();
+                            if (dahua == null) {
+                                dahua = new Config.BrandPreset(37777, "admin", "");
+                                config.getDevice().setDahua(dahua);
+                            }
+                            if (dahuaData.containsKey("port")) dahua.setPort(((Number) dahuaData.get("port")).intValue());
+                            if (dahuaData.containsKey("username")) dahua.setUsername((String) dahuaData.get("username"));
+                            if (dahuaData.containsKey("password")) dahua.setPassword((String) dahuaData.get("password"));
+                        }
                     }
                 }
             }
@@ -155,11 +279,20 @@ public class SystemController {
                     if (ossData.containsKey("enabled")) {
                         config.getOss().setEnabled((Boolean) ossData.get("enabled"));
                     }
+                    if (ossData.containsKey("type")) {
+                        config.getOss().setType((String) ossData.get("type"));
+                    }
                     if (ossData.containsKey("endpoint")) {
                         config.getOss().setEndpoint((String) ossData.get("endpoint"));
                     }
                     if (ossData.containsKey("bucket")) {
                         config.getOss().setBucketName((String) ossData.get("bucket"));
+                    }
+                    if (ossData.containsKey("accessKeyId")) {
+                        config.getOss().setAccessKeyId((String) ossData.get("accessKeyId"));
+                    }
+                    if (ossData.containsKey("accessKeySecret") && !((String) ossData.get("accessKeySecret")).isEmpty()) {
+                        config.getOss().setAccessKeySecret((String) ossData.get("accessKeySecret"));
                     }
                 }
             }
@@ -174,6 +307,50 @@ public class SystemController {
                     if (logData.containsKey("retentionDays")) {
                         config.getLog().setMaxAge(((Number) logData.get("retentionDays")).intValue());
                     }
+                }
+            }
+            
+            // 更新Notification配置
+            if (body.containsKey("notification")) {
+                Map<String, Object> notifData = (Map<String, Object>) body.get("notification");
+                Config.NotificationConfig notifConfig = config.getNotification();
+                if (notifConfig == null) {
+                    notifConfig = new Config.NotificationConfig();
+                    config.setNotification(notifConfig);
+                }
+                
+                if (notifData.containsKey("wechat")) {
+                    Map<String, Object> wechatData = (Map<String, Object>) notifData.get("wechat");
+                    Config.NotificationChannel wechat = notifConfig.getWechat();
+                    if (wechat == null) {
+                        wechat = new Config.NotificationChannel();
+                        notifConfig.setWechat(wechat);
+                    }
+                    if (wechatData.containsKey("enabled")) wechat.setEnabled((Boolean) wechatData.get("enabled"));
+                    if (wechatData.containsKey("webhookUrl")) wechat.setWebhookUrl((String) wechatData.get("webhookUrl"));
+                }
+                
+                if (notifData.containsKey("dingtalk")) {
+                    Map<String, Object> dingtalkData = (Map<String, Object>) notifData.get("dingtalk");
+                    Config.NotificationChannel dingtalk = notifConfig.getDingtalk();
+                    if (dingtalk == null) {
+                        dingtalk = new Config.NotificationChannel();
+                        notifConfig.setDingtalk(dingtalk);
+                    }
+                    if (dingtalkData.containsKey("enabled")) dingtalk.setEnabled((Boolean) dingtalkData.get("enabled"));
+                    if (dingtalkData.containsKey("webhookUrl")) dingtalk.setWebhookUrl((String) dingtalkData.get("webhookUrl"));
+                    if (dingtalkData.containsKey("secret")) dingtalk.setSecret((String) dingtalkData.get("secret"));
+                }
+                
+                if (notifData.containsKey("feishu")) {
+                    Map<String, Object> feishuData = (Map<String, Object>) notifData.get("feishu");
+                    Config.NotificationChannel feishu = notifConfig.getFeishu();
+                    if (feishu == null) {
+                        feishu = new Config.NotificationChannel();
+                        notifConfig.setFeishu(feishu);
+                    }
+                    if (feishuData.containsKey("enabled")) feishu.setEnabled((Boolean) feishuData.get("enabled"));
+                    if (feishuData.containsKey("webhookUrl")) feishu.setWebhookUrl((String) feishuData.get("webhookUrl"));
                 }
             }
             
@@ -283,6 +460,44 @@ public class SystemController {
             logger.error("重启MQTT失败", e);
             response.status(500);
             return createErrorResponse(500, "重启MQTT失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 测试通知发送
+     * POST /api/system/notification/test
+     */
+    @SuppressWarnings("unchecked")
+    public String testNotification(Request request, Response response) {
+        try {
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            
+            String channel = (String) body.get("channel");
+            String webhookUrl = (String) body.get("webhookUrl");
+            String secret = (String) body.getOrDefault("secret", "");
+            
+            if (channel == null || webhookUrl == null || webhookUrl.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "渠道类型和Webhook URL不能为空");
+            }
+            
+            // 创建临时的通知服务进行测试
+            Config.NotificationConfig tempConfig = new Config.NotificationConfig();
+            NotificationService tempService = new NotificationService(tempConfig);
+            
+            boolean success = tempService.testNotification(channel, webhookUrl, secret);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", success);
+            result.put("message", success ? "测试消息发送成功" : "测试消息发送失败");
+            
+            response.status(success ? 200 : 500);
+            response.type("application/json");
+            return createSuccessResponse(result);
+        } catch (Exception e) {
+            logger.error("测试通知发送失败", e);
+            response.status(500);
+            return createErrorResponse(500, "测试通知发送失败: " + e.getMessage());
         }
     }
 

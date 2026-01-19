@@ -31,6 +31,19 @@ device:
   rtsp_port: 554  # RTSP端口（用于视频流）
   login_timeout: 5  # 登录超时时间（秒）
   reconnect_interval: 30  # 重连间隔（秒）
+  # 品牌预设配置
+  hikvision:
+    port: 8000
+    username: "admin"
+    password: ""
+  tiandy:
+    port: 8000
+    username: "Admin"
+    password: ""
+  dahua:
+    port: 37777
+    username: "admin"
+    password: ""
 
 # 保活系统配置
 keeper:
@@ -86,3 +99,19 @@ recorder:
   enabled: true  # 是否启用自动录制
   record_path: "./storage/records"  # 录制文件存储路径
   retention_minutes: 10  # 录制文件保留时长（分钟），超过此时间的文件将被自动删除
+
+# 消息通知配置
+notification:
+  # 企业微信
+  wechat:
+    enabled: false
+    webhook_url: ""  # 企业微信群机器人Webhook地址
+  # 钉钉
+  dingtalk:
+    enabled: false
+    webhook_url: ""  # 钉钉群机器人Webhook地址
+    secret: ""       # 加签密钥（可选）
+  # 飞书
+  feishu:
+    enabled: false
+    webhook_url: ""  # 飞书群机器人Webhook地址

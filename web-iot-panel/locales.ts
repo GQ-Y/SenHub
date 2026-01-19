@@ -233,7 +233,47 @@ export const translations = {
     invalid_json: "Invalid JSON format",
     import_success: "Flow imported successfully",
     flow_list: "Flow List",
-    select_flow_to_edit: "Select a flow to edit or create new"
+    select_flow_to_edit: "Select a flow to edit or create new",
+    // Scanner settings
+    scanner_desc: "Automatically discover ONVIF devices on the local network.",
+    scan_interval: "Scan Interval (seconds)",
+    scan_segment: "Scan Segment",
+    scan_ports: "Target Ports",
+    scan_range: "IP Range",
+    // Keeper settings
+    keeper_desc: "Monitor device health and automatically attempt recovery.",
+    check_interval: "Check Interval (seconds)",
+    keeper_warning: "Reducing the check interval below 30 seconds may increase network load significantly.",
+    // Auth settings - Brand presets
+    auth_brand_presets: "Brand Default Settings",
+    auth_brand_desc: "Configure default connection parameters for different camera brands.",
+    brand_hikvision: "Hikvision",
+    brand_tiandy: "Tiandy",
+    brand_dahua: "Dahua",
+    default_port: "Default Port",
+    connection_timeout: "Connection Timeout (ms)",
+    // OSS settings
+    oss_desc: "Configure where snapshots and recordings are stored.",
+    oss_type: "Storage Type",
+    oss_type_aliyun: "Aliyun OSS",
+    oss_type_minio: "MinIO (Self-hosted)",
+    oss_type_custom: "Custom File Server",
+    oss_endpoint: "Endpoint",
+    oss_bucket: "Bucket Name",
+    oss_access_key: "Access Key ID",
+    oss_secret_key: "Access Key Secret",
+    oss_custom_desc: "For custom file server, only the server address is required. The backend will handle uploads via /upload/file_upload/imgUpload (base64) and /upload/file_upload/formDataUpload (form).",
+    // Notification settings
+    notification_title: "Message Notification",
+    notification_desc: "Configure alarm message push channels.",
+    wechat_work: "WeCom (Enterprise WeChat)",
+    dingtalk: "DingTalk",
+    feishu: "Feishu (Lark)",
+    webhook_url: "Webhook URL",
+    dingtalk_secret: "Sign Secret (Optional)",
+    test_send: "Test Send",
+    test_send_success: "Test message sent successfully",
+    test_send_failed: "Test message send failed"
   },
   zh: {
     app_name: "AI智能驱动网关管理平台",
@@ -469,6 +509,46 @@ export const translations = {
     invalid_json: "JSON格式无效",
     import_success: "流程导入成功",
     flow_list: "流程列表",
-    select_flow_to_edit: "选择要编辑的流程或创建新流程"
+    select_flow_to_edit: "选择要编辑的流程或创建新流程",
+    // Scanner settings
+    scanner_desc: "自动发现局域网内的ONVIF设备。",
+    scan_interval: "扫描间隔（秒）",
+    scan_segment: "扫描网段",
+    scan_ports: "目标端口",
+    scan_range: "IP范围",
+    // Keeper settings
+    keeper_desc: "监控设备健康状态并自动尝试恢复连接。",
+    check_interval: "检查间隔（秒）",
+    keeper_warning: "将检查间隔设置低于30秒可能会显著增加网络负载。",
+    // Auth settings - Brand presets
+    auth_brand_presets: "品牌默认配置",
+    auth_brand_desc: "配置不同品牌摄像头的默认连接参数。",
+    brand_hikvision: "海康威视",
+    brand_tiandy: "天地伟业",
+    brand_dahua: "大华",
+    default_port: "默认端口",
+    connection_timeout: "连接超时（毫秒）",
+    // OSS settings
+    oss_desc: "配置抓拍图片和录像的存储位置。",
+    oss_type: "存储类型",
+    oss_type_aliyun: "阿里云 OSS",
+    oss_type_minio: "MinIO（自建）",
+    oss_type_custom: "自定义文件服务器",
+    oss_endpoint: "服务地址",
+    oss_bucket: "存储桶名称",
+    oss_access_key: "Access Key ID",
+    oss_secret_key: "Access Key Secret",
+    oss_custom_desc: "自定义文件服务器只需配置服务器地址，后端将通过 /upload/file_upload/imgUpload (base64) 和 /upload/file_upload/formDataUpload (表单) 处理上传。",
+    // Notification settings
+    notification_title: "消息通知",
+    notification_desc: "配置报警消息推送渠道。",
+    wechat_work: "企业微信",
+    dingtalk: "钉钉",
+    feishu: "飞书",
+    webhook_url: "Webhook地址",
+    dingtalk_secret: "加签密钥（可选）",
+    test_send: "测试发送",
+    test_send_success: "测试消息发送成功",
+    test_send_failed: "测试消息发送失败"
   }
 };

@@ -29,12 +29,58 @@ export interface Driver {
   logLevel: number;
 }
 
+// 品牌预设配置
+export interface BrandPreset {
+  port: number;
+  username: string;
+  password: string;
+}
+
+// 通知渠道配置
+export interface NotificationChannel {
+  enabled: boolean;
+  webhookUrl: string;
+  secret?: string;  // 仅钉钉需要
+}
+
 export interface SystemConfig {
-  scanner: { enabled: boolean; interval: number; ports: string };
-  auth: { defaultUser: string; timeout: number };
-  keeper: { enabled: boolean; checkInterval: number };
-  oss: { enabled: boolean; endpoint: string; bucket: string };
-  log: { level: string; retentionDays: number };
+  scanner: {
+    enabled: boolean;
+    interval: number;
+    ports: string;
+    scanSegment?: string;
+    scanRangeStart?: number;
+    scanRangeEnd?: number;
+  };
+  auth: {
+    timeout: number;
+    presets: {
+      hikvision: BrandPreset;
+      tiandy: BrandPreset;
+      dahua: BrandPreset;
+    };
+  };
+  keeper: {
+    enabled: boolean;
+    checkInterval: number;
+  };
+  oss: {
+    enabled: boolean;
+    type: 'aliyun' | 'minio' | 'custom';
+    endpoint: string;
+    bucket?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+  };
+  log: {
+    level: string;
+    retentionDays: number;
+  };
+  notification: {
+    wechat: NotificationChannel;
+    dingtalk: NotificationChannel;
+    feishu: NotificationChannel;
+  };
 }
 
 export type ViewState = 

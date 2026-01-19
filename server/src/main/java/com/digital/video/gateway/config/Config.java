@@ -33,7 +33,17 @@ public class Config {
     @JsonProperty("recorder")
     private RecorderConfig recorder;
 
+    @JsonProperty("notification")
+    private NotificationConfig notification;
+
     // Getters and Setters
+    public NotificationConfig getNotification() {
+        return notification;
+    }
+
+    public void setNotification(NotificationConfig notification) {
+        this.notification = notification;
+    }
     public MqttConfig getMqtt() {
         return mqtt;
     }
@@ -268,6 +278,30 @@ public class Config {
         }
     }
 
+    /**
+     * 品牌预设配置
+     */
+    public static class BrandPreset {
+        private int port;
+        private String username;
+        private String password;
+
+        public BrandPreset() {}
+
+        public BrandPreset(int port, String username, String password) {
+            this.port = port;
+            this.username = username;
+            this.password = password;
+        }
+
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+    }
+
     public static class DeviceConfig {
         @JsonProperty("default_username")
         private String defaultUsername;
@@ -283,6 +317,14 @@ public class Config {
         private int loginTimeout;
         @JsonProperty("reconnect_interval")
         private int reconnectInterval;
+
+        // 品牌预设配置
+        @JsonProperty("hikvision")
+        private BrandPreset hikvision = new BrandPreset(8000, "admin", "");
+        @JsonProperty("tiandy")
+        private BrandPreset tiandy = new BrandPreset(8000, "Admin", "");
+        @JsonProperty("dahua")
+        private BrandPreset dahua = new BrandPreset(37777, "admin", "");
 
         // Getters and Setters
         public String getDefaultUsername() {
@@ -340,6 +382,13 @@ public class Config {
         public void setReconnectInterval(int reconnectInterval) {
             this.reconnectInterval = reconnectInterval;
         }
+
+        public BrandPreset getHikvision() { return hikvision; }
+        public void setHikvision(BrandPreset hikvision) { this.hikvision = hikvision; }
+        public BrandPreset getTiandy() { return tiandy; }
+        public void setTiandy(BrandPreset tiandy) { this.tiandy = tiandy; }
+        public BrandPreset getDahua() { return dahua; }
+        public void setDahua(BrandPreset dahua) { this.dahua = dahua; }
     }
 
     public static class KeeperConfig {
@@ -625,5 +674,38 @@ public class Config {
         public void setRetentionMinutes(int retentionMinutes) {
             this.retentionMinutes = retentionMinutes;
         }
+    }
+
+    /**
+     * 通知渠道配置
+     */
+    public static class NotificationChannel {
+        private boolean enabled;
+        @JsonProperty("webhook_url")
+        private String webhookUrl;
+        private String secret; // 仅钉钉需要
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getWebhookUrl() { return webhookUrl; }
+        public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
+        public String getSecret() { return secret; }
+        public void setSecret(String secret) { this.secret = secret; }
+    }
+
+    /**
+     * 消息通知配置
+     */
+    public static class NotificationConfig {
+        private NotificationChannel wechat = new NotificationChannel();
+        private NotificationChannel dingtalk = new NotificationChannel();
+        private NotificationChannel feishu = new NotificationChannel();
+
+        public NotificationChannel getWechat() { return wechat; }
+        public void setWechat(NotificationChannel wechat) { this.wechat = wechat; }
+        public NotificationChannel getDingtalk() { return dingtalk; }
+        public void setDingtalk(NotificationChannel dingtalk) { this.dingtalk = dingtalk; }
+        public NotificationChannel getFeishu() { return feishu; }
+        public void setFeishu(NotificationChannel feishu) { this.feishu = feishu; }
     }
 }

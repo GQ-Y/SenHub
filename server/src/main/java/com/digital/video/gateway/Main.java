@@ -575,6 +575,7 @@ public class Main {
         Spark.get("/api/system/health", systemController::healthCheck);
         Spark.post("/api/system/mqtt/restart", systemController::restartMqtt);
         Spark.get("/api/system/logs", systemController::getLogs);
+        Spark.post("/api/system/notification/test", systemController::testNotification);
 
         // 仪表板路由
         Spark.get("/api/dashboard/stats", dashboardController::getStats);
