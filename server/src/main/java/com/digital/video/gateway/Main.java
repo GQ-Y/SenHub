@@ -408,7 +408,8 @@ public class Main {
         Spark.after((request, response) -> {
             response.header("Access-Control-Allow-Origin", "*");
             response.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            response.header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range");
+            response.header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
         });
 
         // 为API请求设置默认Content-Type（不包括视频文件）

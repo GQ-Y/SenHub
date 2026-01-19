@@ -12,6 +12,8 @@ import {
   Download,
   Maximize,
   Minimize,
+  Trash2,
+  Play,
   Video as VideoIcon
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
@@ -314,6 +316,13 @@ export const DeviceDetail: React.FC = () => {
             const videoUrl = deviceService.getPlaybackFileUrl(deviceId, filePath);
             setPlaybackVideoUrl(videoUrl);
             setIsLoadingPlayback(false);
+
+            // 提示用户下载完成
+            modal.showModal({
+              message: '录像文件下载完成，已准备好播放',
+              type: 'success',
+            });
+
             if (progressIntervalRef.current) {
               clearInterval(progressIntervalRef.current);
               progressIntervalRef.current = null;
@@ -520,7 +529,7 @@ export const DeviceDetail: React.FC = () => {
                           onError={(e) => {
                             console.error('视频加载失败:', playbackVideoUrl, e);
                             modal.showModal({
-                              message: '视频加载失败，可能是格式不支持。SDV格式需要转换为MP4格式。',
+                              message: `视频加载失败。请检查 URL 是否正确，或尝试手动导出。URL: ${playbackVideoUrl}`,
                               type: 'error',
                             });
                             setPlaybackVideoUrl(null);
@@ -777,22 +786,56 @@ export const DeviceDetail: React.FC = () => {
                   {/* Actions */}
                   <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h3 className="font-bold text-gray-800 mb-4">{t('quick_actions')}</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={handleSnapshot}
-                        className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
-                      >
-                        <Camera size={20} className="mb-1" />
-                        <span className="text-xs font-medium">{t('snapshot')}</span>
-                      </button>
-                      <button
-                        onClick={handleExport}
-                        className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
-                      >
-                        <Download size={20} className="mb-1" />
-                        <span className="text-xs font-medium">{t('export')}</span>
-                      </button>
-                    </div>
+                    {isLoadingPlayback ? (
+                      <div className="flex flex-col items-center space-y-4">
+                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                          <div
+                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                            style={{ width: `${downloadProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {language === 'zh' ? `下载中: ${downloadProgress}%` : `Downloading: ${downloadProgress}%`}
+                        </p>
+                        <button
+                          onClick={handleStopPlayback}
+                          className="w-full px-4 py-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center space-x-2"
+                        >
+                          <Trash2 size={18} />
+                          <span>{language === 'zh' ? '停止下载' : 'Stop Download'}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={handleSnapshot}
+                          className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-colors border border-transparent hover:border-blue-100"
+                        >
+                          <Camera size={20} className="mb-1" />
+                          <span className="text-xs font-medium">{t('snapshot')}</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (playbackVideoUrl) {
+                              const link = document.createElement('a');
+                              link.href = playbackVideoUrl;
+                              link.download = `playback_${deviceId}_${new Date().getTime()}.mp4`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 rounded-xl transition-colors border ${playbackVideoUrl
+                            ? 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100'
+                            : 'bg-gray-50 text-gray-400 border-transparent cursor-not-allowed'
+                            }`}
+                          disabled={!playbackVideoUrl}
+                        >
+                          <Download size={20} className="mb-1" />
+                          <span className="text-xs font-medium">{language === 'zh' ? '导出录像' : 'Export Video'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

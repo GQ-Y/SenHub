@@ -18,6 +18,8 @@ import com.digital.video.gateway.database.AssemblyDevice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.File;
+import java.io.RandomAccessFile;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import spark.Request;
 import spark.Response;
@@ -1005,6 +1007,7 @@ public class DeviceController {
 
             if (start > end || start < 0 || end >= fileSize) {
                 response.status(416);
+                response.header("Content-Range", "bytes */" + fileSize);
                 return "";
             }
 
@@ -1012,19 +1015,31 @@ public class DeviceController {
             response.status(206);
             response.header("Content-Range", String.format("bytes %d-%d/%d", start, end, fileSize));
             response.header("Content-Length", String.valueOf(contentLength));
+            response.header("Accept-Ranges", "bytes");
+            response.type("video/mp4");
 
-            // 读取文件片段
-            byte[] buffer = new byte[(int) contentLength];
-            try (java.io.FileInputStream fis = new java.io.FileInputStream(videoFile)) {
-                fis.skip(start);
-                fis.read(buffer);
+            // 使用RandomAccessFile进行高效的文件片断读取和流式传输
+            try (RandomAccessFile raf = new RandomAccessFile(videoFile, "r");
+                    java.io.OutputStream os = response.raw().getOutputStream()) {
+                raf.seek(start);
+                byte[] buffer = new byte[8192];
+                long remaining = contentLength;
+                while (remaining > 0) {
+                    int toRead = (int) Math.min(buffer.length, remaining);
+                    int read = raf.read(buffer, 0, toRead);
+                    if (read == -1)
+                        break;
+                    os.write(buffer, 0, read);
+                    remaining -= read;
+                }
+                os.flush();
             }
 
-            return buffer;
+            return "";
         } catch (Exception e) {
             logger.error("处理Range请求失败", e);
             response.status(500);
-            return createErrorResponse(500, "处理Range请求失败: " + e.getMessage());
+            return "";
         }
     }
 
@@ -1243,7 +1258,7 @@ public class DeviceController {
 
             response.type(contentType);
             response.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
-            response.raw().setContentLengthLong(file.length());
+            response.header("Accept-Ranges", "bytes");
 
             // 支持Range请求（视频拖拽）
             String rangeHeader = request.headers("Range");
@@ -1251,6 +1266,7 @@ public class DeviceController {
                 return handleRangeRequest(file, rangeHeader, response);
             }
 
+            response.raw().setContentLengthLong(file.length());
             // 流式传输文件
             return streamCompletedVideoFile(file, response);
 

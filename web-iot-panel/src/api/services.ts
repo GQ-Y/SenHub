@@ -1,5 +1,5 @@
-// API服务模块
 import { get, post, put, del, setToken } from './client';
+import { API_CONFIG } from './config';
 import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus } from '../../types';
 
 /**
@@ -152,7 +152,12 @@ export const deviceService = {
    * 获取已下载的录像文件URL
    */
   getPlaybackFileUrl(deviceId: string, filePath: string): string {
-    const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+    // 统一使用 API_CONFIG.BASE_URL
+    const apiBaseUrl = API_CONFIG.BASE_URL;
+
+    // 移除末尾的斜杠和 /api，因为我们要手动添加正确的路径
+    const baseUrl = apiBaseUrl.replace(/\/api$/, '').replace(/\/$/, '');
+
     return `${baseUrl}/api/devices/${encodeURIComponent(deviceId)}/playback/file?filePath=${encodeURIComponent(filePath)}`;
   },
 

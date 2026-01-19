@@ -171,7 +171,7 @@ export const translations = {
     view_details: "View Details"
   },
   zh: {
-    app_name: "鸿蒙安防",
+    app_name: "AI智能驱动网关管理平台",
     login_title: "安防设备管理系统",
     login_subtitle: "登录以访问管理面板",
     username: "用户名",
