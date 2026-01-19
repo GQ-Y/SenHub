@@ -112,13 +112,25 @@ export enum DeviceRole {
   RADAR = 'radar'
 }
 
-// 报警类型枚举
+// 报警类型枚举（保留用于兼容旧代码）
 export enum AlarmType {
   HELMET_DETECTION = 'helmet_detection',
   VEST_DETECTION = 'vest_detection',
   VEHICLE_ALARM = 'vehicle_alarm',
   INPUT_PORT = 'input_port',
   RADAR_POINTCLOUD = 'radar_pointcloud'
+}
+
+// 摄像头事件类型（从后端获取）
+export interface CameraEventType {
+  id: number;
+  brand: 'hikvision' | 'tiandy' | 'dahua';
+  eventCode: number;
+  eventName: string;
+  eventNameEn?: string;
+  category: 'basic' | 'vca' | 'face' | 'its';
+  description?: string;
+  enabled?: boolean;
 }
 
 // 规则范围枚举
@@ -172,19 +184,22 @@ export interface AlarmRule {
   id: string;
   ruleId: string;
   name: string;
-  alarmType: AlarmType;
+  alarmType?: AlarmType;  // 旧字段，保留兼容
+  eventTypeIds?: number[];  // 新字段：选中的事件类型ID列表
   scope: RuleScope;
   deviceId?: string; // 设备级规则
   assemblyId?: string; // 装置级规则
   enabled: boolean;
   priority?: number;
-  actions: AlarmRuleActions;
+  flowId?: string;  // 绑定的工作流程ID
+  actions?: AlarmRuleActions;  // 旧字段，改为可选
   conditions?: AlarmRuleConditions;
   createdAt?: string;
   updatedAt?: string;
   // 显示用的关联信息
   deviceName?: string;
   assemblyName?: string;
+  flowName?: string;
 }
 
 // 报警记录接口

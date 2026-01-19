@@ -98,20 +98,32 @@ public class AlarmRuleService {
         if (rule.getRuleId() == null || rule.getRuleId().isEmpty()) {
             rule.setRuleId(UUID.randomUUID().toString());
         }
-        String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, flow_id, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        // 兼容新版本：如果没有alarmType但有eventTypeIds，使用默认值
+        String alarmType = rule.getAlarmType();
+        if (alarmType == null || alarmType.isEmpty()) {
+            alarmType = "custom";  // 默认类型
+        }
+        // 兼容新版本：如果没有actions，使用空JSON对象
+        String actions = rule.getActions();
+        if (actions == null || actions.isEmpty()) {
+            actions = "{}";
+        }
+        
+        String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, flow_id, event_type_ids, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getRuleId());
             pstmt.setString(2, rule.getName());
-            pstmt.setString(3, rule.getAlarmType());
+            pstmt.setString(3, alarmType);
             pstmt.setString(4, rule.getScope());
             pstmt.setString(5, rule.getDeviceId());
             pstmt.setString(6, rule.getAssemblyId());
             pstmt.setInt(7, rule.isEnabled() ? 1 : 0);
             pstmt.setInt(8, rule.getPriority());
             pstmt.setString(9, rule.getFlowId());
-            pstmt.setString(10, rule.getActions());
-            pstmt.setString(11, rule.getConditions());
+            pstmt.setString(10, rule.getEventTypeIds());
+            pstmt.setString(11, actions);
+            pstmt.setString(12, rule.getConditions());
             pstmt.executeUpdate();
             return getAlarmRule(rule.getRuleId());
         } catch (SQLException e) {
@@ -124,20 +136,32 @@ public class AlarmRuleService {
      * 更新规则
      */
     public AlarmRule updateAlarmRule(String ruleId, AlarmRule rule) {
-        String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, flow_id = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
+        // 兼容新版本：如果没有alarmType但有eventTypeIds，使用默认值
+        String alarmType = rule.getAlarmType();
+        if (alarmType == null || alarmType.isEmpty()) {
+            alarmType = "custom";  // 默认类型
+        }
+        // 兼容新版本：如果没有actions，使用空JSON对象
+        String actions = rule.getActions();
+        if (actions == null || actions.isEmpty()) {
+            actions = "{}";
+        }
+        
+        String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, flow_id = ?, event_type_ids = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
         Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getName());
-            pstmt.setString(2, rule.getAlarmType());
+            pstmt.setString(2, alarmType);
             pstmt.setString(3, rule.getScope());
             pstmt.setString(4, rule.getDeviceId());
             pstmt.setString(5, rule.getAssemblyId());
             pstmt.setInt(6, rule.isEnabled() ? 1 : 0);
             pstmt.setInt(7, rule.getPriority());
             pstmt.setString(8, rule.getFlowId());
-            pstmt.setString(9, rule.getActions());
-            pstmt.setString(10, rule.getConditions());
-            pstmt.setString(11, ruleId);
+            pstmt.setString(9, rule.getEventTypeIds());
+            pstmt.setString(10, actions);
+            pstmt.setString(11, rule.getConditions());
+            pstmt.setString(12, ruleId);
             pstmt.executeUpdate();
             return getAlarmRule(ruleId);
         } catch (SQLException e) {

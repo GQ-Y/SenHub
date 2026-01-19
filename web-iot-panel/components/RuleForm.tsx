@@ -1,69 +1,137 @@
-import React, { useState, useEffect } from 'react';
-import { AlarmRule, AlarmType, RuleScope, DeviceRole, AlarmRuleActions } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { AlarmRule, RuleScope, AlarmFlow, CameraEventType } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService, assemblyService } from '../src/api/services';
 import { Device, Assembly } from '../types';
+import { ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Workflow } from 'lucide-react';
 
 interface RuleFormProps {
   rule?: AlarmRule;
   onSave: (rule: Partial<AlarmRule>) => void;
   onCancel: () => void;
+  flows?: AlarmFlow[];
+  eventTypes?: Record<string, CameraEventType[]>;
 }
 
-export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) => {
-  const { t } = useAppContext();
-  // 根据报警类型获取默认动作配置
-  const getDefaultActions = (alarmType: AlarmType): AlarmRuleActions => {
-    // 算法类报警（安全帽、反光衣、车辆）：自动抓拍、MQTT上报，录像可选
-    if ([AlarmType.HELMET_DETECTION, AlarmType.VEST_DETECTION, AlarmType.VEHICLE_ALARM].includes(alarmType)) {
-      return {
-        capture: true,
-        record: false, // 录像可选
-        recordDuration: 60,
-        upload: false, // 算法类报警录像可选，不上传OSS
-        speaker: false,
-        mqtt: true, // MQTT上报开启
-      };
-    }
-    // 输入端口报警（雷达触发）：自动抓拍、录像上传OSS、MQTT上报
-    if (alarmType === AlarmType.INPUT_PORT) {
-      return {
-        capture: true,
-        record: true, // 输入端口报警需要录像
-        recordDuration: 60,
-        upload: true, // 需要上传到OSS
-        speaker: false,
-        mqtt: true, // MQTT上报开启
-      };
-    }
-    // 雷达点云报警
-    if (alarmType === AlarmType.RADAR_POINTCLOUD) {
-      return {
-        capture: true,
-        record: true,
-        recordDuration: 60,
-        upload: true,
-        speaker: false,
-        mqtt: true,
-      };
-    }
-    // 默认配置
-    return {
-      capture: true,
-      record: false,
-      recordDuration: 60,
-      upload: false,
-      speaker: false,
-      mqtt: true,
-    };
-  };
+// 事件类型开关组件
+const EventTypeToggle: React.FC<{
+  event: CameraEventType;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ event, checked, onChange }) => {
+  return (
+    <label className="flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+      <div className="flex-1 min-w-0">
+        <span className="text-sm text-gray-800">{event.eventName}</span>
+        {event.description && (
+          <span className="text-xs text-gray-400 ml-2">({event.description})</span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          onChange(!checked);
+        }}
+        className="flex-shrink-0 ml-2"
+      >
+        {checked ? (
+          <ToggleRight className="text-blue-600" size={24} />
+        ) : (
+          <ToggleLeft className="text-gray-300" size={24} />
+        )}
+      </button>
+    </label>
+  );
+};
 
+// 品牌事件组
+const BrandEventGroup: React.FC<{
+  brand: string;
+  brandLabel: string;
+  events: CameraEventType[];
+  selectedIds: number[];
+  onToggle: (eventId: number, checked: boolean) => void;
+}> = ({ brand, brandLabel, events, selectedIds, onToggle }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  
+  // 按类别分组
+  const groupedEvents = useMemo(() => {
+    const groups: Record<string, CameraEventType[]> = {};
+    events.forEach(event => {
+      const category = event.category || 'basic';
+      if (!groups[category]) groups[category] = [];
+      groups[category].push(event);
+    });
+    return groups;
+  }, [events]);
+
+  const selectedCount = events.filter(e => selectedIds.includes(e.id)).length;
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
+        <div className="flex items-center space-x-2">
+          <span className="font-medium text-gray-800">{brandLabel}</span>
+          {selectedCount > 0 && (
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
+              {selectedCount}
+            </span>
+          )}
+        </div>
+        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+      </button>
+      {isExpanded && (
+        <div className="p-3 space-y-2 max-h-64 overflow-y-auto">
+          {Object.entries(groupedEvents).map(([category, categoryEvents]) => (
+            <div key={category}>
+              {Object.keys(groupedEvents).length > 1 && (
+                <div className="text-xs font-medium text-gray-500 uppercase mb-1 px-2">
+                  {getCategoryLabel(category)}
+                </div>
+              )}
+              <div className="space-y-1">
+                {categoryEvents.map(event => (
+                  <EventTypeToggle
+                    key={event.id}
+                    event={event}
+                    checked={selectedIds.includes(event.id)}
+                    onChange={(checked) => onToggle(event.id, checked)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 获取类别标签
+const getCategoryLabel = (category: string): string => {
+  const labels: Record<string, string> = {
+    basic: '基础事件',
+    vca: '智能分析',
+    face: '人脸识别',
+    its: '交通事件',
+  };
+  return labels[category] || category;
+};
+
+export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flows = [], eventTypes = {} }) => {
+  const { t } = useAppContext();
+  
   const [formData, setFormData] = useState<Partial<AlarmRule>>({
     name: '',
-    alarmType: AlarmType.HELMET_DETECTION,
     scope: RuleScope.GLOBAL,
     enabled: true,
-    actions: getDefaultActions(AlarmType.HELMET_DETECTION),
+    eventTypeIds: [],
+    flowId: undefined,
     conditions: {
       area: 'all',
     },
@@ -72,16 +140,44 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
   const [devices, setDevices] = useState<Device[]>([]);
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [showRadarEvent, setShowRadarEvent] = useState(false);
+
+  // 解析已选事件类型
+  const selectedEventTypeIds = useMemo(() => {
+    if (!formData.eventTypeIds) return [];
+    if (typeof formData.eventTypeIds === 'string') {
+      try {
+        return JSON.parse(formData.eventTypeIds);
+      } catch {
+        return [];
+      }
+    }
+    return formData.eventTypeIds;
+  }, [formData.eventTypeIds]);
 
   useEffect(() => {
     if (rule) {
+      let parsedEventTypeIds: number[] = [];
+      if (rule.eventTypeIds) {
+        if (typeof rule.eventTypeIds === 'string') {
+          try {
+            parsedEventTypeIds = JSON.parse(rule.eventTypeIds);
+          } catch {
+            parsedEventTypeIds = [];
+          }
+        } else {
+          parsedEventTypeIds = rule.eventTypeIds;
+        }
+      }
       setFormData({
         ...rule,
-        actions: rule.actions || getDefaultActions(rule.alarmType),
-        conditions: rule.conditions || {
-          area: 'all',
-        },
+        eventTypeIds: parsedEventTypeIds,
+        conditions: rule.conditions || { area: 'all' },
       });
+      // 检查是否有雷达事件
+      if (rule.alarmType === 'radar_pointcloud') {
+        setShowRadarEvent(true);
+      }
     }
   }, [rule]);
 
@@ -110,17 +206,35 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
       alert('请输入规则名称');
       return;
     }
-    onSave(formData);
+    if (selectedEventTypeIds.length === 0 && !showRadarEvent) {
+      alert('请至少选择一个报警事件类型');
+      return;
+    }
+    
+    // 构建提交数据
+    const submitData: Partial<AlarmRule> = {
+      ...formData,
+      eventTypeIds: selectedEventTypeIds,
+      // 如果选择了雷达事件，设置alarmType为兼容
+      alarmType: showRadarEvent ? ('radar_pointcloud' as any) : undefined,
+    };
+    
+    onSave(submitData);
   };
 
-  const updateAction = (key: keyof typeof formData.actions, value: boolean | number) => {
-    setFormData({
-      ...formData,
-      actions: {
-        ...formData.actions!,
-        [key]: value,
-      },
-    });
+  const handleToggleEventType = (eventId: number, checked: boolean) => {
+    const current = [...selectedEventTypeIds];
+    if (checked) {
+      if (!current.includes(eventId)) {
+        current.push(eventId);
+      }
+    } else {
+      const index = current.indexOf(eventId);
+      if (index > -1) {
+        current.splice(index, 1);
+      }
+    }
+    setFormData({ ...formData, eventTypeIds: current });
   };
 
   const updateCondition = (key: keyof typeof formData.conditions, value: any) => {
@@ -133,11 +247,16 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
     });
   };
 
+  const brandLabels: Record<string, string> = {
+    hikvision: t('brand_hikvision'),
+    tiandy: t('brand_tiandy'),
+    dahua: t('brand_dahua'),
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* 基本信息 */}
       <div className="space-y-4">
-        <h3 className="font-bold text-gray-800">{t('device_name')}</h3>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             {t('rule_name')} <span className="text-red-500">*</span>
@@ -147,62 +266,42 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
             value={formData.name || ''}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="输入规则名称"
             required
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {t('alarm_type')} <span className="text-red-500">*</span>
-          </label>
-          <select
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-            value={formData.alarmType || AlarmType.HELMET_DETECTION}
-            onChange={(e) => {
-              const newAlarmType = e.target.value as AlarmType;
-              // 切换报警类型时，自动调整默认动作配置
-              setFormData({
-                ...formData,
-                alarmType: newAlarmType,
-                actions: getDefaultActions(newAlarmType),
-                // 如果是雷达点云，保留距离范围；否则清除
-                conditions: {
-                  ...formData.conditions,
-                  distanceRange: newAlarmType === AlarmType.RADAR_POINTCLOUD ? formData.conditions?.distanceRange : undefined,
-                },
-              });
-            }}
-            required
-          >
-            <option value={AlarmType.HELMET_DETECTION}>{t('helmet_detection')}</option>
-            <option value={AlarmType.VEST_DETECTION}>{t('vest_detection')}</option>
-            <option value={AlarmType.VEHICLE_ALARM}>{t('vehicle_alarm')}</option>
-            <option value={AlarmType.INPUT_PORT}>{t('input_port')}</option>
-            <option value={AlarmType.RADAR_POINTCLOUD}>{t('radar_pointcloud')}</option>
-          </select>
-        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             {t('rule_scope')} <span className="text-red-500">*</span>
           </label>
-          <select
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-            value={formData.scope || RuleScope.GLOBAL}
-            onChange={(e) => {
-              const scope = e.target.value as RuleScope;
-              setFormData({
-                ...formData,
-                scope,
-                deviceId: scope !== RuleScope.DEVICE ? undefined : formData.deviceId,
-                assemblyId: scope !== RuleScope.ASSEMBLY ? undefined : formData.assemblyId,
-              });
-            }}
-            required
-          >
-            <option value={RuleScope.GLOBAL}>{t('global_rule')}</option>
-            <option value={RuleScope.ASSEMBLY}>{t('assembly_rule')}</option>
-            <option value={RuleScope.DEVICE}>{t('device_rule')}</option>
-          </select>
+          <div className="flex space-x-2">
+            {[RuleScope.GLOBAL, RuleScope.ASSEMBLY, RuleScope.DEVICE].map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    scope,
+                    deviceId: scope !== RuleScope.DEVICE ? undefined : formData.deviceId,
+                    assemblyId: scope !== RuleScope.ASSEMBLY ? undefined : formData.assemblyId,
+                  });
+                }}
+                className={`flex-1 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  formData.scope === scope
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {scope === RuleScope.GLOBAL && t('global_rule')}
+                {scope === RuleScope.ASSEMBLY && t('assembly_rule')}
+                {scope === RuleScope.DEVICE && t('device_rule')}
+              </button>
+            ))}
+          </div>
         </div>
+
         {formData.scope === RuleScope.ASSEMBLY && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('assemblies')}</label>
@@ -221,6 +320,7 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
             </select>
           </div>
         )}
+
         {formData.scope === RuleScope.DEVICE && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('device_name')}</label>
@@ -241,140 +341,116 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
         )}
       </div>
 
-      {/* 触发条件 */}
+      {/* 报警事件类型选择 */}
       <div className="space-y-4">
-        <h3 className="font-bold text-gray-800">{t('trigger_conditions')}</h3>
-        {/* 区域限制 - 仅对装置级规则有效 */}
-        {(formData.scope === RuleScope.ASSEMBLY || formData.scope === RuleScope.DEVICE) && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('area_limit')}</label>
-            <select
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-              value={formData.conditions?.area || 'all'}
-              onChange={(e) => updateCondition('area', e.target.value)}
+        <h3 className="font-bold text-gray-800">{t('select_event_types')} <span className="text-red-500">*</span></h3>
+        <div className="text-sm text-gray-500 mb-2">
+          {selectedEventTypeIds.length > 0 ? (
+            <span className="text-blue-600 font-medium">
+              {t('event_types_selected')}: {selectedEventTypeIds.length}
+            </span>
+          ) : (
+            <span>{t('no_event_selected')}</span>
+          )}
+        </div>
+        
+        {/* 品牌事件分组 */}
+        <div className="space-y-3">
+          {Object.entries(eventTypes).map(([brand, events]) => (
+            <BrandEventGroup
+              key={brand}
+              brand={brand}
+              brandLabel={brandLabels[brand] || brand}
+              events={events}
+              selectedIds={selectedEventTypeIds}
+              onToggle={handleToggleEventType}
+            />
+          ))}
+        </div>
+
+        {/* 雷达入侵事件（独立选项） */}
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <label className="flex items-center justify-between px-4 py-3 bg-purple-50 hover:bg-purple-100 cursor-pointer">
+            <div className="flex items-center space-x-2">
+              <span className="font-medium text-gray-800">{t('radar_intrusion_event')}</span>
+              {showRadarEvent && (
+                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs">1</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowRadarEvent(!showRadarEvent)}
             >
-              <option value="all">全部</option>
-              <option value="left">{t('left_camera')}</option>
-              <option value="right">{t('right_camera')}</option>
-            </select>
-          </div>
-        )}
-        {/* 距离范围 - 仅对雷达点云报警类型显示 */}
-        {formData.alarmType === AlarmType.RADAR_POINTCLOUD && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">最小距离（米）</label>
-              <input
-                type="number"
-                min="0"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.conditions?.distanceRange?.[0] || ''}
-                onChange={(e) =>
-                  updateCondition('distanceRange', [
-                    parseFloat(e.target.value) || 0,
-                    formData.conditions?.distanceRange?.[1] || 100,
-                  ])
-                }
-                placeholder="0"
-              />
+              {showRadarEvent ? (
+                <ToggleRight className="text-purple-600" size={24} />
+              ) : (
+                <ToggleLeft className="text-gray-300" size={24} />
+              )}
+            </button>
+          </label>
+          {showRadarEvent && (
+            <div className="p-4 space-y-4 bg-white">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">最小距离（米）</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.conditions?.distanceRange?.[0] || ''}
+                    onChange={(e) =>
+                      updateCondition('distanceRange', [
+                        parseFloat(e.target.value) || 0,
+                        formData.conditions?.distanceRange?.[1] || 100,
+                      ])
+                    }
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">最大距离（米）</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.conditions?.distanceRange?.[1] || ''}
+                    onChange={(e) =>
+                      updateCondition('distanceRange', [
+                        formData.conditions?.distanceRange?.[0] || 0,
+                        parseFloat(e.target.value) || 100,
+                      ])
+                    }
+                    placeholder="100"
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">最大距离（米）</label>
-              <input
-                type="number"
-                min="0"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.conditions?.distanceRange?.[1] || ''}
-                onChange={(e) =>
-                  updateCondition('distanceRange', [
-                    formData.conditions?.distanceRange?.[0] || 0,
-                    parseFloat(e.target.value) || 100,
-                  ])
-                }
-                placeholder="100"
-              />
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* 执行动作 */}
+      {/* 绑定工作流程 */}
       <div className="space-y-4">
-        <h3 className="font-bold text-gray-800">{t('alarm_actions')}</h3>
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-          <p className="text-sm text-blue-800">
-            {formData.alarmType === AlarmType.INPUT_PORT
-              ? '输入端口报警（雷达触发）：自动抓拍、录像上传OSS、MQTT上报'
-              : [AlarmType.HELMET_DETECTION, AlarmType.VEST_DETECTION, AlarmType.VEHICLE_ALARM].includes(formData.alarmType!)
-              ? '算法类报警：自动抓拍、MQTT上报（录像可选）'
-              : '请配置执行动作'}
-          </p>
+        <h3 className="font-bold text-gray-800">{t('bind_workflow')}</h3>
+        <div className="relative">
+          <Workflow className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <select
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+            value={formData.flowId || ''}
+            onChange={(e) => setFormData({ ...formData, flowId: e.target.value || undefined })}
+          >
+            <option value="">{t('select_workflow')}</option>
+            {flows.map((flow) => (
+              <option key={flow.flowId} value={flow.flowId}>
+                {flow.name} {flow.isDefault && `(${t('default_flow')})`}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
         </div>
-        <div className="space-y-3">
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-              checked={formData.actions?.capture || false}
-              onChange={(e) => updateAction('capture', e.target.checked)}
-            />
-            <span className="text-sm font-medium text-gray-700">{t('auto_capture')}</span>
-          </label>
-          <div className="ml-8 space-y-2">
-            <label className="flex items-center space-x-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                checked={formData.actions?.record || false}
-                onChange={(e) => updateAction('record', e.target.checked)}
-              />
-              <span className="text-sm font-medium text-gray-700">{t('record_video')}</span>
-            </label>
-            {formData.actions?.record && (
-              <div>
-                <input
-                  type="number"
-                  min="1"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.actions.recordDuration || 60}
-                  onChange={(e) => updateAction('recordDuration', parseInt(e.target.value) || 60)}
-                  placeholder="录像时长（秒）"
-                />
-                <p className="text-xs text-gray-500 mt-1">录像时长（秒），建议60-300秒</p>
-              </div>
-            )}
-          </div>
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-              checked={formData.actions?.upload || false}
-              onChange={(e) => updateAction('upload', e.target.checked)}
-            />
-            <span className="text-sm font-medium text-gray-700">{t('upload_oss')}</span>
-            <span className="text-xs text-gray-500">（录像上传到OSS）</span>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-              checked={formData.actions?.speaker || false}
-              onChange={(e) => updateAction('speaker', e.target.checked)}
-            />
-            <span className="text-sm font-medium text-gray-700">{t('speaker_playback')}</span>
-            <span className="text-xs text-gray-500">（音柱播报警示语音）</span>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-              checked={formData.actions?.mqtt || false}
-              onChange={(e) => updateAction('mqtt', e.target.checked)}
-            />
-            <span className="text-sm font-medium text-gray-700">{t('mqtt_report')}</span>
-            <span className="text-xs text-gray-500">（开启后必须上报）</span>
-          </label>
-        </div>
+        <p className="text-xs text-gray-500">
+          选择触发报警后执行的工作流程，工作流程在"工作流"模块中配置。
+        </p>
       </div>
 
       {/* 按钮 */}
@@ -382,13 +458,13 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel }) =>
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
+          className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
         >
           {t('cancel')}
         </button>
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200"
+          className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200"
         >
           {t('save')}
         </button>

@@ -60,6 +60,19 @@ public class AlarmRuleTable {
                     logger.debug("添加flow_id列失败（可能已存在）: {}", ex.getMessage());
                 }
             }
+
+            // 兼容旧表：新增event_type_ids列
+            try {
+                stmt.executeQuery("SELECT event_type_ids FROM alarm_rules LIMIT 1");
+            } catch (SQLException e) {
+                logger.info("检测到缺少event_type_ids列，正在添加...");
+                try {
+                    stmt.execute("ALTER TABLE alarm_rules ADD COLUMN event_type_ids TEXT");
+                    logger.info("已添加event_type_ids列");
+                } catch (SQLException ex) {
+                    logger.debug("添加event_type_ids列失败（可能已存在）: {}", ex.getMessage());
+                }
+            }
             logger.info("报警规则表创建成功");
         }
     }

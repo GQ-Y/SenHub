@@ -273,7 +273,19 @@ export const translations = {
     dingtalk_secret: "Sign Secret (Optional)",
     test_send: "Test Send",
     test_send_success: "Test message sent successfully",
-    test_send_failed: "Test message send failed"
+    test_send_failed: "Test message send failed",
+    // Event types and rule form
+    select_event_types: "Select Alarm Events",
+    bind_workflow: "Bind Workflow",
+    event_category_basic: "Basic Events",
+    event_category_vca: "Smart Analytics",
+    event_category_face: "Face Recognition",
+    event_category_its: "Traffic Events",
+    radar_intrusion_event: "Radar Intrusion",
+    no_workflow_bound: "No Workflow Bound",
+    select_workflow: "Select Workflow",
+    event_types_selected: "Event Types Selected",
+    no_event_selected: "No event types selected"
   },
   zh: {
     app_name: "AI智能驱动网关管理平台",
@@ -549,6 +561,18 @@ export const translations = {
     dingtalk_secret: "加签密钥（可选）",
     test_send: "测试发送",
     test_send_success: "测试消息发送成功",
-    test_send_failed: "测试消息发送失败"
+    test_send_failed: "测试消息发送失败",
+    // Event types and rule form
+    select_event_types: "选择报警事件",
+    bind_workflow: "绑定工作流程",
+    event_category_basic: "基础事件",
+    event_category_vca: "智能分析",
+    event_category_face: "人脸识别",
+    event_category_its: "交通事件",
+    radar_intrusion_event: "雷达入侵",
+    no_workflow_bound: "未绑定流程",
+    select_workflow: "选择流程",
+    event_types_selected: "已选事件类型",
+    no_event_selected: "未选择任何事件类型"
   }
 };

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { get, post, put, del, setToken } from './client';
 import { API_CONFIG } from './config';
-import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus, AlarmFlow } from '../../types';
+import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus, AlarmFlow, CameraEventType } from '../../types';
 
 /**
  * 助手函数：转换后端设备数据格式到前端格式
@@ -508,6 +508,33 @@ export const assemblyService = {
    */
   async getAssemblyDevices(assemblyId: string) {
     const response = await get<AssemblyDevice[]>(`/assemblies/${encodeURIComponent(assemblyId)}/devices`);
+    return response;
+  },
+};
+
+// ==================== 事件类型服务 ====================
+export const eventTypeService = {
+  /**
+   * 获取所有事件类型（按品牌分组）
+   */
+  async getEventTypes() {
+    const response = await get<Record<string, CameraEventType[]>>('/event-types');
+    return response;
+  },
+
+  /**
+   * 获取指定品牌的事件类型
+   */
+  async getEventTypesByBrand(brand: string) {
+    const response = await get<CameraEventType[]>(`/event-types/${encodeURIComponent(brand)}`);
+    return response;
+  },
+
+  /**
+   * 获取所有事件类型（平铺列表）
+   */
+  async getAllEventTypesList() {
+    const response = await get<CameraEventType[]>('/event-types/all');
     return response;
   },
 };

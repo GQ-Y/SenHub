@@ -615,6 +615,12 @@ public class Main {
         Spark.delete("/api/radar/:deviceId/intrusions", radarController::clearIntrusions);
         Spark.get("/api/radar/intrusions/:id/data", radarController::getIntrusionData);
 
+        // 事件类型路由
+        EventTypeController eventTypeController = new EventTypeController(database);
+        Spark.get("/api/event-types", eventTypeController::getAllEventTypes);
+        Spark.get("/api/event-types/all", eventTypeController::getAllEventTypesList);
+        Spark.get("/api/event-types/:brand", eventTypeController::getEventTypesByBrand);
+
         // 报警规则路由
         Spark.get("/api/alarm-rules", alarmRuleController::getAlarmRules);
         Spark.get("/api/alarm-rules/:id", alarmRuleController::getAlarmRule);

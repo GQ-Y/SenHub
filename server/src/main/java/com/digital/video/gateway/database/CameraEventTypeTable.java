@@ -87,6 +87,8 @@ public class CameraEventTypeTable {
         initTiandyEventTypes(connection);
         // 插入海康事件类型
         initHikvisionEventTypes(connection);
+        // 插入大华事件类型
+        initDahuaEventTypes(connection);
 
         logger.info("默认事件类型初始化完成");
     }
@@ -188,6 +190,67 @@ public class CameraEventTypeTable {
             }
             pstmt.executeBatch();
             logger.info("海康事件类型初始化完成: {} 条", hikvisionEvents.length);
+        }
+    }
+
+    /**
+     * 初始化大华事件类型
+     */
+    private static void initDahuaEventTypes(Connection connection) throws SQLException {
+        String sql = "INSERT INTO camera_event_types (brand, event_code, event_name, event_name_en, category, description) VALUES (?, ?, ?, ?, ?, ?)";
+
+        Object[][] dahuaEvents = {
+                // 基础视频报警
+                { "dahua", 0, "移动侦测", "Motion Detection", "basic", "视频画面移动侦测报警" },
+                { "dahua", 1, "视频丢失", "Video Lost", "basic", "视频信号丢失报警" },
+                { "dahua", 2, "视频遮挡", "Video Tamper", "basic", "视频遮挡报警" },
+                { "dahua", 3, "报警输入", "Alarm Input", "basic", "外部报警输入触发" },
+                { "dahua", 4, "报警输出", "Alarm Output", "basic", "外部报警输出触发" },
+
+                // 智能分析事件
+                { "dahua", 100, "越界检测", "Line Crossing", "vca", "越界检测" },
+                { "dahua", 101, "区域入侵", "Region Intrusion", "vca", "区域入侵检测" },
+                { "dahua", 102, "进入区域", "Region Entrance", "vca", "进入区域检测" },
+                { "dahua", 103, "离开区域", "Region Exiting", "vca", "离开区域检测" },
+                { "dahua", 104, "人员聚集", "People Gathering", "vca", "人员聚集检测" },
+                { "dahua", 105, "徘徊检测", "Loitering", "vca", "人员徘徊检测" },
+                { "dahua", 106, "快速移动", "Fast Moving", "vca", "快速移动检测" },
+                { "dahua", 107, "停车检测", "Parking Detection", "vca", "违规停车检测" },
+                { "dahua", 108, "物品遗留", "Object Left", "vca", "物品遗留检测" },
+                { "dahua", 109, "物品拿取", "Object Removal", "vca", "物品拿取检测" },
+                { "dahua", 110, "倒地检测", "Tumble Detection", "vca", "人员倒地检测" },
+                { "dahua", 111, "打架检测", "Fight Detection", "vca", "打架行为检测" },
+                { "dahua", 112, "攀高检测", "Climbing Detection", "vca", "攀爬检测" },
+
+                // 人脸事件
+                { "dahua", 200, "人脸检测", "Face Detection", "face", "人脸检测" },
+                { "dahua", 201, "人脸识别", "Face Recognition", "face", "人脸识别比对" },
+                { "dahua", 202, "人脸抓拍", "Face Capture", "face", "人脸抓拍" },
+
+                // 交通/车辆事件
+                { "dahua", 300, "车牌识别", "License Plate Recognition", "its", "车牌识别" },
+                { "dahua", 301, "车辆检测", "Vehicle Detection", "its", "车辆检测" },
+                { "dahua", 302, "违章停车", "Illegal Parking", "its", "违章停车检测" },
+                { "dahua", 303, "逆行检测", "Wrong Way", "its", "车辆逆行检测" },
+
+                // 工服检测
+                { "dahua", 400, "安全帽检测", "Helmet Detection", "vca", "安全帽佩戴检测" },
+                { "dahua", 401, "反光衣检测", "Vest Detection", "vca", "反光衣穿戴检测" },
+                { "dahua", 402, "工服检测", "Work Clothes Detection", "vca", "工作服穿戴检测" },
+        };
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            for (Object[] event : dahuaEvents) {
+                pstmt.setString(1, (String) event[0]);
+                pstmt.setInt(2, (Integer) event[1]);
+                pstmt.setString(3, (String) event[2]);
+                pstmt.setString(4, (String) event[3]);
+                pstmt.setString(5, (String) event[4]);
+                pstmt.setString(6, (String) event[5]);
+                pstmt.addBatch();
+            }
+            pstmt.executeBatch();
+            logger.info("大华事件类型初始化完成: {} 条", dahuaEvents.length);
         }
     }
 

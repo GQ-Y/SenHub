@@ -1,11 +1,67 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, X, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, ToggleLeft, ToggleRight, Workflow } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import { alarmRuleService } from '../src/api/services';
-import { AlarmRule, AlarmType } from '../types';
+import { alarmRuleService, flowService, eventTypeService } from '../src/api/services';
+import { AlarmRule, AlarmType, AlarmFlow, CameraEventType } from '../types';
 import { Modal, ConfirmModal } from './Modal';
 import { useModal } from '../hooks/useModal';
 import { RuleForm } from './RuleForm';
+
+// 右侧抽屉组件
+interface DrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}
+
+const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, children }) => {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = '';
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      {/* 背景遮罩 */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
+      {/* 抽屉面板 */}
+      <div
+        className="absolute right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out"
+        style={{ transform: isOpen ? 'translateX(0)' : 'translateX(100%)' }}
+      >
+        {/* 抽屉头部 */}
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
+          <h3 className="text-lg font-bold text-gray-800">{title}</h3>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        {/* 抽屉内容 */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const AlarmRules: React.FC = () => {
   const { t } = useAppContext();
@@ -15,6 +71,8 @@ export const AlarmRules: React.FC = () => {
   const [activeModal, setActiveModal] = useState<'NONE' | 'CREATE' | 'EDIT' | 'DELETE'>('NONE');
   const [selectedRule, setSelectedRule] = useState<AlarmRule | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [flows, setFlows] = useState<AlarmFlow[]>([]);
+  const [eventTypes, setEventTypes] = useState<Record<string, CameraEventType[]>>({});
   const modal = useModal();
 
   // 加载规则列表
@@ -34,8 +92,23 @@ export const AlarmRules: React.FC = () => {
     }
   };
 
+  // 加载流程列表和事件类型
+  const loadFlowsAndEventTypes = async () => {
+    try {
+      const [flowsRes, eventTypesRes] = await Promise.all([
+        flowService.listFlows(),
+        eventTypeService.getEventTypes(),
+      ]);
+      setFlows(flowsRes.data || []);
+      setEventTypes(eventTypesRes.data || {});
+    } catch (err: any) {
+      console.error('加载流程或事件类型失败:', err);
+    }
+  };
+
   useEffect(() => {
     loadRules();
+    loadFlowsAndEventTypes();
   }, []);
 
   const openCreateModal = () => {
@@ -147,8 +220,25 @@ export const AlarmRules: React.FC = () => {
     (rule) =>
       !searchTerm ||
       rule.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getAlarmTypeLabel(rule.alarmType).toLowerCase().includes(searchTerm.toLowerCase())
+      (rule.alarmType && getAlarmTypeLabel(rule.alarmType).toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  // 获取流程名称
+  const getFlowName = (flowId?: string) => {
+    if (!flowId) return t('no_workflow_bound');
+    const flow = flows.find(f => f.flowId === flowId);
+    return flow ? flow.name : flowId;
+  };
+
+  // 获取已选事件类型数量
+  const getEventTypeCount = (rule: AlarmRule) => {
+    if (rule.eventTypeIds && Array.isArray(rule.eventTypeIds)) {
+      return rule.eventTypeIds.length;
+    }
+    // 兼容旧规则
+    if (rule.alarmType) return 1;
+    return 0;
+  };
 
   return (
     <>
@@ -237,10 +327,13 @@ export const AlarmRules: React.FC = () => {
                       {t('rule_name')}
                     </th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      {t('alarm_type')}
+                      {t('event_types_selected')}
                     </th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       {t('rule_scope')}
+                    </th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {t('bind_workflow')}
                     </th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       {t('status')}
@@ -258,11 +351,22 @@ export const AlarmRules: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
-                          {getAlarmTypeLabel(rule.alarmType)}
+                          {getEventTypeCount(rule) > 0 
+                            ? `${getEventTypeCount(rule)} ${t('alarm_type')}`
+                            : (rule.alarmType ? getAlarmTypeLabel(rule.alarmType) : t('no_event_selected'))
+                          }
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {getScopeLabel(rule)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center space-x-2">
+                          <Workflow size={16} className="text-purple-500" />
+                          <span className="text-sm text-gray-700">
+                            {getFlowName(rule.flowId)}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <button
@@ -316,31 +420,20 @@ export const AlarmRules: React.FC = () => {
           )}
         </div>
 
-        {/* 创建/编辑弹窗 */}
-        {(activeModal === 'CREATE' || activeModal === 'EDIT') && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-              onClick={handleCloseModal}
-            ></div>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl z-10 overflow-hidden max-h-[90vh] flex flex-col">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                <h3 className="text-lg font-bold text-gray-800">
-                  {activeModal === 'CREATE' ? t('create_rule') : t('edit_device')}
-                </h3>
-                <button
-                  onClick={handleCloseModal}
-                  className="p-1 rounded-full hover:bg-gray-200 transition-colors text-gray-500"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6">
-                <RuleForm rule={selectedRule || undefined} onSave={handleSave} onCancel={handleCloseModal} />
-              </div>
-            </div>
-          </div>
-        )}
+        {/* 创建/编辑抽屉 */}
+        <Drawer
+          isOpen={activeModal === 'CREATE' || activeModal === 'EDIT'}
+          onClose={handleCloseModal}
+          title={activeModal === 'CREATE' ? t('create_rule') : t('edit_device')}
+        >
+          <RuleForm
+            rule={selectedRule || undefined}
+            onSave={handleSave}
+            onCancel={handleCloseModal}
+            flows={flows}
+            eventTypes={eventTypes}
+          />
+        </Drawer>
 
         {/* 删除确认弹窗 */}
         {activeModal === 'DELETE' && selectedRule && (

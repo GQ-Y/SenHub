@@ -22,6 +22,7 @@ public class AlarmRule {
     private String actions; // JSON string
     private String conditions; // JSON string
     private String flowId; // 关联的流程定义
+    private String eventTypeIds; // 选中的事件类型ID列表（JSON数组）
     private Timestamp createdAt;
     private Timestamp updatedAt;
 
@@ -62,6 +63,9 @@ public class AlarmRule {
     public String getFlowId() { return flowId; }
     public void setFlowId(String flowId) { this.flowId = flowId; }
 
+    public String getEventTypeIds() { return eventTypeIds; }
+    public void setEventTypeIds(String eventTypeIds) { this.eventTypeIds = eventTypeIds; }
+
     public Timestamp getCreatedAt() { return createdAt; }
     public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
 
@@ -89,6 +93,11 @@ public class AlarmRule {
         } catch (SQLException ignore) {
             // 兼容旧表
         }
+        try {
+            rule.setEventTypeIds(rs.getString("event_type_ids"));
+        } catch (SQLException ignore) {
+            // 兼容旧表
+        }
         rule.setCreatedAt(rs.getTimestamp("created_at"));
         rule.setUpdatedAt(rs.getTimestamp("updated_at"));
         return rule;
@@ -111,6 +120,7 @@ public class AlarmRule {
         map.put("actions", actions);
         map.put("conditions", conditions);
         map.put("flowId", flowId);
+        map.put("eventTypeIds", eventTypeIds);
         if (createdAt != null) map.put("createdAt", createdAt.toString());
         if (updatedAt != null) map.put("updatedAt", updatedAt.toString());
         return map;

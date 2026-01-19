@@ -88,6 +88,11 @@ public class AlarmRuleController {
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
             rule.setFlowId((String) body.get("flowId"));
+            // 处理 eventTypeIds（JSON数组）
+            Object eventTypeIds = body.get("eventTypeIds");
+            if (eventTypeIds != null) {
+                rule.setEventTypeIds(objectMapper.writeValueAsString(eventTypeIds));
+            }
             Object actions = body.get("actions");
             rule.setActions(objectMapper.writeValueAsString(actions != null ? actions : new java.util.HashMap<>()));
             rule.setConditions(body.get("conditions") != null ? objectMapper.writeValueAsString(body.get("conditions")) : null);
@@ -124,6 +129,11 @@ public class AlarmRuleController {
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
             rule.setFlowId((String) body.get("flowId"));
+            // 处理 eventTypeIds（JSON数组）
+            Object eventTypeIds = body.get("eventTypeIds");
+            if (eventTypeIds != null) {
+                rule.setEventTypeIds(objectMapper.writeValueAsString(eventTypeIds));
+            }
             Object actions = body.get("actions");
             rule.setActions(objectMapper.writeValueAsString(actions != null ? actions : new java.util.HashMap<>()));
             rule.setConditions(body.get("conditions") != null ? objectMapper.writeValueAsString(body.get("conditions")) : null);
