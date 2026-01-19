@@ -9,6 +9,9 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 抓图服务
@@ -20,6 +23,9 @@ public class CaptureService {
     private final DeviceManager deviceManager;
     private final String captureDir;
     
+    // 设备级别锁，防止同一设备的并发抓图导致SDK崩溃
+    private final ConcurrentHashMap<String, ReentrantLock> deviceLocks = new ConcurrentHashMap<>();
+    
     public CaptureService(DeviceManager deviceManager, String captureDir) {
         this.deviceManager = deviceManager;
         this.captureDir = captureDir != null ? captureDir : "./storage/captures";
@@ -29,6 +35,13 @@ public class CaptureService {
         if (!dir.exists()) {
             dir.mkdirs();
         }
+    }
+    
+    /**
+     * 获取设备锁
+     */
+    private ReentrantLock getDeviceLock(String deviceId) {
+        return deviceLocks.computeIfAbsent(deviceId, k -> new ReentrantLock());
     }
     
     /**
@@ -61,6 +74,20 @@ public class CaptureService {
         
         int userId = deviceManager.getDeviceUserId(deviceId);
         int actualChannel = channel > 0 ? channel : device.getChannel();
+        
+        // 使用设备级别锁防止并发抓图导致SDK崩溃
+        // 等待最多5秒获取锁，如果超时则返回失败
+        ReentrantLock lock = getDeviceLock(deviceId);
+        try {
+            if (!lock.tryLock(5, TimeUnit.SECONDS)) {
+                logger.warn("设备正在抓图中，等待超时: {}", deviceId);
+                return null;
+            }
+        } catch (InterruptedException e) {
+            logger.warn("等待抓图锁被中断: {}", deviceId);
+            Thread.currentThread().interrupt();
+            return null;
+        }
         
         try {
             // 生成文件名
@@ -99,6 +126,8 @@ public class CaptureService {
         } catch (Exception e) {
             logger.error("抓图异常: deviceId={}, channel={}", deviceId, channel, e);
             return null;
+        } finally {
+            lock.unlock();
         }
     }
     

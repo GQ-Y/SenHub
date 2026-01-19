@@ -34,6 +34,7 @@ export const DeviceDetail: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
   const imageContainerRef = useRef<HTMLDivElement>(null);
+  const hasAutoSnapshotRef = useRef(false); // 跟踪是否已自动抓图
 
   // 录像回放相关状态
   const [playbackVideoUrl, setPlaybackVideoUrl] = useState<string | null>(null);
@@ -55,6 +56,9 @@ export const DeviceDetail: React.FC = () => {
 
   // 加载设备详情
   useEffect(() => {
+    // 设备ID变化时重置自动抓图标志
+    hasAutoSnapshotRef.current = false;
+    
     const loadDevice = async () => {
       if (!deviceId) return;
 
@@ -72,9 +76,13 @@ export const DeviceDetail: React.FC = () => {
     loadDevice();
   }, [deviceId]);
 
-  // 进入页面时自动抓图
+  // 进入页面时自动抓图（只执行一次）
   useEffect(() => {
     if (!deviceId || !device) return;
+    
+    // 防止重复抓图（React Strict Mode 或依赖变化导致）
+    if (hasAutoSnapshotRef.current) return;
+    hasAutoSnapshotRef.current = true;
 
     const captureSnapshot = async () => {
       setIsLoadingSnapshot(true);
