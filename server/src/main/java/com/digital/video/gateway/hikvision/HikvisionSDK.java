@@ -32,6 +32,12 @@ public class HikvisionSDK implements DeviceSDK {
     private DeviceManager deviceManager;
     private MqttClient mqttClient;
     private com.digital.video.gateway.service.AlarmService alarmService;
+    
+    // 存储每个设备的布防句柄，key为userId，value为alarmHandle
+    private final java.util.concurrent.ConcurrentHashMap<Integer, Integer> alarmHandles = new java.util.concurrent.ConcurrentHashMap<>();
+    
+    // 保持报警回调的强引用，防止被GC回收导致native回调失效
+    private AlarmMessageCallback alarmCallback;
 
     private HikvisionSDK() {
     }
@@ -469,6 +475,16 @@ public class HikvisionSDK implements DeviceSDK {
             }
         } else {
             logger.info("设备登录成功: {}:{} (userId: {})", ip, port, userID);
+            
+            // 登录成功后自动布防，以接收报警事件
+            if (alarmService != null) {
+                int alarmHandle = setupAlarmChan(userID);
+                if (alarmHandle >= 0) {
+                    logger.info("设备已自动布防: {}:{} (userId: {}, alarmHandle: {})", ip, port, userID, alarmHandle);
+                } else {
+                    logger.warn("设备自动布防失败: {}:{} (userId: {})", ip, port, userID);
+                }
+            }
         }
 
         return userID;
@@ -482,6 +498,10 @@ public class HikvisionSDK implements DeviceSDK {
         if (!initialized || hCNetSDK == null) {
             return false;
         }
+        
+        // 先撤防
+        closeAlarmChan(userID);
+        
         boolean result = hCNetSDK.NET_DVR_Logout_V30(userID);
         if (result) {
             logger.info("设备登出成功: {}", userID);
@@ -513,10 +533,159 @@ public class HikvisionSDK implements DeviceSDK {
         this.alarmService = alarmService;
         // 设置报警回调
         if (hCNetSDK != null && alarmService != null) {
-            AlarmMessageCallback alarmCallback = new AlarmMessageCallback();
-            hCNetSDK.NET_DVR_SetDVRMessageCallBack_V30(alarmCallback, null);
-            logger.info("海康SDK报警回调已设置");
+            // 保持回调的强引用，防止被GC回收
+            this.alarmCallback = new AlarmMessageCallback();
+            boolean result = hCNetSDK.NET_DVR_SetDVRMessageCallBack_V30(this.alarmCallback, null);
+            logger.info("海康SDK报警回调设置结果: {}", result);
+            
+            // 对已登录的设备进行布防
+            setupAlarmForExistingDevices();
         }
+    }
+    
+    /**
+     * 对已登录的设备进行布防
+     * 用于在alarmService设置后，对之前已登录但未布防的设备进行补充布防
+     */
+    public void setupAlarmForExistingDevices() {
+        logger.info("开始对已登录设备进行布防检查...");
+        
+        if (deviceManager == null) {
+            logger.warn("deviceManager为null，无法对已登录设备布防");
+            return;
+        }
+        if (alarmService == null) {
+            logger.warn("alarmService为null，无法对已登录设备布防");
+            return;
+        }
+        
+        try {
+            List<DeviceInfo> devices = deviceManager.getAllDevices();
+            logger.info("共有 {} 个设备需要检查布防状态", devices.size());
+            
+            for (DeviceInfo device : devices) {
+                logger.debug("检查设备: {}, status={}, brand={}, userId={}", 
+                        device.getDeviceId(), device.getStatus(), device.getBrand(), device.getUserId());
+                        
+                // status: 1=在线, 0=离线
+                if (device.getStatus() == 1 && "hikvision".equalsIgnoreCase(device.getBrand())) {
+                    int userId = device.getUserId();
+                    if (userId >= 0 && !isAlarmSetup(userId)) {
+                        logger.info("对设备进行布防: {} (userId: {})", device.getDeviceId(), userId);
+                        int alarmHandle = setupAlarmChan(userId);
+                        if (alarmHandle >= 0) {
+                            logger.info("设备布防成功: {} (userId: {}, alarmHandle: {})", 
+                                    device.getDeviceId(), userId, alarmHandle);
+                        } else {
+                            logger.warn("设备布防失败: {} (userId: {})", device.getDeviceId(), userId);
+                        }
+                    } else {
+                        logger.debug("设备已布防或userId无效: {} (userId: {}, isAlarmSetup: {})", 
+                                device.getDeviceId(), userId, isAlarmSetup(userId));
+                    }
+                }
+            }
+            logger.info("已登录设备布防检查完成");
+        } catch (Exception e) {
+            logger.error("对已登录设备布防时异常", e);
+        }
+    }
+    
+    /**
+     * 对设备进行布防，建立报警通道
+     * 只有布防后，设备的报警事件才会推送到SDK的回调函数
+     * @param userId 登录句柄
+     * @return 布防句柄，失败返回-1
+     */
+    public int setupAlarmChan(int userId) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化，无法布防");
+            return -1;
+        }
+        
+        // 检查是否已经布防
+        Integer existingHandle = alarmHandles.get(userId);
+        if (existingHandle != null && existingHandle >= 0) {
+            logger.debug("设备已布防: userId={}, alarmHandle={}", userId, existingHandle);
+            return existingHandle;
+        }
+        
+        try {
+            // 使用V50版本的布防接口
+            HCNetSDK.NET_DVR_SETUPALARM_PARAM_V50 setupParam = new HCNetSDK.NET_DVR_SETUPALARM_PARAM_V50();
+            setupParam.dwSize = setupParam.size();
+            setupParam.byLevel = 1; // 二级优先级
+            setupParam.byAlarmInfoType = 1; // 新报警信息
+            setupParam.byRetAlarmTypeV40 = 1; // 返回V40报警信息
+            setupParam.byDeployType = 1; // 实时布防
+            setupParam.write();
+            
+            int alarmHandle = hCNetSDK.NET_DVR_SetupAlarmChan_V50(userId, setupParam, null, 0);
+            if (alarmHandle < 0) {
+                int errorCode = getLastError();
+                // 某些设备可能不支持V50，尝试V41
+                logger.warn("V50布防失败，尝试V41: userId={}, errorCode={}", userId, errorCode);
+                
+                HCNetSDK.NET_DVR_SETUPALARM_PARAM setupParamV41 = new HCNetSDK.NET_DVR_SETUPALARM_PARAM();
+                setupParamV41.dwSize = setupParamV41.size();
+                setupParamV41.byLevel = 1;
+                setupParamV41.byAlarmInfoType = 1;
+                setupParamV41.byDeployType = 1;
+                setupParamV41.write();
+                
+                alarmHandle = hCNetSDK.NET_DVR_SetupAlarmChan_V41(userId, setupParamV41);
+                if (alarmHandle < 0) {
+                    errorCode = getLastError();
+                    // 再尝试V30
+                    logger.warn("V41布防失败，尝试V30: userId={}, errorCode={}", userId, errorCode);
+                    alarmHandle = hCNetSDK.NET_DVR_SetupAlarmChan_V30(userId);
+                    if (alarmHandle < 0) {
+                        logger.error("布防失败: userId={}, errorCode={}", userId, getLastError());
+                        return -1;
+                    }
+                }
+            }
+            
+            alarmHandles.put(userId, alarmHandle);
+            logger.info("设备布防成功: userId={}, alarmHandle={}", userId, alarmHandle);
+            return alarmHandle;
+        } catch (Exception e) {
+            logger.error("布防异常: userId={}", userId, e);
+            return -1;
+        }
+    }
+    
+    /**
+     * 撤防
+     * @param userId 登录句柄
+     * @return 是否成功
+     */
+    public boolean closeAlarmChan(int userId) {
+        Integer alarmHandle = alarmHandles.remove(userId);
+        if (alarmHandle == null || alarmHandle < 0) {
+            return true;
+        }
+        
+        try {
+            boolean result = hCNetSDK.NET_DVR_CloseAlarmChan_V30(alarmHandle);
+            if (result) {
+                logger.info("设备撤防成功: userId={}, alarmHandle={}", userId, alarmHandle);
+            } else {
+                logger.warn("设备撤防失败: userId={}, alarmHandle={}, errorCode={}", userId, alarmHandle, getLastError());
+            }
+            return result;
+        } catch (Exception e) {
+            logger.error("撤防异常: userId={}", userId, e);
+            return false;
+        }
+    }
+    
+    /**
+     * 检查设备是否已布防
+     */
+    public boolean isAlarmSetup(int userId) {
+        Integer handle = alarmHandles.get(userId);
+        return handle != null && handle >= 0;
     }
 
     /**
@@ -527,58 +696,99 @@ public class HikvisionSDK implements DeviceSDK {
         public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen,
                 Pointer pUser) {
             try {
-                // 处理报警消息
-                // 常见的报警类型：COMM_ALARM (0x1100), COMM_ALARM_V30 (0x4000), COMM_ALARM_V40 (0x4007)
-                if (lCommand == HCNetSDK.COMM_ALARM ||
+                // 记录所有收到的报警消息，便于调试
+                logger.info("收到海康报警回调: lCommand=0x{}, dwBufLen={}", Integer.toHexString(lCommand), dwBufLen);
+                
+                // 从pAlarmer中提取设备信息
+                String deviceIP = null;
+                int userId = -1;
+                if (pAlarmer != null) {
+                    pAlarmer.read();
+                    if (pAlarmer.byDeviceIPValid == 1) {
+                        deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8).trim();
+                        // 移除末尾的空字符
+                        int nullIndex = deviceIP.indexOf('\0');
+                        if (nullIndex >= 0) {
+                            deviceIP = deviceIP.substring(0, nullIndex);
+                        }
+                    }
+                    if (pAlarmer.byUserIDValid == 1) {
+                        userId = pAlarmer.lUserID;
+                    }
+                    logger.info("报警设备信息: IP={}, userId={}, byDeviceIPValid={}, byUserIDValid={}", 
+                            deviceIP, userId, pAlarmer.byDeviceIPValid, pAlarmer.byUserIDValid);
+                }
+                
+                // 处理报警消息 - 支持更多报警类型
+                // 常见的报警类型：
+                // COMM_ALARM (0x1100) - 普通报警
+                // COMM_ALARM_V30 (0x4000) - V30报警
+                // COMM_ALARM_V40 (0x4007) - V40报警（包含移动侦测等）
+                // COMM_ALARM_RULE (0x1102) - 行为分析报警
+                // COMM_SWITCH_ALARM (0x1108) - 开关量报警
+                boolean isAlarmCommand = (lCommand == HCNetSDK.COMM_ALARM ||
                         lCommand == HCNetSDK.COMM_ALARM_V30 ||
                         lCommand == HCNetSDK.COMM_ALARM_V40 ||
                         lCommand == HCNetSDK.COMM_ALARM_RULE ||
-                        lCommand == HCNetSDK.COMM_SWITCH_ALARM) {
+                        lCommand == HCNetSDK.COMM_SWITCH_ALARM);
+                
+                // 也处理其他可能的报警类型
+                if (!isAlarmCommand) {
+                    // 检查是否是其他类型的报警（如智能报警等）
+                    // 0x4000-0x4FFF 范围内的都可能是报警
+                    if (lCommand >= 0x4000 && lCommand <= 0x4FFF) {
+                        isAlarmCommand = true;
+                    }
+                }
+                
+                if (isAlarmCommand && deviceIP != null) {
+                    int channel = 1; // 默认通道1
 
-                    // 从pAlarmer中提取设备信息
-                    if (pAlarmer != null && pAlarmer.byDeviceIPValid == 1) {
-                        String deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8)
-                                .trim();
-                        int channel = 1; // 默认通道1，通道信息需要从报警信息中解析
-
-                        // 通过IP和端口查找设备
-                        if (deviceManager != null && alarmService != null) {
-                            // 尝试通过userId查找设备（如果pAlarmer中有userId信息）
-                            // 否则通过IP查找
-                            int userId = -1;
-                            if (pAlarmer.byUserIDValid == 1) {
-                                userId = pAlarmer.lUserID;
+                    // 只通过IP匹配设备（userId在同品牌和不同品牌间都可能重复）
+                    if (deviceManager != null && alarmService != null) {
+                        String deviceId = null;
+                        
+                        // 通过IP查找设备
+                        java.util.List<DeviceInfo> devices = deviceManager.getAllDevices();
+                        for (DeviceInfo device : devices) {
+                            if (deviceIP.equals(device.getIp())) {
+                                deviceId = device.getDeviceId();
+                                break;
                             }
+                        }
 
-                            String deviceId = null;
-                            if (userId > 0) {
-                                deviceId = deviceManager.getDeviceIdByUserId(userId);
-                            }
-
-                            // 如果通过userId找不到，尝试通过IP查找
-                            if (deviceId == null) {
-                                // 获取所有设备，查找匹配的IP
-                                java.util.List<DeviceInfo> devices = deviceManager.getAllDevices();
-                                for (DeviceInfo device : devices) {
-                                    if (deviceIP.equals(device.getIp())) {
-                                        deviceId = device.getDeviceId();
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (deviceId != null) {
-                                String alarmType = "COMM_ALARM_" + Integer.toHexString(lCommand);
-                                String alarmMessage = "报警类型: " + alarmType;
-                                alarmService.handleAlarm(deviceId, channel, alarmType, alarmMessage);
-                            } else {
-                                logger.debug("无法找到设备: IP={}, userId={}", deviceIP, userId);
-                            }
+                        if (deviceId != null) {
+                            String alarmType = getAlarmTypeName(lCommand);
+                            String alarmMessage = "海康报警: " + alarmType;
+                            logger.info("处理报警: deviceId={}, channel={}, alarmType={}", deviceId, channel, alarmType);
+                            alarmService.handleAlarm(deviceId, channel, alarmType, alarmMessage);
+                        } else {
+                            logger.warn("报警回调无法找到设备: IP={}, userId={}", deviceIP, userId);
                         }
                     }
                 }
             } catch (Exception e) {
                 logger.error("处理报警回调异常", e);
+            }
+        }
+        
+        /**
+         * 获取报警类型名称
+         */
+        private String getAlarmTypeName(int lCommand) {
+            switch (lCommand) {
+                case HCNetSDK.COMM_ALARM:
+                    return "MOTION_DETECTION"; // 移动侦测
+                case HCNetSDK.COMM_ALARM_V30:
+                    return "ALARM_V30";
+                case HCNetSDK.COMM_ALARM_V40:
+                    return "MOTION_DETECTION"; // V40也常用于移动侦测
+                case HCNetSDK.COMM_ALARM_RULE:
+                    return "BEHAVIOR_ANALYSIS"; // 行为分析
+                case HCNetSDK.COMM_SWITCH_ALARM:
+                    return "IO_ALARM"; // 开关量报警
+                default:
+                    return "ALARM_0x" + Integer.toHexString(lCommand);
             }
         }
     }

@@ -97,11 +97,14 @@ public class ConfigService {
             // OSS配置
             if (config.getOss() != null) {
                 saveConfig("oss.enabled", String.valueOf(config.getOss().isEnabled()));
+                saveConfig("oss.type", config.getOss().getType());
                 saveConfig("oss.endpoint", config.getOss().getEndpoint());
                 saveConfig("oss.access_key_id", config.getOss().getAccessKeyId());
                 saveConfig("oss.access_key_secret", config.getOss().getAccessKeySecret());
                 saveConfig("oss.bucket_name", config.getOss().getBucketName());
                 saveConfig("oss.region", config.getOss().getRegion());
+                saveConfig("oss.form_data_upload_path", config.getOss().getFormDataUploadPath());
+                saveConfig("oss.base64_upload_path", config.getOss().getBase64UploadPath());
             }
 
             // Log配置
@@ -125,6 +128,24 @@ public class ConfigService {
                 saveConfig("recorder.enabled", String.valueOf(config.getRecorder().isEnabled()));
                 saveConfig("recorder.record_path", config.getRecorder().getRecordPath());
                 saveConfig("recorder.retention_minutes", String.valueOf(config.getRecorder().getRetentionMinutes()));
+            }
+            
+            // Notification配置
+            if (config.getNotification() != null) {
+                Config.NotificationConfig notif = config.getNotification();
+                if (notif.getWechat() != null) {
+                    saveConfig("notification.wechat.enabled", String.valueOf(notif.getWechat().isEnabled()));
+                    saveConfig("notification.wechat.webhook_url", notif.getWechat().getWebhookUrl());
+                }
+                if (notif.getDingtalk() != null) {
+                    saveConfig("notification.dingtalk.enabled", String.valueOf(notif.getDingtalk().isEnabled()));
+                    saveConfig("notification.dingtalk.webhook_url", notif.getDingtalk().getWebhookUrl());
+                    saveConfig("notification.dingtalk.secret", notif.getDingtalk().getSecret());
+                }
+                if (notif.getFeishu() != null) {
+                    saveConfig("notification.feishu.enabled", String.valueOf(notif.getFeishu().isEnabled()));
+                    saveConfig("notification.feishu.webhook_url", notif.getFeishu().getWebhookUrl());
+                }
             }
 
             logger.info("配置已保存到数据库");
@@ -204,12 +225,15 @@ public class ConfigService {
             if (defaultConfig.getOss() != null) {
                 Config.OssConfig oss = new Config.OssConfig();
                 oss.setEnabled(getBoolConfig(dbConfigs, "oss.enabled", defaultConfig.getOss().isEnabled()));
+                oss.setType(getConfig(dbConfigs, "oss.type", defaultConfig.getOss().getType()));
                 oss.setEndpoint(getConfig(dbConfigs, "oss.endpoint", defaultConfig.getOss().getEndpoint()));
                 oss.setAccessKeyId(getConfig(dbConfigs, "oss.access_key_id", defaultConfig.getOss().getAccessKeyId()));
                 oss.setAccessKeySecret(
                         getConfig(dbConfigs, "oss.access_key_secret", defaultConfig.getOss().getAccessKeySecret()));
                 oss.setBucketName(getConfig(dbConfigs, "oss.bucket_name", defaultConfig.getOss().getBucketName()));
                 oss.setRegion(getConfig(dbConfigs, "oss.region", defaultConfig.getOss().getRegion()));
+                oss.setFormDataUploadPath(getConfig(dbConfigs, "oss.form_data_upload_path", defaultConfig.getOss().getFormDataUploadPath()));
+                oss.setBase64UploadPath(getConfig(dbConfigs, "oss.base64_upload_path", defaultConfig.getOss().getBase64UploadPath()));
                 config.setOss(oss);
             }
 
@@ -241,6 +265,26 @@ public class ConfigService {
                         defaultConfig.getRecorder().getRetentionMinutes()));
                 config.setRecorder(recorder);
             }
+            
+            // 恢复Notification配置
+            Config.NotificationConfig notif = new Config.NotificationConfig();
+            Config.NotificationChannel wechat = new Config.NotificationChannel();
+            wechat.setEnabled(getBoolConfig(dbConfigs, "notification.wechat.enabled", false));
+            wechat.setWebhookUrl(getConfig(dbConfigs, "notification.wechat.webhook_url", null));
+            notif.setWechat(wechat);
+            
+            Config.NotificationChannel dingtalk = new Config.NotificationChannel();
+            dingtalk.setEnabled(getBoolConfig(dbConfigs, "notification.dingtalk.enabled", false));
+            dingtalk.setWebhookUrl(getConfig(dbConfigs, "notification.dingtalk.webhook_url", null));
+            dingtalk.setSecret(getConfig(dbConfigs, "notification.dingtalk.secret", null));
+            notif.setDingtalk(dingtalk);
+            
+            Config.NotificationChannel feishu = new Config.NotificationChannel();
+            feishu.setEnabled(getBoolConfig(dbConfigs, "notification.feishu.enabled", false));
+            feishu.setWebhookUrl(getConfig(dbConfigs, "notification.feishu.webhook_url", null));
+            notif.setFeishu(feishu);
+            
+            config.setNotification(notif);
 
             return config;
         } catch (Exception e) {

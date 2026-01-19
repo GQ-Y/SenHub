@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 报警服务
@@ -25,6 +26,12 @@ import java.util.*;
  */
 public class AlarmService {
     private static final Logger logger = LoggerFactory.getLogger(AlarmService.class);
+    
+    // 报警防抖：记录每个设备最后一次报警处理时间，防止频繁触发
+    // key: deviceId:alarmType, value: 上次处理时间戳
+    private final ConcurrentHashMap<String, Long> lastAlarmTime = new ConcurrentHashMap<>();
+    // 报警防抖间隔（毫秒）- 同一设备同一报警类型在此时间内只处理一次
+    private static final long ALARM_DEBOUNCE_INTERVAL_MS = 5000; // 5秒
     
     private final DeviceManager deviceManager;
     private final CaptureService captureService;
@@ -143,6 +150,17 @@ public class AlarmService {
             return;
         }
         
+        // 报警防抖检查：同一设备同一类型报警在防抖间隔内只处理一次
+        String debounceKey = deviceId + ":" + alarmType;
+        long now = System.currentTimeMillis();
+        Long lastTime = lastAlarmTime.get(debounceKey);
+        if (lastTime != null && (now - lastTime) < ALARM_DEBOUNCE_INTERVAL_MS) {
+            logger.debug("报警防抖，跳过处理: deviceId={}, alarmType={}, 距上次处理: {}ms", 
+                    deviceId, alarmType, now - lastTime);
+            return;
+        }
+        lastAlarmTime.put(debounceKey, now);
+        
         logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, message={}", 
             deviceId, channel, alarmType, alarmMessage);
         
@@ -154,8 +172,8 @@ public class AlarmService {
                 return;
             }
             
-            // 确保设备在线
-            if (!"online".equals(device.getStatus())) {
+            // 确保设备在线 (status: 1=在线, 0=离线)
+            if (device.getStatus() != 1) {
                 logger.warn("设备不在线，无法处理报警: deviceId={}, status={}", deviceId, device.getStatus());
                 return;
             }
@@ -200,15 +218,35 @@ public class AlarmService {
             FlowContext baseContext = buildFlowContext(deviceId, assemblyId, alarmType, alarmMessage, channel, alarmData);
             
             // 执行规则动作
+            // 规则按优先级排序：设备级 > 装置级 > 全局
+            // 去重：多条规则关联同一工作流时只执行一次（优先执行设备级规则的工作流）
             if (!matchedRules.isEmpty()) {
-                for (AlarmRule rule : matchedRules) {
+                Set<String> executedFlows = new HashSet<>();
+                for (int i = 0; i < matchedRules.size(); i++) {
+                    AlarmRule rule = matchedRules.get(i);
+                    String flowId = rule.getFlowId();
+                    if (flowId == null || flowId.isEmpty()) {
+                        logger.warn("规则未关联流程: ruleId={}, ruleName={}", rule.getRuleId(), rule.getName());
+                        continue;
+                    }
+                    
+                    // 同一工作流只执行一次
+                    if (executedFlows.contains(flowId)) {
+                        logger.info("工作流已执行，跳过重复: flowId={}, 被跳过规则={} (scope={})", 
+                                flowId, rule.getName(), rule.getScope());
+                        continue;
+                    }
+                    
+                    logger.info("执行规则[{}]: {} (scope={}, flowId={})", i + 1, rule.getName(), rule.getScope(), flowId);
+                    
                     FlowContext ctx = cloneFlowContext(baseContext);
                     boolean flowExecuted = executeFlowIfAvailable(rule, ctx);
                     if (flowExecuted) {
+                        executedFlows.add(flowId);
                         captureUrl = firstNonNullUrl(captureUrl, ctx);
                         videoUrl = firstVideoUrl(videoUrl, ctx);
                     } else {
-                        logger.warn("规则未关联流程或执行失败: ruleId={}", rule.getRuleId());
+                        logger.warn("规则执行流程失败: ruleId={}", rule.getRuleId());
                     }
                 }
             } else {

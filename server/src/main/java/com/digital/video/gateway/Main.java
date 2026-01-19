@@ -304,9 +304,16 @@ public class Main {
         FlowExecutor executor = new FlowExecutor();
         executor.registerHandler("capture", new CaptureHandler(captureService));
         executor.registerHandler("mqtt_publish", new MqttPublishHandler(mqttClient));
+        
+        // OssService 设置 ConfigService 以支持动态配置
+        if (ossService != null) {
+            ossService.setConfigService(configService);
+        }
         executor.registerHandler("oss_upload", new OssUploadHandler(ossService));
         executor.registerHandler("speaker_play", new SpeakerPlayHandler(speakerService));
-        executor.registerHandler("webhook", new WebhookHandler());
+        
+        // WebhookHandler 传入 ConfigService，从数据库读取全局通知配置
+        executor.registerHandler("webhook", new WebhookHandler(configService));
         executor.registerHandler("record", new RecordHandler(recordingTaskService));
         executor.registerHandler("ptz_control", new PTZControlHandler(ptzService));
         return executor;

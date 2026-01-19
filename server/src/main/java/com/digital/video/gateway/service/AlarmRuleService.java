@@ -219,37 +219,79 @@ public class AlarmRuleService {
     /**
      * 匹配规则（核心方法）
      * 根据设备ID、装置ID、报警类型和报警数据匹配规则
+     * 
+     * 匹配逻辑：
+     * 1. 全局规则（scope=global）：适用于所有设备
+     * 2. 装置规则（scope=assembly）：适用于指定装置的设备
+     * 3. 设备规则（scope=device）：适用于指定设备
      */
     public List<AlarmRule> matchRules(String deviceId, String assemblyId, String alarmType,
             Map<String, Object> alarmData) {
         List<AlarmRule> matchedRules = new ArrayList<>();
+        
+        logger.debug("开始匹配规则: deviceId={}, assemblyId={}, alarmType={}", deviceId, assemblyId, alarmType);
 
-        // 1. 查询相关规则
-        List<AlarmRule> candidateRules = new ArrayList<>();
-
-        // 全局规则
-        candidateRules.addAll(getAlarmRules(null, null, alarmType, true));
-
-        // 装置级规则
-        if (assemblyId != null) {
-            candidateRules.addAll(getAlarmRules(null, assemblyId, alarmType, true));
-        }
-
-        // 设备级规则
-        candidateRules.addAll(getAlarmRules(deviceId, null, alarmType, true));
-
-        // 2. 过滤enabled=true的规则（已在查询中过滤）
-        // 3. 检查conditions条件
-        for (AlarmRule rule : candidateRules) {
-            if (checkConditions(rule, alarmData)) {
-                matchedRules.add(rule);
+        // 1. 查询所有启用的规则
+        List<AlarmRule> allRules = getAlarmRules(null, null, null, true);
+        logger.debug("查询到 {} 条启用的规则", allRules.size());
+        
+        // 2. 筛选符合范围的规则
+        for (AlarmRule rule : allRules) {
+            String scope = rule.getScope();
+            boolean scopeMatch = false;
+            
+            if ("global".equals(scope)) {
+                // 全局规则适用于所有设备
+                scopeMatch = true;
+            } else if ("assembly".equals(scope) && assemblyId != null) {
+                // 装置规则：检查装置ID
+                scopeMatch = assemblyId.equals(rule.getAssemblyId());
+            } else if ("device".equals(scope) && deviceId != null) {
+                // 设备规则：检查设备ID
+                scopeMatch = deviceId.equals(rule.getDeviceId());
             }
+            
+            if (!scopeMatch) {
+                logger.debug("规则 {} 范围不匹配: scope={}, ruleDeviceId={}, targetDeviceId={}", 
+                        rule.getName(), scope, rule.getDeviceId(), deviceId);
+                continue;
+            }
+            
+            // 3. 检查conditions条件
+            if (!checkConditions(rule, alarmData)) {
+                logger.debug("规则 {} 条件不匹配", rule.getName());
+                continue;
+            }
+            
+            // 规则匹配成功
+            logger.info("规则匹配成功: {} (scope={}, flowId={})", rule.getName(), scope, rule.getFlowId());
+            matchedRules.add(rule);
         }
 
-        // 4. 按priority排序
-        matchedRules.sort((r1, r2) -> Integer.compare(r2.getPriority(), r1.getPriority()));
+        // 4. 按 scope优先级（设备>装置>全局）和 priority 排序
+        // scope优先级：device=0, assembly=1, global=2
+        matchedRules.sort((r1, r2) -> {
+            int scopeOrder1 = getScopePriority(r1.getScope());
+            int scopeOrder2 = getScopePriority(r2.getScope());
+            if (scopeOrder1 != scopeOrder2) {
+                return Integer.compare(scopeOrder1, scopeOrder2); // scope越小优先级越高
+            }
+            return Integer.compare(r2.getPriority(), r1.getPriority()); // priority越大优先级越高
+        });
+        
+        logger.debug("共匹配到 {} 条规则", matchedRules.size());
 
         return matchedRules;
+    }
+    
+    /**
+     * 获取scope的优先级顺序
+     * 设备级规则优先于装置级，装置级优先于全局
+     */
+    private int getScopePriority(String scope) {
+        if ("device".equals(scope)) return 0;   // 最高优先级
+        if ("assembly".equals(scope)) return 1; // 中等优先级
+        return 2; // global 最低优先级
     }
 
     /**

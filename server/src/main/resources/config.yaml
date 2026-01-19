@@ -51,15 +51,16 @@ keeper:
   check_interval: 60  # 检查间隔（秒）
   offline_threshold: 3  # 离线判定阈值（连续失败次数）
 
-# OSS配置（用于录像上传）
+# OSS配置 - 注意：实际配置从数据库读取，此处仅为默认值
+# 请通过系统设置界面或API配置OSS参数
 oss:
-  enabled: false  # 是否启用OSS上传
-  type: "aliyun"  # aliyun|minio|aws|custom
-  endpoint: ""  # OSS端点
-  access_key_id: ""  # AccessKey ID
-  access_key_secret: ""  # AccessKey Secret
-  bucket_name: ""  # 存储桶名称
-  region: ""  # 区域
+  enabled: false  # 默认禁用，从数据库配置启用
+  type: ""        # 从数据库读取: aliyun|minio|custom
+  endpoint: ""    # 从数据库读取
+  access_key_id: ""
+  access_key_secret: ""
+  bucket_name: ""
+  region: ""
   form_data_upload_path: "/upload/file_upload/formDataUpload"  # 自定义OSS表单上传路径
   base64_upload_path: "/upload/file_upload/imgUpload"          # 自定义OSS Base64上传路径
 
@@ -100,18 +101,19 @@ recorder:
   record_path: "./storage/records"  # 录制文件存储路径
   retention_minutes: 10  # 录制文件保留时长（分钟），超过此时间的文件将被自动删除
 
-# 消息通知配置
+# 消息通知配置 - 注意：实际配置从数据库读取，此处仅为默认值
+# 请通过系统设置界面或API配置通知参数
 notification:
-  # 企业微信
+  # 企业微信 - 从数据库读取配置
   wechat:
     enabled: false
-    webhook_url: ""  # 企业微信群机器人Webhook地址
-  # 钉钉
+    webhook_url: ""
+  # 钉钉 - 从数据库读取配置
   dingtalk:
     enabled: false
-    webhook_url: ""  # 钉钉群机器人Webhook地址
-    secret: ""       # 加签密钥（可选）
-  # 飞书
+    webhook_url: ""
+    secret: ""
+  # 飞书 - 从数据库读取配置
   feishu:
     enabled: false
-    webhook_url: ""  # 飞书群机器人Webhook地址
+    webhook_url: ""

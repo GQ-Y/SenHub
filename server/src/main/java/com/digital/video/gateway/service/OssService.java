@@ -32,6 +32,7 @@ public class OssService {
     private static final Logger logger = LoggerFactory.getLogger(OssService.class);
 
     private Config.OssConfig ossConfig;
+    private ConfigService configService;
     private OSS aliyunClient;
     private MinioClient minioClient;
     private HttpClient httpClient;
@@ -42,6 +43,49 @@ public class OssService {
         if (ossConfig != null && ossConfig.isEnabled()) {
             init();
         }
+    }
+    
+    /**
+     * 设置ConfigService，用于动态获取数据库配置
+     */
+    public void setConfigService(ConfigService configService) {
+        this.configService = configService;
+    }
+    
+    /**
+     * 刷新配置（从数据库重新读取）
+     */
+    public void refreshConfig() {
+        if (configService != null) {
+            Config config = configService.getConfig();
+            if (config != null && config.getOss() != null) {
+                Config.OssConfig newConfig = config.getOss();
+                // 检查配置是否变化
+                if (configChanged(newConfig)) {
+                    logger.info("检测到OSS配置变化，重新初始化");
+                    this.ossConfig = newConfig;
+                    this.enabled = false;
+                    if (newConfig.isEnabled()) {
+                        init();
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * 检查配置是否变化
+     */
+    private boolean configChanged(Config.OssConfig newConfig) {
+        if (ossConfig == null) return newConfig != null;
+        if (newConfig == null) return true;
+        
+        return ossConfig.isEnabled() != newConfig.isEnabled() ||
+               !java.util.Objects.equals(ossConfig.getType(), newConfig.getType()) ||
+               !java.util.Objects.equals(ossConfig.getEndpoint(), newConfig.getEndpoint()) ||
+               !java.util.Objects.equals(ossConfig.getAccessKeyId(), newConfig.getAccessKeyId()) ||
+               !java.util.Objects.equals(ossConfig.getAccessKeySecret(), newConfig.getAccessKeySecret()) ||
+               !java.util.Objects.equals(ossConfig.getBucketName(), newConfig.getBucketName());
     }
 
     /**
@@ -108,8 +152,13 @@ public class OssService {
 
     /**
      * 检查OSS服务是否启用
+     * 每次调用时检查数据库配置是否有更新
      */
     public boolean isEnabled() {
+        // 如果有ConfigService，先刷新配置
+        if (configService != null) {
+            refreshConfig();
+        }
         return enabled && (aliyunClient != null || minioClient != null || httpClient != null);
     }
 
@@ -126,11 +175,6 @@ public class OssService {
             return null;
         }
 
-        if (ossConfig.getBucketName() == null || ossConfig.getBucketName().isEmpty()) {
-            logger.warn("OSS Bucket名称未配置");
-            return null;
-        }
-
         File file = new File(localFilePath);
         if (!file.exists()) {
             logger.warn("文件不存在，无法上传: {}", localFilePath);
@@ -138,8 +182,15 @@ public class OssService {
         }
 
         try {
+            // 自定义OSS不需要bucket，直接使用form-data上传
             if (httpClient != null && isCustomType()) {
                 return uploadFileFormData(localFilePath, objectKey);
+            }
+            
+            // 阿里云/Minio需要bucket
+            if (ossConfig.getBucketName() == null || ossConfig.getBucketName().isEmpty()) {
+                logger.warn("OSS Bucket名称未配置（阿里云/Minio需要）");
+                return null;
             }
 
             if (minioClient != null) {
@@ -238,10 +289,16 @@ public class OssService {
      * 自定义OSS：base64上传
      */
     public String uploadFileBase64(byte[] data, String fileName) {
+        logger.info("uploadFileBase64调用: fileName={}, dataSize={}", fileName, data != null ? data.length : 0);
+        
         if (!isEnabled()) {
+            logger.warn("uploadFileBase64: OSS未启用, enabled={}, httpClient={}, aliyunClient={}, minioClient={}", 
+                    enabled, httpClient != null, aliyunClient != null, minioClient != null);
             return null;
         }
 
+        logger.info("uploadFileBase64: isCustomType={}, httpClient={}", isCustomType(), httpClient != null);
+        
         // 如果是自定义类型走专用接口，否则回落到常规上传
         if (httpClient != null && isCustomType()) {
             String url = buildUrl(ossConfig.getEndpoint(), ossConfig.getBase64UploadPath());
@@ -249,7 +306,8 @@ public class OssService {
             String objectKey = fileName != null ? fileName : ("upload-" + System.currentTimeMillis());
 
             try {
-                String payload = "{\"fileName\":\"" + escapeJson(fileName) + "\",\"data\":\"" + base64 + "\",\"objectKey\":\""
+                // 服务器期望的字段名是 srcPicData
+                String payload = "{\"fileName\":\"" + escapeJson(fileName) + "\",\"srcPicData\":\"" + base64 + "\",\"objectKey\":\""
                         + escapeJson(objectKey) + "\"}";
 
                 HttpRequest request = HttpRequest.newBuilder()
@@ -261,8 +319,10 @@ public class OssService {
 
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    logger.debug("自定义OSS Base64上传响应: {}", response.body());
                     String resolvedUrl = extractUrlFromResponse(response.body(), objectKey, url);
-                    logger.info("Base64上传 自定义OSS 成功: fileName={}, url={}", fileName, resolvedUrl);
+                    logger.info("Base64上传 自定义OSS 成功: fileName={}, url={}, 原始响应包含url字段={}", 
+                            fileName, resolvedUrl, response.body().contains("\"url\""));
                     return resolvedUrl;
                 } else {
                     logger.warn("自定义OSS Base64上传失败: status={}, body={}", response.statusCode(), response.body());
@@ -330,6 +390,12 @@ public class OssService {
 
     /**
      * 尝试从响应体中提取url字段，若失败则返回fallback
+     * 支持多种响应格式：
+     * 1. {"url": "..."} 
+     * 2. {"data": {"url": "..."}}
+     * 3. {"data": {"path": "..."}}
+     * 4. {"data": {"fileUrl": "..."}}
+     * 5. {"result": {"url": "..."}}
      */
     @SuppressWarnings("unchecked")
     private String extractUrlFromResponse(String responseBody, String objectKey, String fallbackUrl) {
@@ -337,24 +403,56 @@ public class OssService {
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 Map<String, Object> map = mapper.readValue(responseBody, Map.class);
+                
+                // 直接从顶层查找url/path/fileUrl
                 Object url = map.get("url");
+                if (url == null) url = map.get("path");
+                if (url == null) url = map.get("fileUrl");
+                if (url == null) url = map.get("filePath");
+                
+                // 从data字段查找
                 if (url == null && map.get("data") instanceof Map) {
                     Map<String, Object> data = (Map<String, Object>) map.get("data");
-                    url = data.get("url");
-                    if (url == null) {
-                        url = data.get("path");
-                    }
+                    url = data.get("directory");  // 优先使用directory字段
+                    if (url == null) url = data.get("url");
+                    if (url == null) url = data.get("path");
+                    if (url == null) url = data.get("fileUrl");
+                    if (url == null) url = data.get("filePath");
                 }
-                if (url != null) {
-                    return url.toString();
+                
+                // data直接是字符串URL的情况
+                if (url == null && map.get("data") instanceof String) {
+                    url = map.get("data");
+                }
+                
+                // 从result字段查找
+                if (url == null && map.get("result") instanceof Map) {
+                    Map<String, Object> result = (Map<String, Object>) map.get("result");
+                    url = result.get("url");
+                    if (url == null) url = result.get("path");
+                    if (url == null) url = result.get("fileUrl");
+                }
+                
+                if (url != null && !url.toString().isEmpty()) {
+                    String urlStr = url.toString();
+                    logger.info("从响应中提取到URL: {}", urlStr);
+                    // 如果返回的是相对路径，拼接endpoint
+                    if (!urlStr.startsWith("http")) {
+                        urlStr = buildUrl(ossConfig.getEndpoint(), urlStr);
+                    }
+                    return urlStr;
+                } else {
+                    logger.warn("响应中未找到URL字段，使用fallback。响应内容: {}", responseBody);
                 }
             } catch (Exception e) {
-                logger.debug("响应体解析失败，使用fallback: {}", e.getMessage());
+                logger.warn("响应体解析失败，使用fallback: {}，响应内容: {}", e.getMessage(), responseBody);
             }
         }
 
+        // Fallback: 使用 endpoint + objectKey
         if (objectKey != null && !objectKey.isEmpty()) {
             String candidate = buildUrl(ossConfig.getEndpoint(), objectKey);
+            logger.info("使用fallback URL: {}", candidate);
             if (candidate.startsWith("http")) {
                 return candidate;
             }
