@@ -1,19 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { flowService } from '../src/api/services';
-import { AlarmFlow, CanvasConnection, CanvasNode, FlowComponentDefinition, FlowNodeType } from '../types';
+import { flowService, eventTypeService } from '../src/api/services';
+import { AlarmFlow, CanvasConnection, CanvasNode, FlowComponentDefinition, FlowNodeType, CameraEventType } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import {
   Plus, Trash2, RefreshCw, Save, X, Download, Upload, ZoomIn, ZoomOut,
   Play, Square, GitBranch, Camera, Video, Radio, Cloud, Volume2, Send, Zap, Settings, Move,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, ChevronDown, ChevronRight, Check
 } from 'lucide-react';
 
 // 内置组件定义
 const FLOW_COMPONENTS: FlowComponentDefinition[] = [
-  { type: 'event_trigger', label: 'node_event_trigger', icon: 'Zap', category: 'trigger', defaultConfig: {} },
+  { type: 'event_trigger', label: 'node_event_trigger', icon: 'Zap', category: 'trigger', defaultConfig: { debounceSeconds: 5 } },
   { type: 'condition', label: 'node_condition', icon: 'GitBranch', category: 'logic', hasConditionPorts: true, defaultConfig: { expression: '' } },
-  { type: 'capture', label: 'node_capture', icon: 'Camera', category: 'action', defaultConfig: {} },
-  { type: 'record', label: 'node_record', icon: 'Video', category: 'action', defaultConfig: { duration: 10 } },
+  { type: 'capture', label: 'node_capture', icon: 'Camera', category: 'action', defaultConfig: { channel: 1 } },
+  { type: 'record', label: 'node_record', icon: 'Video', category: 'action', defaultConfig: { channel: 1, beforeSeconds: 15, afterSeconds: 15 } },
   { type: 'ptz_control', label: 'node_ptz_control', icon: 'Move', category: 'action', defaultConfig: { preset: 1 } },
   { type: 'mqtt_publish', label: 'node_mqtt_publish', icon: 'Radio', category: 'output', defaultConfig: { topic: 'alarm/report/{deviceId}' } },
   { type: 'oss_upload', label: 'node_oss_upload', icon: 'Cloud', category: 'output', defaultConfig: { path: 'alarm/{deviceId}/{fileName}' } },
@@ -95,6 +95,12 @@ export const FlowManagement: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [importJson, setImportJson] = useState('');
 
+  // 事件触发器抽屉
+  const [showEventTriggerDrawer, setShowEventTriggerDrawer] = useState(false);
+  const [eventTypes, setEventTypes] = useState<Record<string, CameraEventType[]>>({});
+  const [eventTypesLoading, setEventTypesLoading] = useState(false);
+  const [expandedBrands, setExpandedBrands] = useState<Record<string, boolean>>({});
+
   // 全屏状态
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -126,7 +132,27 @@ export const FlowManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    loadEventTypes();
   }, []);
+
+  // 加载事件类型列表
+  const loadEventTypes = async () => {
+    setEventTypesLoading(true);
+    try {
+      const res = await eventTypeService.getEventTypes();
+      if (res.data) {
+        setEventTypes(res.data);
+        // 默认展开所有品牌
+        const expanded: Record<string, boolean> = {};
+        Object.keys(res.data).forEach(brand => { expanded[brand] = true; });
+        setExpandedBrands(expanded);
+      }
+    } catch (e) {
+      console.error('加载事件类型失败', e);
+    } finally {
+      setEventTypesLoading(false);
+    }
+  };
 
   // 将AlarmFlow转换为画布节点和连接
   const flowToCanvas = (flow: AlarmFlow) => {
@@ -800,13 +826,90 @@ export const FlowManagement: React.FC = () => {
             </div>
           )}
 
+          {selectedNode.type === 'event_trigger' && (
+            <>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_debounce_seconds')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={selectedNode.config?.debounceSeconds ?? 5}
+                  onChange={e => updateNodeConfig('debounceSeconds', parseInt(e.target.value) || 0)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">{t('config_debounce_hint')}</p>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_alarm_types')}</label>
+                <div className="text-xs text-gray-500 mb-1">
+                  {t('selected')}: {(selectedNode.config?.alarmTypes || []).length === 0 
+                    ? t('all_types') 
+                    : `${(selectedNode.config?.alarmTypes || []).length} ${t('types_selected')}`}
+                </div>
+                <button
+                  onClick={() => setShowEventTriggerDrawer(true)}
+                  className="w-full px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded border border-blue-200 hover:bg-blue-100 transition"
+                >
+                  {t('configure_event_types')}
+                </button>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_device_brands')}</label>
+                <div className="text-xs text-gray-500 mb-1">
+                  {t('selected')}: {(selectedNode.config?.deviceBrands || []).length === 0 
+                    ? t('all_brands') 
+                    : (selectedNode.config?.deviceBrands || []).join(', ')}
+                </div>
+              </div>
+            </>
+          )}
+
           {selectedNode.type === 'record' && (
+            <>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_channel')}</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={selectedNode.config?.channel ?? 1}
+                  onChange={e => updateNodeConfig('channel', parseInt(e.target.value) || 1)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_before_seconds')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={selectedNode.config?.beforeSeconds ?? 15}
+                  onChange={e => updateNodeConfig('beforeSeconds', parseInt(e.target.value) || 0)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">{t('config_before_seconds_hint')}</p>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_after_seconds')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={selectedNode.config?.afterSeconds ?? 15}
+                  onChange={e => updateNodeConfig('afterSeconds', parseInt(e.target.value) || 0)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">{t('config_after_seconds_hint')}</p>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">{t('config_record_webhook_auto_hint')}</p>
+            </>
+          )}
+
+          {selectedNode.type === 'capture' && (
             <div>
-              <label className="block text-gray-600 mb-1">{t('config_record_duration')}</label>
+              <label className="block text-gray-600 mb-1">{t('config_channel')}</label>
               <input
                 type="number"
-                value={selectedNode.config?.duration || 10}
-                onChange={e => updateNodeConfig('duration', parseInt(e.target.value))}
+                min="1"
+                value={selectedNode.config?.channel ?? 1}
+                onChange={e => updateNodeConfig('channel', parseInt(e.target.value) || 1)}
                 className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -1168,6 +1271,210 @@ export const FlowManagement: React.FC = () => {
               >
                 <Download size={14} className="inline mr-1" />
                 下载
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 事件触发器配置抽屉 */}
+      {showEventTriggerDrawer && selectedNode?.type === 'event_trigger' && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* 遮罩 */}
+          <div 
+            className="flex-1 bg-black bg-opacity-50" 
+            onClick={() => setShowEventTriggerDrawer(false)}
+          />
+          {/* 抽屉 */}
+          <div className="w-[480px] bg-white shadow-xl flex flex-col h-full">
+            {/* 抽屉头部 */}
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+              <h3 className="font-semibold text-gray-800">{t('event_trigger_config')}</h3>
+              <button 
+                onClick={() => setShowEventTriggerDrawer(false)} 
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* 抽屉内容 */}
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {/* 防抖间隔配置 */}
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('config_debounce_seconds')}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={selectedNode.config?.debounceSeconds ?? 5}
+                  onChange={e => updateNodeConfig('debounceSeconds', parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+                <p className="text-xs text-gray-500 mt-2">{t('config_debounce_hint')}</p>
+              </div>
+
+              {/* 设备品牌过滤 */}
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-medium text-gray-700">{t('config_device_brands')}</label>
+                  <button
+                    onClick={() => updateNodeConfig('deviceBrands', [])}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {t('select_all')}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {['hikvision', 'tiandy', 'dahua'].map(brand => {
+                    const selectedBrands: string[] = selectedNode.config?.deviceBrands || [];
+                    const isSelected = selectedBrands.length === 0 || selectedBrands.includes(brand);
+                    const brandLabels: Record<string, string> = { hikvision: '海康威视', tiandy: '天地伟业', dahua: '大华' };
+                    return (
+                      <button
+                        key={brand}
+                        onClick={() => {
+                          if (selectedBrands.length === 0) {
+                            // 当前是全选，点击后只选中当前品牌
+                            updateNodeConfig('deviceBrands', [brand]);
+                          } else if (selectedBrands.includes(brand)) {
+                            // 已选中，移除
+                            const newBrands = selectedBrands.filter(b => b !== brand);
+                            updateNodeConfig('deviceBrands', newBrands.length === 0 ? [] : newBrands);
+                          } else {
+                            // 未选中，添加
+                            updateNodeConfig('deviceBrands', [...selectedBrands, brand]);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-sm border transition ${
+                          isSelected
+                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+                        }`}
+                      >
+                        {isSelected && <Check size={12} className="inline mr-1" />}
+                        {brandLabels[brand] || brand}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">{t('config_device_brands_hint')}</p>
+              </div>
+
+              {/* 报警类型过滤 */}
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-medium text-gray-700">{t('config_alarm_types')}</label>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-500">
+                      {(selectedNode.config?.alarmTypes || []).length === 0 
+                        ? t('all_types') 
+                        : `${(selectedNode.config?.alarmTypes || []).length} ${t('types_selected')}`}
+                    </span>
+                    <button
+                      onClick={() => updateNodeConfig('alarmTypes', [])}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      {t('select_all')}
+                    </button>
+                  </div>
+                </div>
+
+                {eventTypesLoading ? (
+                  <div className="text-center py-4 text-gray-500">{t('loading')}</div>
+                ) : Object.keys(eventTypes).length === 0 ? (
+                  <div className="text-center py-4 text-gray-500">{t('no_data')}</div>
+                ) : (
+                  <div className="space-y-2 max-h-[400px] overflow-auto">
+                    {Object.entries(eventTypes).map(([brand, types]: [string, CameraEventType[]]) => {
+                      const brandLabels: Record<string, string> = { hikvision: '海康威视', tiandy: '天地伟业', dahua: '大华' };
+                      const isExpanded = expandedBrands[brand] ?? true;
+                      const selectedTypes: string[] = selectedNode.config?.alarmTypes || [];
+                      
+                      // 按分类分组
+                      const typesByCategory: Record<string, CameraEventType[]> = {};
+                      types.forEach(t => {
+                        const cat = t.category || 'other';
+                        if (!typesByCategory[cat]) typesByCategory[cat] = [];
+                        typesByCategory[cat].push(t);
+                      });
+                      
+                      const categoryLabels: Record<string, string> = {
+                        basic: '基础报警',
+                        vca: '智能分析',
+                        face: '人脸识别',
+                        its: '交通/车辆',
+                        other: '其他'
+                      };
+
+                      return (
+                        <div key={brand} className="border border-gray-100 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedBrands(prev => ({ ...prev, [brand]: !isExpanded }))}
+                            className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition"
+                          >
+                            <span className="font-medium text-gray-700">{brandLabels[brand] || brand}</span>
+                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </button>
+                          
+                          {isExpanded && (
+                            <div className="p-2 space-y-2">
+                              {Object.entries(typesByCategory).map(([category, catTypes]) => (
+                                <div key={category}>
+                                  <div className="text-xs text-gray-500 font-medium mb-1 px-1">
+                                    {categoryLabels[category] || category}
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {catTypes.map(eventType => {
+                                      const typeKey = `${brand}:${eventType.eventCode}`;
+                                      const isSelected = selectedTypes.length === 0 || selectedTypes.includes(typeKey);
+                                      return (
+                                        <button
+                                          key={typeKey}
+                                          onClick={() => {
+                                            if (selectedTypes.length === 0) {
+                                              updateNodeConfig('alarmTypes', [typeKey]);
+                                            } else if (selectedTypes.includes(typeKey)) {
+                                              const newTypes = selectedTypes.filter(t => t !== typeKey);
+                                              updateNodeConfig('alarmTypes', newTypes);
+                                            } else {
+                                              updateNodeConfig('alarmTypes', [...selectedTypes, typeKey]);
+                                            }
+                                          }}
+                                          className={`px-2 py-1 rounded text-xs border transition ${
+                                            isSelected
+                                              ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                              : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                                          }`}
+                                          title={eventType.description}
+                                        >
+                                          {isSelected && <Check size={10} className="inline mr-0.5" />}
+                                          {eventType.eventName}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-2">{t('config_alarm_types_hint')}</p>
+              </div>
+            </div>
+
+            {/* 抽屉底部 */}
+            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setShowEventTriggerDrawer(false)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                {t('confirm')}
               </button>
             </div>
           </div>

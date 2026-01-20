@@ -10,6 +10,7 @@ import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.mqtt.MqttClient;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1108,6 +1109,30 @@ public class HikvisionSDK implements DeviceSDK {
                 logger.error("海康录像下载启动失败: userId={}, channel={}, 路径={}, 错误码={}",
                         userId, channel, localFilePath, getLastError());
                 return -1;
+            }
+
+            // 设置转封装格式为MP4（必须在PLAYSTART之前设置）
+            // NET_DVR_SET_TRANS_TYPE = 32, 参数值: 0-私有格式, 1-TS格式, 2-MP4格式
+            // 使用 PlayBackControl_V40，通过 Pointer 传递参数
+            IntByReference transTypeValue = new IntByReference(2); // 2 = MP4格式
+            IntByReference outLen = new IntByReference(0);
+            boolean setTransType = hCNetSDK.NET_DVR_PlayBackControl_V40(
+                    downloadHandle, 
+                    HCNetSDK.NET_DVR_SET_TRANS_TYPE, 
+                    transTypeValue.getPointer(), 
+                    4,  // int 大小为 4 字节
+                    Pointer.NULL, 
+                    outLen);
+            if (!setTransType) {
+                int errorCode = getLastError();
+                // 错误码17表示设备不支持此功能，可以忽略继续下载（会下载私有格式）
+                if (errorCode == 17) {
+                    logger.warn("海康录像下载: 设备不支持MP4转封装(错误码17)，将下载私有格式");
+                } else {
+                    logger.warn("海康录像下载: 设置MP4转封装失败，错误码={}，将尝试继续下载", errorCode);
+                }
+            } else {
+                logger.info("海康录像下载: 已设置转封装格式为MP4");
             }
 
             // 启动下载控制码

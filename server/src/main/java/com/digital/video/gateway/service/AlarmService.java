@@ -30,8 +30,8 @@ public class AlarmService {
     // 报警防抖：记录每个设备最后一次报警处理时间，防止频繁触发
     // key: deviceId:alarmType, value: 上次处理时间戳
     private final ConcurrentHashMap<String, Long> lastAlarmTime = new ConcurrentHashMap<>();
-    // 报警防抖间隔（毫秒）- 同一设备同一报警类型在此时间内只处理一次
-    private static final long ALARM_DEBOUNCE_INTERVAL_MS = 5000; // 5秒
+    // 报警防抖间隔（毫秒）- 同一设备同一报警类型在此时间内只处理一次，可配置
+    private long alarmDebounceIntervalMs = 5000; // 默认5秒
     
     private final DeviceManager deviceManager;
     private final CaptureService captureService;
@@ -118,6 +118,22 @@ public class AlarmService {
     }
     
     /**
+     * 设置报警防抖间隔（秒）
+     * 同一设备同一类型报警在此时间内只处理一次
+     */
+    public void setAlarmDebounceIntervalSeconds(long seconds) {
+        this.alarmDebounceIntervalMs = seconds * 1000;
+        logger.info("报警防抖间隔已设置为: {}秒", seconds);
+    }
+    
+    /**
+     * 获取当前报警防抖间隔（秒）
+     */
+    public long getAlarmDebounceIntervalSeconds() {
+        return alarmDebounceIntervalMs / 1000;
+    }
+    
+    /**
      * 设置是否启用报警自动抓图
      */
     public void setEnabled(boolean enabled) {
@@ -154,9 +170,9 @@ public class AlarmService {
         String debounceKey = deviceId + ":" + alarmType;
         long now = System.currentTimeMillis();
         Long lastTime = lastAlarmTime.get(debounceKey);
-        if (lastTime != null && (now - lastTime) < ALARM_DEBOUNCE_INTERVAL_MS) {
-            logger.debug("报警防抖，跳过处理: deviceId={}, alarmType={}, 距上次处理: {}ms", 
-                    deviceId, alarmType, now - lastTime);
+        if (lastTime != null && (now - lastTime) < alarmDebounceIntervalMs) {
+            logger.debug("报警防抖，跳过处理: deviceId={}, alarmType={}, 距上次处理: {}ms, 防抖间隔: {}ms", 
+                    deviceId, alarmType, now - lastTime, alarmDebounceIntervalMs);
             return;
         }
         lastAlarmTime.put(debounceKey, now);

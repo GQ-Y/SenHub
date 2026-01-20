@@ -26,6 +26,15 @@ public class RecordingTaskService {
     private final Database database;
     private final DeviceManager deviceManager;
     private final OssService ossService;
+    private ConfigService configService;
+    
+    // HTTP客户端用于Webhook推送
+    private final java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(10))
+            .build();
+    
+    // 任务是否需要发送Webhook通知的标记 (key: taskId, value: webhookEnabled)
+    private final java.util.concurrent.ConcurrentHashMap<String, Boolean> taskWebhookSettings = new java.util.concurrent.ConcurrentHashMap<>();
 
     // 用于执行下载任务的线程池
     private final ExecutorService executorService = Executors.newFixedThreadPool(5);
@@ -45,6 +54,13 @@ public class RecordingTaskService {
 
         // 启动任务恢复逻辑（可选，如重启后继续下载未完成任务）
         startStatusPolling();
+    }
+    
+    /**
+     * 设置配置服务（用于获取Webhook配置）
+     */
+    public void setConfigService(ConfigService configService) {
+        this.configService = configService;
     }
 
     /**
@@ -91,7 +107,7 @@ public class RecordingTaskService {
      * 处理下载完成
      */
     private void handleDownloadComplete(RecordingTask task) {
-        logger.info("录像下载完成, 开始上传 OSS: taskId={}, file={}", task.getTaskId(), task.getLocalFilePath());
+        logger.info("录像下载完成, 开始处理: taskId={}, file={}", task.getTaskId(), task.getLocalFilePath());
         task.setStatus(STATUS_COMPLETED);
 
         // 停止 SDK 内部句柄
@@ -100,27 +116,246 @@ public class RecordingTaskService {
             sdk.stopDownload(task.getDownloadHandle());
         }
 
-        // 异步上传 OSS
+        // 异步转码并上传 OSS
         CompletableFuture.runAsync(() -> {
             try {
+                String localFilePath = task.getLocalFilePath();
+                File originalFile = new File(localFilePath);
+                
+                // 检查是否需要转码（海康私有格式以 IMKH 开头）
+                if (originalFile.exists() && needsTranscoding(originalFile)) {
+                    logger.info("检测到海康私有格式，开始ffmpeg转码: taskId={}", task.getTaskId());
+                    String transcodedPath = transcodeToMp4(localFilePath);
+                    if (transcodedPath != null) {
+                        // 转码成功，更新文件路径
+                        task.setLocalFilePath(transcodedPath);
+                        localFilePath = transcodedPath;
+                        logger.info("ffmpeg转码成功: taskId={}, newPath={}", task.getTaskId(), transcodedPath);
+                        
+                        // 删除原始私有格式文件
+                        if (originalFile.delete()) {
+                            logger.debug("已删除原始私有格式文件: {}", originalFile.getAbsolutePath());
+                        }
+                    } else {
+                        logger.warn("ffmpeg转码失败，将使用原始文件: taskId={}", task.getTaskId());
+                    }
+                }
+                
+                // 上传到 OSS
+                String videoUrl = null;
                 if (ossService != null && ossService.isEnabled()) {
-                    File file = new File(task.getLocalFilePath());
+                    File file = new File(localFilePath);
                     if (file.exists()) {
                         String ossPath = "recordings/" + task.getDeviceId() + "/" + file.getName();
-                        String url = ossService.uploadFile(task.getLocalFilePath(), ossPath);
-                        if (url != null) {
-                            task.setOssUrl(url);
-                            logger.info("录像上传 OSS 成功: taskId={}, url={}", task.getTaskId(), url);
+                        videoUrl = ossService.uploadFile(localFilePath, ossPath);
+                        if (videoUrl != null) {
+                            task.setOssUrl(videoUrl);
+                            logger.info("录像上传 OSS 成功: taskId={}, url={}", task.getTaskId(), videoUrl);
                         }
                     }
                 }
                 updateRecordingTask(task.getTaskId(), task);
+                
+                // 清理webhook设置（Webhook通知现在由工作流的webhook节点处理）
+                taskWebhookSettings.remove(task.getTaskId());
             } catch (Exception e) {
-                logger.error("录像上传 OSS 异常: taskId={}", task.getTaskId(), e);
-                task.setErrorMessage("OSS 上传失败: " + e.getMessage());
+                logger.error("录像处理异常: taskId={}", task.getTaskId(), e);
+                task.setErrorMessage("录像处理失败: " + e.getMessage());
                 updateRecordingTask(task.getTaskId(), task);
             }
         });
+    }
+    
+    /**
+     * 检查视频文件是否需要转码（海康私有格式）
+     * 海康私有PS流格式以 "IMKH" 开头，标准MP4以 "ftyp" 开头
+     */
+    private boolean needsTranscoding(File file) {
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+            byte[] header = new byte[4];
+            if (fis.read(header) == 4) {
+                // 检查是否为海康私有格式 (IMKH)
+                if (header[0] == 'I' && header[1] == 'M' && header[2] == 'K' && header[3] == 'H') {
+                    return true;
+                }
+                // 检查是否已经是标准MP4 (ftyp)
+                if (header[0] == 0x00 && header[1] == 0x00 && header[2] == 0x00 && 
+                    (header[3] == 0x18 || header[3] == 0x1C || header[3] == 0x20)) {
+                    // 可能是MP4，读取更多字节确认
+                    byte[] ftypCheck = new byte[4];
+                    if (fis.read(ftypCheck) == 4) {
+                        if (ftypCheck[0] == 'f' && ftypCheck[1] == 't' && ftypCheck[2] == 'y' && ftypCheck[3] == 'p') {
+                            return false; // 已经是标准MP4
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("检查视频格式异常: {}", file.getAbsolutePath(), e);
+        }
+        // 默认需要转码（保守策略）
+        return true;
+    }
+    
+    /**
+     * 使用ffmpeg将视频转码为标准MP4格式
+     * @param inputPath 输入文件路径
+     * @return 转码后的文件路径，失败返回null
+     */
+    private String transcodeToMp4(String inputPath) {
+        try {
+            File inputFile = new File(inputPath);
+            String baseName = inputFile.getName();
+            // 生成转码后的文件名（添加 _converted 后缀）
+            String outputName;
+            if (baseName.toLowerCase().endsWith(".mp4")) {
+                outputName = baseName.substring(0, baseName.length() - 4) + "_converted.mp4";
+            } else {
+                outputName = baseName + "_converted.mp4";
+            }
+            String outputPath = inputFile.getParent() + File.separator + outputName;
+            
+            // 构建ffmpeg命令
+            // -y: 覆盖输出文件
+            // -i: 输入文件
+            // -c:v copy: 视频流直接复制（不重新编码，速度快）
+            // -c:a aac: 音频转为AAC格式（兼容性好）
+            // -movflags +faststart: 将moov原子移到文件开头，便于流式播放
+            ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg", "-y", "-i", inputPath,
+                "-c:v", "copy", "-c:a", "aac", 
+                "-movflags", "+faststart",
+                outputPath
+            );
+            pb.redirectErrorStream(true);
+            
+            logger.info("执行ffmpeg转码: {} -> {}", inputPath, outputPath);
+            Process process = pb.start();
+            
+            // 读取ffmpeg输出（避免缓冲区满导致阻塞）
+            StringBuilder output = new StringBuilder();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+            
+            // 等待进程完成（最多等待5分钟）
+            boolean finished = process.waitFor(300, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                logger.error("ffmpeg转码超时（5分钟），已强制终止");
+                return null;
+            }
+            
+            int exitCode = process.exitValue();
+            if (exitCode == 0) {
+                File outputFile = new File(outputPath);
+                if (outputFile.exists() && outputFile.length() > 0) {
+                    logger.info("ffmpeg转码完成: exitCode={}, outputSize={}", exitCode, outputFile.length());
+                    return outputPath;
+                } else {
+                    logger.error("ffmpeg转码输出文件不存在或为空: {}", outputPath);
+                    return null;
+                }
+            } else {
+                logger.error("ffmpeg转码失败: exitCode={}, output={}", exitCode, 
+                        output.length() > 500 ? output.substring(output.length() - 500) : output);
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("ffmpeg转码异常: {}", inputPath, e);
+            return null;
+        }
+    }
+    
+    /**
+     * 发送录像完成的Webhook通知
+     */
+    private void sendVideoWebhookNotification(RecordingTask task, String videoUrl) {
+        if (configService == null) {
+            logger.debug("ConfigService未设置，跳过录像Webhook通知");
+            return;
+        }
+        
+        try {
+            com.digital.video.gateway.config.Config config = configService.getConfig();
+            if (config == null || config.getNotification() == null) {
+                return;
+            }
+            
+            com.digital.video.gateway.config.Config.NotificationConfig notificationConfig = config.getNotification();
+            String webhookUrl = null;
+            String channelType = null;
+            
+            // 获取启用的Webhook配置
+            if (notificationConfig.getWechat() != null && notificationConfig.getWechat().isEnabled()) {
+                webhookUrl = notificationConfig.getWechat().getWebhookUrl();
+                channelType = "wechat";
+            } else if (notificationConfig.getDingtalk() != null && notificationConfig.getDingtalk().isEnabled()) {
+                webhookUrl = notificationConfig.getDingtalk().getWebhookUrl();
+                channelType = "dingtalk";
+            } else if (notificationConfig.getFeishu() != null && notificationConfig.getFeishu().isEnabled()) {
+                webhookUrl = notificationConfig.getFeishu().getWebhookUrl();
+                channelType = "feishu";
+            }
+            
+            if (webhookUrl == null || webhookUrl.isEmpty()) {
+                logger.debug("未配置Webhook，跳过录像通知");
+                return;
+            }
+            
+            // 构建通知消息
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            String timeStr = java.time.LocalDateTime.now().format(formatter);
+            
+            StringBuilder content = new StringBuilder();
+            content.append("【录像回放已就绪】\n");
+            content.append("设备ID: ").append(task.getDeviceId()).append("\n");
+            content.append("时间范围: ").append(task.getStartTime()).append(" ~ ").append(task.getEndTime()).append("\n");
+            content.append("完成时间: ").append(timeStr).append("\n");
+            content.append("录像地址: ").append(videoUrl);
+            
+            String jsonBody = buildWebhookBody(channelType, content.toString());
+            
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(webhookUrl))
+                    .timeout(java.time.Duration.ofSeconds(20))
+                    .header("Content-Type", "application/json")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+            
+            java.net.http.HttpResponse<String> response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                logger.info("录像Webhook通知发送成功: taskId={}, deviceId={}", task.getTaskId(), task.getDeviceId());
+            } else {
+                logger.warn("录像Webhook通知发送失败: status={}, body={}", response.statusCode(), response.body());
+            }
+        } catch (Exception e) {
+            logger.error("发送录像Webhook通知异常: taskId={}", task.getTaskId(), e);
+        }
+    }
+    
+    /**
+     * 构建Webhook请求体
+     */
+    private String buildWebhookBody(String channelType, String message) {
+        if ("wechat".equals(channelType)) {
+            return "{\"msgtype\":\"text\",\"text\":{\"content\":\"" + escapeJson(message) + "\"}}";
+        } else if ("dingtalk".equals(channelType)) {
+            return "{\"msgtype\":\"text\",\"text\":{\"content\":\"" + escapeJson(message) + "\"}}";
+        } else if ("feishu".equals(channelType)) {
+            return "{\"msg_type\":\"text\",\"content\":{\"text\":\"" + escapeJson(message) + "\"}}";
+        }
+        return "{\"message\":\"" + escapeJson(message) + "\"}";
+    }
+    
+    private String escapeJson(String input) {
+        if (input == null) return "";
+        return input.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     }
 
     /**
@@ -236,6 +471,83 @@ public class RecordingTaskService {
      * 下载指定时间段录像 (异步)
      */
     public RecordingTask downloadRecording(String deviceId, int channel, String startTime, String endTime) {
+        return downloadRecordingWithOptions(deviceId, channel, startTime, endTime, false);
+    }
+    
+    /**
+     * 下载指定时间段录像 (同步等待完成)
+     * 
+     * @param deviceId 设备ID
+     * @param channel 通道号
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @param timeoutSeconds 超时时间（秒）
+     * @return 完成的录像任务，如果超时或失败返回对应状态的任务
+     */
+    public RecordingTask downloadRecordingSync(String deviceId, int channel, String startTime, String endTime, int timeoutSeconds) {
+        RecordingTask task = new RecordingTask();
+        task.setDeviceId(deviceId);
+        task.setChannel(channel);
+        task.setStartTime(startTime);
+        task.setEndTime(endTime);
+        task.setStatus(STATUS_PENDING);
+        task.setProgress(0);
+
+        RecordingTask savedTask = createRecordingTask(task);
+        if (savedTask == null) {
+            logger.error("创建录像任务失败: deviceId={}", deviceId);
+            return null;
+        }
+        
+        String taskId = savedTask.getTaskId();
+        logger.info("同步录像下载开始: taskId={}, deviceId={}, 超时={}秒", taskId, deviceId, timeoutSeconds);
+        
+        // 提交到线程池执行下载
+        executorService.submit(() -> executeDownload(savedTask));
+        
+        // 轮询等待完成
+        long startTimeMs = System.currentTimeMillis();
+        long timeoutMs = timeoutSeconds * 1000L;
+        
+        while (System.currentTimeMillis() - startTimeMs < timeoutMs) {
+            try {
+                Thread.sleep(2000);  // 每2秒检查一次
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            
+            RecordingTask current = getRecordingTask(taskId);
+            if (current == null) {
+                logger.warn("录像任务不存在: taskId={}", taskId);
+                break;
+            }
+            
+            int status = current.getStatus();
+            if (status == STATUS_COMPLETED || status == STATUS_FAILED) {
+                logger.info("同步录像下载完成: taskId={}, status={}, 耗时={}ms", 
+                        taskId, status, System.currentTimeMillis() - startTimeMs);
+                return current;
+            }
+            
+            logger.debug("录像下载中: taskId={}, progress={}", taskId, current.getProgress());
+        }
+        
+        logger.warn("同步录像下载超时: taskId={}, 已等待{}秒", taskId, timeoutSeconds);
+        RecordingTask timeoutTask = getRecordingTask(taskId);
+        return timeoutTask;
+    }
+    
+    /**
+     * 下载指定时间段录像 (异步)，支持配置录像完成后是否发送Webhook通知
+     * 
+     * @param deviceId 设备ID
+     * @param channel 通道号
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @param webhookEnabled 录像上传完成后是否发送Webhook通知
+     */
+    public RecordingTask downloadRecordingWithOptions(String deviceId, int channel, String startTime, String endTime, boolean webhookEnabled) {
         RecordingTask task = new RecordingTask();
         task.setDeviceId(deviceId);
         task.setChannel(channel);
@@ -246,6 +558,9 @@ public class RecordingTaskService {
 
         RecordingTask savedTask = createRecordingTask(task);
         if (savedTask != null) {
+            // 保存webhook配置
+            taskWebhookSettings.put(savedTask.getTaskId(), webhookEnabled);
+            logger.debug("录像任务创建: taskId={}, webhookEnabled={}", savedTask.getTaskId(), webhookEnabled);
             // 提交到线程池异步执行下载逻辑
             executorService.submit(() -> executeDownload(savedTask));
         }

@@ -155,6 +155,7 @@ public class Main {
             alarmRecordService = new AlarmRecordService(database);
             speakerService = new SpeakerService(database);
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
+            recordingTaskService.setConfigService(configService);  // 注入ConfigService用于Webhook通知
             flowService = new com.digital.video.gateway.workflow.FlowService(database);
             // 确保默认报警流程存在
             flowService.ensureDefaultAlarmFlow();
@@ -302,6 +303,8 @@ public class Main {
      */
     private FlowExecutor createFlowExecutor() {
         FlowExecutor executor = new FlowExecutor();
+        // 事件触发器：支持防抖间隔配置
+        executor.registerHandler("event_trigger", new com.digital.video.gateway.workflow.handlers.EventTriggerHandler());
         executor.registerHandler("capture", new CaptureHandler(captureService));
         executor.registerHandler("mqtt_publish", new MqttPublishHandler(mqttClient));
         
