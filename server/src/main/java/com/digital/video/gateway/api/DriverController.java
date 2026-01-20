@@ -9,6 +9,7 @@ import spark.Response;
 
 import java.io.File;
 import java.util.*;
+import java.util.Arrays;
 
 /**
  * 驱动配置控制器
@@ -291,15 +292,17 @@ public class DriverController {
             int lines = linesParam != null ? Integer.parseInt(linesParam) : 100;
             if (lines > 1000) lines = 1000; // 限制最大行数
             
-            // 读取统一的SDK日志文件
-            File logFile = new File("./sdkLog/sdk.log");
+            // 读取统一的SDK日志文件（使用logback配置的日志路径）
+            File logFile = new File("./logs/sdk.log");
             if (!logFile.exists()) {
                 // 如果主日志文件不存在，尝试查找其他日志文件
-                File logDir = new File("./sdkLog");
+                File logDir = new File("./logs");
                 if (logDir.exists() && logDir.isDirectory()) {
-                    File[] logFiles = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+                    File[] logFiles = logDir.listFiles((dir, name) -> name.endsWith(".log") && name.startsWith("sdk"));
                     if (logFiles != null && logFiles.length > 0) {
-                        logFile = logFiles[0]; // 使用第一个找到的日志文件
+                        // 按修改时间排序，使用最新的日志文件
+                        Arrays.sort(logFiles, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
+                        logFile = logFiles[0];
                     }
                 }
             }

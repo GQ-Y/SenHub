@@ -190,6 +190,12 @@ public class DeviceController {
                 return createErrorResponse(404, "设备不存在");
             }
 
+            // 保存更新前的品牌信息，用于检测品牌变化
+            String oldBrand = device.getBrand();
+            if (oldBrand == null || oldBrand.isEmpty()) {
+                oldBrand = DeviceInfo.BRAND_AUTO;
+            }
+
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
 
             // 更新设备信息
@@ -211,10 +217,20 @@ public class DeviceController {
             if (body.containsKey("channel")) {
                 device.setChannel(((Number) body.get("channel")).intValue());
             }
+            
+            // 处理品牌变化
+            String newBrand = oldBrand;
+            boolean brandChanged = false;
             if (body.containsKey("brand")) {
                 String brand = (String) body.get("brand");
                 if (brand != null && !brand.isEmpty()) {
+                    newBrand = brand;
                     device.setBrand(brand);
+                    // 检查品牌是否真的发生了变化
+                    if (!oldBrand.equals(newBrand)) {
+                        brandChanged = true;
+                        logger.info("设备品牌已变更: {} ({} -> {})", deviceId, oldBrand, newBrand);
+                    }
                 }
             }
 
@@ -229,14 +245,41 @@ public class DeviceController {
             // 如果设备信息发生变化（IP、端口、用户名、密码、品牌），立即触发登录
             boolean needRelogin = body.containsKey("ip") || body.containsKey("port") ||
                     body.containsKey("username") || body.containsKey("password") ||
-                    body.containsKey("brand");
+                    brandChanged;
+            
             if (needRelogin) {
                 // 如果设备已登录，先登出
                 if (deviceManager.isDeviceLoggedIn(deviceId)) {
+                    logger.info("设备已登录，先登出: {} (原品牌: {})", deviceId, oldBrand);
                     deviceManager.logoutDevice(deviceId);
                 }
-                // 立即触发登录
-                logger.info("设备信息已更新，立即尝试重新登录: {}", deviceId);
+                
+                // 记录登录尝试的详细信息
+                if (brandChanged) {
+                    boolean isFromAuto = DeviceInfo.BRAND_AUTO.equals(oldBrand) || 
+                                        oldBrand == null || oldBrand.isEmpty();
+                    boolean isToSpecific = !DeviceInfo.BRAND_AUTO.equals(newBrand) && 
+                                          !newBrand.isEmpty();
+                    
+                    if (isFromAuto && isToSpecific) {
+                        logger.info("设备品牌从自动检测改为具体品牌，立即尝试登录: {} ({} -> {})", 
+                                deviceId, oldBrand, newBrand);
+                    } else {
+                        logger.info("设备品牌已变更，立即尝试重新登录: {} ({} -> {})", 
+                                deviceId, oldBrand, newBrand);
+                    }
+                } else {
+                    logger.info("设备信息已更新，立即尝试重新登录: {} (IP/端口/用户名/密码变化)", deviceId);
+                }
+                
+                // 立即触发登录（异步执行，不阻塞API响应）
+                deviceManager.loginDevice(device);
+            } else if (brandChanged) {
+                // 即使其他信息没变，品牌变化也应该触发登录
+                logger.info("仅品牌变化，立即尝试登录: {} ({} -> {})", deviceId, oldBrand, newBrand);
+                if (deviceManager.isDeviceLoggedIn(deviceId)) {
+                    deviceManager.logoutDevice(deviceId);
+                }
                 deviceManager.loginDevice(device);
             }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Shield, Wifi, AlertTriangle, HardDrive, Loader2 } from 'lucide-react';
+import { Shield, Wifi, AlertTriangle, HardDrive, Loader2, CheckCircle2, XCircle, Database, Server, FileCode, X } from 'lucide-react';
 import { CHART_DATA } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
 import { dashboardService, systemService } from '../src/api/services';
@@ -40,6 +40,8 @@ export const Dashboard: React.FC = () => {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [logContent, setLogContent] = useState<string[]>([]);
+  const [healthModalOpen, setHealthModalOpen] = useState(false);
+  const [healthData, setHealthData] = useState<any>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -71,20 +73,8 @@ export const Dashboard: React.FC = () => {
     try {
       const response = await systemService.healthCheck();
       const health = response.data;
-      
-      const statusText = health.status === 'healthy' ? '健康' : '警告';
-      const mqttStatus = health.mqtt.connected ? '已连接' : '未连接';
-      const diskUsage = health.disk.usagePercent;
-      
-      const message = `系统状态: ${statusText}\n\n` +
-        `MQTT: ${mqttStatus}\n` +
-        `数据库: ${health.database.status}\n` +
-        `SDK: ${health.sdk.status}\n` +
-        `磁盘使用: ${diskUsage}\n` +
-        `可用空间: ${health.disk.freeSpace}\n` +
-        `总空间: ${health.disk.totalSpace}`;
-      
-      alert(message);
+      setHealthData(health);
+      setHealthModalOpen(true);
     } catch (err: any) {
       alert('健康检查失败: ' + (err.message || '未知错误'));
     } finally {
@@ -251,38 +241,196 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 日志查看Modal */}
-      {logModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* 系统体检结果Modal */}
+      {healthModalOpen && healthData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setLogModalOpen(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setHealthModalOpen(false)}
           />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 z-[101]">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800">系统日志</h3>
+              <div className="flex items-center space-x-3">
+                {healthData.status === 'healthy' ? (
+                  <CheckCircle2 className="w-6 h-6 text-green-500" />
+                ) : (
+                  <AlertTriangle className="w-6 h-6 text-yellow-500" />
+                )}
+                <h3 className="text-lg font-semibold text-gray-800">系统体检结果</h3>
+              </div>
               <button
-                onClick={() => setLogModalOpen(false)}
+                onClick={() => setHealthModalOpen(false)}
                 className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <span className="text-gray-500 text-xl">×</span>
               </button>
             </div>
-            <div className="flex-1 overflow-auto p-6">
-              <div className="max-h-96 overflow-auto bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs">
-                {logContent.length === 0 ? (
-                  <div className="text-gray-500">暂无日志内容</div>
-                ) : (
-                  logContent.map((line, index) => (
-                    <div key={index} className="mb-1">{line}</div>
-                  ))
-                )}
+            <div className="p-6 space-y-4">
+              {/* 总体状态 */}
+              <div className={`p-4 rounded-xl ${
+                healthData.status === 'healthy' 
+                  ? 'bg-green-50 border border-green-200' 
+                  : 'bg-yellow-50 border border-yellow-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-700">系统状态</span>
+                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                    healthData.status === 'healthy'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {healthData.status === 'healthy' ? '健康' : '警告'}
+                  </span>
+                </div>
+              </div>
+
+              {/* MQTT状态 */}
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <Server className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-700">MQTT连接</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {healthData.mqtt.connected ? (
+                      <>
+                        <CheckCircle2 className="w-5 h-5 text-green-500" />
+                        <span className="text-sm text-green-600 font-medium">已连接</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-5 h-5 text-red-500" />
+                        <span className="text-sm text-red-600 font-medium">未连接</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 数据库状态 */}
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <Database className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-700">数据库</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                    <span className="text-sm text-green-600 font-medium">{healthData.database.status}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SDK状态 */}
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <Shield className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-700">SDK</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                    <span className="text-sm text-green-600 font-medium">{healthData.sdk.status}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 磁盘使用情况 */}
+              <div className="bg-gray-50 p-4 rounded-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <HardDrive className="w-5 h-5 text-gray-600" />
+                    <span className="font-medium text-gray-700">磁盘使用</span>
+                  </div>
+                  <span className={`text-sm font-semibold ${
+                    parseFloat(healthData.disk.usagePercent) > 90 
+                      ? 'text-red-600' 
+                      : parseFloat(healthData.disk.usagePercent) > 70
+                      ? 'text-yellow-600'
+                      : 'text-green-600'
+                  }`}>
+                    {healthData.disk.usagePercent}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>可用空间</span>
+                    <span className="font-medium">{healthData.disk.freeSpace}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>总空间</span>
+                    <span className="font-medium">{healthData.disk.totalSpace}</span>
+                  </div>
+                  {/* 进度条 */}
+                  <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        parseFloat(healthData.disk.usagePercent) > 90
+                          ? 'bg-red-500'
+                          : parseFloat(healthData.disk.usagePercent) > 70
+                          ? 'bg-yellow-500'
+                          : 'bg-green-500'
+                      }`}
+                      style={{ width: healthData.disk.usagePercent }}
+                    ></div>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="flex items-center justify-end p-6 border-t border-gray-200">
               <button
-                onClick={() => setLogModalOpen(false)}
+                onClick={() => setHealthModalOpen(false)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 日志查看Drawer */}
+      {logModalOpen && (
+        <div className="fixed inset-0 z-[100]">
+          {/* 背景遮罩 */}
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+            onClick={() => setLogModalOpen(false)}
+          />
+          {/* 抽屉内容 */}
+          <div className="fixed right-0 top-0 h-full w-2/3 bg-white shadow-2xl z-[101] flex flex-col transform transition-transform duration-300 ease-out">
+            {/* 抽屉头部 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50/50">
+              <div className="flex items-center space-x-3">
+                <FileCode size={24} className="text-gray-700" />
+                <h3 className="text-lg font-bold text-gray-800">系统日志</h3>
+              </div>
+              <button
+                onClick={() => setLogModalOpen(false)}
+                className="p-2 rounded-full hover:bg-gray-200 transition-colors text-gray-500"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {/* 抽屉内容 */}
+            <div className="flex-1 overflow-auto p-6">
+              <div className="bg-gray-900 rounded-xl p-4 h-full overflow-auto">
+                {logContent.length === 0 ? (
+                  <div className="text-gray-500 text-center py-8">暂无日志内容</div>
+                ) : (
+                  <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap">
+                    {logContent.map((line, index) => (
+                      <div key={index} className="mb-1">{line}</div>
+                    ))}
+                  </pre>
+                )}
+              </div>
+            </div>
+            {/* 抽屉底部 */}
+            <div className="flex items-center justify-end px-6 py-4 border-t border-gray-200 bg-gray-50/50">
+              <button
+                onClick={() => setLogModalOpen(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium"
               >
                 关闭
               </button>

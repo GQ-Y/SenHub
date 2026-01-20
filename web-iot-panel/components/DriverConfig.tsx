@@ -198,18 +198,28 @@ export const DriverConfig: React.FC = () => {
                 管理系统集成的各类SDK驱动，包括摄像头、雷达等设备的SDK配置。启用前请确保库文件路径正确且具有访问权限。
             </p>
           </div>
-          <button
-            onClick={handleCheckAll}
-            disabled={isLoading}
-            className="flex items-center space-x-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <Loader2 size={20} className="animate-spin" />
-            ) : (
-              <AlertCircle size={20} />
-            )}
-            <span>一键检查全部</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleLogs}
+              disabled={isLoading}
+              className="flex items-center space-x-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FileCode size={20} />
+              <span>{t('driver_logs')}</span>
+            </button>
+            <button
+              onClick={handleCheckAll}
+              disabled={isLoading}
+              className="flex items-center space-x-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <AlertCircle size={20} />
+              )}
+              <span>一键检查全部</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -355,58 +365,63 @@ export const DriverConfig: React.FC = () => {
                 </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-3 pt-4 border-t border-gray-100">
-              <button 
-                onClick={() => checkDriverHealth(driver.id)}
-                disabled={checkingDrivers.has(driver.id)}
-                className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                title="检查SDK健康状态"
-              >
-                {checkingDrivers.has(driver.id) ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <AlertCircle size={16} />
-                )}
-                <span>健康检查</span>
-              </button>
-               <button 
-                onClick={handleLogs}
-                className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium transition-colors text-sm"
-               >
-                <FileCode size={16} />
-                <span>{t('driver_logs')}</span>
-              </button>
-            </div>
           </div>
         ))}
       </div>
       )}
 
-      {/* Logs Modal */}
-      <Modal
-        isOpen={activeModal === 'LOGS'}
-        onClose={() => setActiveModal('NONE')}
-        title={t('driver_logs')}
-        footer={
-            <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium">{t('cancel')}</button>
-        }
-      >
-        <div className="bg-gray-900 rounded-xl p-4 overflow-auto max-h-[400px]">
-          {isLoadingLogs ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 size={24} className="animate-spin text-green-400" />
-              <span className="ml-2 text-green-400">加载中...</span>
+      {/* Logs Drawer */}
+      {activeModal === 'LOGS' && (
+        <div className="fixed inset-0 z-[100]">
+          {/* 背景遮罩 */}
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+            onClick={() => setActiveModal('NONE')}
+          />
+          {/* 抽屉内容 */}
+          <div className="fixed right-0 top-0 h-full w-2/3 bg-white shadow-2xl z-[101] flex flex-col transform transition-transform duration-300 ease-out">
+            {/* 抽屉头部 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50/50">
+              <div className="flex items-center space-x-3">
+                <FileCode size={24} className="text-gray-700" />
+                <h3 className="text-lg font-bold text-gray-800">{t('driver_logs')}</h3>
+              </div>
+              <button
+                onClick={() => setActiveModal('NONE')}
+                className="p-2 rounded-full hover:bg-gray-200 transition-colors text-gray-500"
+              >
+                <X size={20} />
+              </button>
             </div>
-          ) : logContent.length === 0 ? (
-            <div className="text-gray-500 text-center py-8">暂无日志内容</div>
-          ) : (
-            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap">
-              {logContent.join('\n')}
-            </pre>
-          )}
+            {/* 抽屉内容 */}
+            <div className="flex-1 overflow-auto p-6">
+              <div className="bg-gray-900 rounded-xl p-4 h-full overflow-auto">
+                {isLoadingLogs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 size={24} className="animate-spin text-green-400" />
+                    <span className="ml-2 text-green-400">加载中...</span>
+                  </div>
+                ) : logContent.length === 0 ? (
+                  <div className="text-gray-500 text-center py-8">暂无日志内容</div>
+                ) : (
+                  <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap">
+                    {logContent.join('\n')}
+                  </pre>
+                )}
+              </div>
+            </div>
+            {/* 抽屉底部 */}
+            <div className="flex items-center justify-end px-6 py-4 border-t border-gray-200 bg-gray-50/50">
+              <button
+                onClick={() => setActiveModal('NONE')}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
         </div>
-      </Modal>
+      )}
 
     </div>
     </>
