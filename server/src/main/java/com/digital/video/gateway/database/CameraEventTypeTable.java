@@ -350,6 +350,57 @@ public class CameraEventTypeTable {
     }
 
     /**
+     * 根据品牌和事件代码获取事件类型的中文名称
+     * @param connection 数据库连接
+     * @param brand 品牌（如 "tiandy", "hikvision", "dahua"）
+     * @param eventCode 事件代码（如 6, 3, 9）
+     * @return 事件类型的中文名称，如果未找到则返回null
+     */
+    public static String getEventNameByCode(Connection connection, String brand, int eventCode) {
+        String sql = "SELECT event_name FROM camera_event_types WHERE brand = ? AND event_code = ? LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, brand.toLowerCase());
+            pstmt.setInt(2, eventCode);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("event_name");
+            }
+        } catch (SQLException e) {
+            logger.error("查询事件类型名称失败: brand={}, eventCode={}", brand, eventCode, e);
+        }
+        return null;
+    }
+    
+    /**
+     * 根据报警类型字符串（如 "Tiandy_Alarm_6"）获取事件类型的中文名称
+     * @param connection 数据库连接
+     * @param alarmType 报警类型字符串（格式：Brand_Alarm_Code）
+     * @return 事件类型的中文名称，如果未找到则返回原始alarmType
+     */
+    public static String getEventNameByAlarmType(Connection connection, String alarmType) {
+        if (alarmType == null || alarmType.isEmpty()) {
+            return alarmType;
+        }
+        
+        // 解析报警类型：Tiandy_Alarm_6 -> brand=tiandy, code=6
+        String[] parts = alarmType.split("_");
+        if (parts.length >= 3 && parts[1].equalsIgnoreCase("Alarm")) {
+            String brand = parts[0].toLowerCase();
+            try {
+                int eventCode = Integer.parseInt(parts[2]);
+                String eventName = getEventNameByCode(connection, brand, eventCode);
+                if (eventName != null && !eventName.isEmpty()) {
+                    return eventName;
+                }
+            } catch (NumberFormatException e) {
+                // 忽略解析错误
+            }
+        }
+        
+        return alarmType; // 如果无法解析或未找到，返回原始值
+    }
+
+    /**
      * 获取设备订阅的事件类型
      */
     public static List<Map<String, Object>> getDeviceSubscriptions(Connection connection, String deviceId) {

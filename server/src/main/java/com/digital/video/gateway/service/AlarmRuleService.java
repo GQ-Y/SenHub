@@ -227,9 +227,31 @@ public class AlarmRuleService {
      */
     public List<AlarmRule> matchRules(String deviceId, String assemblyId, String alarmType,
             Map<String, Object> alarmData) {
+        return matchRules(deviceId, assemblyId, alarmType, alarmData, null);
+    }
+    
+    public List<AlarmRule> matchRules(String deviceId, String assemblyId, String alarmType,
+            Map<String, Object> alarmData, String alarmTypeDisplay) {
         List<AlarmRule> matchedRules = new ArrayList<>();
         
-        logger.debug("开始匹配规则: deviceId={}, assemblyId={}, alarmType={}", deviceId, assemblyId, alarmType);
+        // 如果没有提供中文名称，则尝试获取
+        if (alarmTypeDisplay == null || alarmTypeDisplay.isEmpty()) {
+            alarmTypeDisplay = alarmType;
+            try {
+                if (database != null) {
+                    try (Connection conn = database.getConnection()) {
+                        String eventName = com.digital.video.gateway.database.CameraEventTypeTable.getEventNameByAlarmType(conn, alarmType);
+                        if (eventName != null && !eventName.equals(alarmType)) {
+                            alarmTypeDisplay = eventName + "(" + alarmType + ")";
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // 忽略错误，使用原始alarmType
+            }
+        }
+        
+        logger.debug("开始匹配规则: deviceId={}, assemblyId={}, alarmType={}", deviceId, assemblyId, alarmTypeDisplay);
 
         // 1. 查询所有启用的规则
         List<AlarmRule> allRules = getAlarmRules(null, null, null, true);
@@ -257,7 +279,18 @@ public class AlarmRuleService {
                 continue;
             }
             
-            // 3. 检查conditions条件
+            // 3. 检查eventTypeIds（如果规则配置了事件类型ID列表，则必须匹配）
+            boolean eventTypeMatched = checkEventTypeIds(rule, alarmType);
+            if (!eventTypeMatched) {
+                logger.info("规则 {} 事件类型不匹配: eventTypeIds={}, alarmType={}", 
+                        rule.getName(), rule.getEventTypeIds(), alarmTypeDisplay);
+                continue;
+            } else {
+                logger.debug("规则 {} 事件类型匹配: eventTypeIds={}, alarmType={}", 
+                        rule.getName(), rule.getEventTypeIds(), alarmTypeDisplay);
+            }
+            
+            // 4. 检查conditions条件
             if (!checkConditions(rule, alarmData)) {
                 logger.debug("规则 {} 条件不匹配", rule.getName());
                 continue;
@@ -295,6 +328,73 @@ public class AlarmRuleService {
     }
 
     /**
+     * 检查事件类型ID是否匹配
+     * 如果规则配置了eventTypeIds，则报警类型必须在该列表中
+     */
+    private boolean checkEventTypeIds(AlarmRule rule, String alarmType) {
+        // 如果规则没有配置eventTypeIds，则匹配所有事件类型（兼容旧规则）
+        String eventTypeIdsStr = rule.getEventTypeIds();
+        if (eventTypeIdsStr == null || eventTypeIdsStr.isEmpty() || eventTypeIdsStr.trim().equals("null")) {
+            return true; // 没有配置eventTypeIds，匹配所有
+        }
+        
+        try {
+            // 解析eventTypeIds JSON数组
+            List<Integer> eventTypeIds = objectMapper.readValue(eventTypeIdsStr, 
+                    new TypeReference<List<Integer>>() {});
+            if (eventTypeIds == null || eventTypeIds.isEmpty()) {
+                return true; // 空列表，匹配所有（虽然不应该出现）
+            }
+            
+            // 从alarmType解析品牌和事件代码（如"Tiandy_Alarm_6" -> brand=tiandy, code=6）
+            String[] parts = alarmType.split("_");
+            if (parts.length < 3 || !parts[1].equalsIgnoreCase("Alarm")) {
+                logger.debug("无法解析报警类型: {}", alarmType);
+                return false; // 无法解析，不匹配
+            }
+            
+            String brand = parts[0].toLowerCase();
+            int eventCode;
+            try {
+                eventCode = Integer.parseInt(parts[2]);
+            } catch (NumberFormatException e) {
+                logger.debug("报警类型事件代码解析失败: {}", alarmType);
+                return false;
+            }
+            
+            // 查询camera_event_types表，根据品牌和事件代码获取事件类型ID
+            try (Connection conn = database.getConnection()) {
+                String sql = "SELECT id FROM camera_event_types WHERE brand = ? AND event_code = ? LIMIT 1";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setString(1, brand);
+                    pstmt.setInt(2, eventCode);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        if (rs.next()) {
+                            int eventTypeId = rs.getInt("id");
+                            // 检查事件类型ID是否在规则的eventTypeIds列表中
+                            boolean matched = eventTypeIds.contains(eventTypeId);
+                            if (!matched) {
+                                logger.info("事件类型ID不匹配: eventTypeId={}, ruleEventTypeIds={}, alarmType={}, brand={}, eventCode={}", 
+                                        eventTypeId, eventTypeIds, alarmType, brand, eventCode);
+                            } else {
+                                logger.debug("事件类型ID匹配: eventTypeId={}, ruleEventTypeIds={}, alarmType={}", 
+                                        eventTypeId, eventTypeIds, alarmType);
+                            }
+                            return matched;
+                        } else {
+                            logger.info("未找到对应的事件类型: brand={}, eventCode={}, alarmType={}", brand, eventCode, alarmType);
+                            return false; // 未找到对应的事件类型，不匹配
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("检查事件类型ID失败: ruleId={}, alarmType={}", rule.getRuleId(), alarmType, e);
+            return false; // 出错时不匹配，确保安全
+        }
+    }
+    
+    /**
      * 检查规则条件
      */
     private boolean checkConditions(AlarmRule rule, Map<String, Object> alarmData) {
@@ -303,7 +403,23 @@ public class AlarmRuleService {
         }
 
         try {
-            Map<String, Object> conditions = objectMapper.readValue(rule.getConditions(),
+            String conditionsStr = rule.getConditions();
+            // 处理多重序列化的情况：可能有多层引号转义
+            while (conditionsStr != null && conditionsStr.startsWith("\"") && conditionsStr.endsWith("\"")) {
+                try {
+                    String parsed = objectMapper.readValue(conditionsStr, String.class);
+                    if (parsed.equals(conditionsStr)) {
+                        // 如果解析后和原字符串相同，说明不是转义的，跳出循环
+                        break;
+                    }
+                    conditionsStr = parsed;
+                } catch (Exception e) {
+                    // 如果解析失败，说明已经是最终字符串，跳出循环
+                    break;
+                }
+            }
+            
+            Map<String, Object> conditions = objectMapper.readValue(conditionsStr,
                     new TypeReference<Map<String, Object>>() {
                     });
 

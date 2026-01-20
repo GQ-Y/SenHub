@@ -205,13 +205,41 @@ public class FlowExecutor {
         } else {
             try {
                 logger.info("执行节点: type={}, nodeId={}", node.getNodeType(), node.getNodeId());
-                success = handler.execute(node, context);
+                
+                // 检查是否是异步节点
+                boolean isAsync = handler.isAsync();
+                logger.info("节点异步检查: type={}, nodeId={}, isAsync={}", node.getNodeType(), node.getNodeId(), isAsync);
+                
+                if (isAsync) {
+                    // 异步节点：保存执行状态，执行节点后不继续后续节点，等待异步回调
+                    context.setFlowDefinition(flow);
+                    context.setCurrentNode(node);
+                    context.setVisitedNodes(new HashSet<>(visiting));  // 创建副本
+                    context.setCurrentDepth(depth);
+                    context.setExecutor(this);
+                    
+                    // 执行异步节点（handler内部会安排回调）
+                    handler.execute(node, context);
+                    // 不继续执行后续节点，等待异步回调
+                    logger.info("异步节点已提交，等待回调: nodeId={}, flowId={}", node.getNodeId(), flow.getFlowId());
+                    return;
+                } else {
+                    // 同步节点：正常执行
+                    success = handler.execute(node, context);
+                }
             } catch (Exception e) {
                 logger.error("执行节点失败: nodeId={}", node.getNodeId(), e);
                 success = false;
             }
         }
 
+        // 如果节点执行失败（success=false），则不继续执行后续节点（确保同步执行）
+        if (!success) {
+            logger.info("节点执行失败，终止工作流执行: nodeId={}, nodeType={}, flowId={}", 
+                    node.getNodeId(), node.getNodeType(), flow.getFlowId());
+            return;
+        }
+        
         List<FlowNodeDefinition> nextNodes = flow.getNextNodes(node.getNodeId(), success);
         if (nextNodes == null || nextNodes.isEmpty()) {
             logger.debug("流程分支结束: nodeId={}", node.getNodeId());
@@ -322,5 +350,88 @@ public class FlowExecutor {
         }
         
         return copy;
+    }
+    
+    /**
+     * 从异步节点回调继续执行后续节点
+     * @param context 流程上下文（包含保存的执行状态）
+     * @param success 异步操作是否成功
+     */
+    public void continueFromAsync(FlowContext context, boolean success) {
+        FlowDefinition flow = context.getFlowDefinition();
+        FlowNodeDefinition node = context.getCurrentNode();
+        Set<String> visiting = context.getVisitedNodes();
+        int depth = context.getCurrentDepth();
+        
+        if (flow == null || node == null) {
+            logger.error("异步回调状态不完整，无法继续执行: flowId={}", context.getFlowId());
+            return;
+        }
+        
+        logger.info("异步节点回调: nodeId={}, success={}, flowId={}, deviceId={}, 继续执行后续节点", 
+                node.getNodeId(), success, flow.getFlowId(), context.getDeviceId());
+        
+        // 如果节点执行失败（success=false），且是事件触发器节点，则不继续执行后续节点
+        if (!success && "event_trigger".equalsIgnoreCase(node.getNodeType())) {
+            logger.info("事件触发器返回false，终止工作流执行: nodeId={}, flowId={}", node.getNodeId(), flow.getFlowId());
+            return;
+        }
+        
+        // 如果节点执行失败（success=false），则不继续执行后续节点（确保同步执行）
+        // 注意：即使工作流配置了failure分支，也不应该继续执行，因为节点失败意味着无法完成预期功能
+        if (!success) {
+            logger.info("节点执行失败，终止工作流执行: nodeId={}, nodeType={}, flowId={}", 
+                    node.getNodeId(), node.getNodeType(), flow.getFlowId());
+            return;
+        }
+        
+        // 获取后续节点（只有在success=true时才会执行到这里）
+        List<FlowNodeDefinition> nextNodes = flow.getNextNodes(node.getNodeId(), success);
+        if (nextNodes == null || nextNodes.isEmpty()) {
+            logger.debug("异步节点后续无节点，流程分支结束: nodeId={}", node.getNodeId());
+            return;
+        }
+        
+        // 继续执行后续节点
+        if (nextNodes.size() == 1) {
+            // 只有一个后续节点，直接顺序执行
+            Set<String> nextVisiting = new HashSet<>(visiting);
+            executeNode(flow, context, nextNodes.get(0), nextVisiting, depth + 1);
+        } else {
+            // 多个后续节点，并行执行各分支
+            logger.info("检测到多个分支({}个)，并行执行", nextNodes.size());
+            List<Future<?>> futures = new ArrayList<>();
+            List<FlowContext> branchContexts = new ArrayList<>();
+            
+            for (FlowNodeDefinition next : nextNodes) {
+                Set<String> nextVisiting = new HashSet<>(visiting);
+                // 每个分支创建独立的context副本，避免并发修改
+                FlowContext branchContext = copyContext(context);
+                branchContexts.add(branchContext);
+                
+                Future<?> future = branchExecutor.submit(() -> {
+                    try {
+                        executeNode(flow, branchContext, next, nextVisiting, depth + 1);
+                    } catch (Exception e) {
+                        logger.error("分支执行异常: nodeId={}", next.getNodeId(), e);
+                    }
+                });
+                futures.add(future);
+            }
+            
+            // 等待所有分支完成
+            for (Future<?> future : futures) {
+                try {
+                    future.get();  // 等待分支完成
+                } catch (Exception e) {
+                    logger.error("等待分支完成异常", e);
+                }
+            }
+            
+            // 收集所有分支context中的临时文件路径到主context，以便最后统一清理
+            for (FlowContext branchContext : branchContexts) {
+                collectTempFilePaths(branchContext, context);
+            }
+        }
     }
 }

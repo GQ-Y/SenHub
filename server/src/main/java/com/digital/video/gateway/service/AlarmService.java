@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -177,8 +178,25 @@ public class AlarmService {
         }
         lastAlarmTime.put(debounceKey, now);
         
+        // 获取事件类型的中文名称用于日志
+        String alarmTypeDisplay = alarmType;
+        String alarmTypeName = null; // 纯中文名称（不含原始alarmType）
+        try {
+            if (database != null) {
+                try (Connection conn = database.getConnection()) {
+                    String eventName = com.digital.video.gateway.database.CameraEventTypeTable.getEventNameByAlarmType(conn, alarmType);
+                    if (eventName != null && !eventName.equals(alarmType)) {
+                        alarmTypeDisplay = eventName + "(" + alarmType + ")";
+                        alarmTypeName = eventName; // 保存纯中文名称供WebhookHandler使用
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 忽略错误，使用原始alarmType
+        }
+        
         logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, message={}", 
-            deviceId, channel, alarmType, alarmMessage);
+            deviceId, channel, alarmTypeDisplay, alarmMessage);
         
         try {
             // 获取设备信息
@@ -209,8 +227,8 @@ public class AlarmService {
             // 匹配规则
             List<AlarmRule> matchedRules = new ArrayList<>();
             if (alarmRuleService != null) {
-                matchedRules = alarmRuleService.matchRules(deviceId, assemblyId, alarmType, alarmData);
-                logger.info("匹配到 {} 条规则: deviceId={}, alarmType={}", matchedRules.size(), deviceId, alarmType);
+                matchedRules = alarmRuleService.matchRules(deviceId, assemblyId, alarmType, alarmData, alarmTypeDisplay);
+                logger.info("匹配到 {} 条规则: deviceId={}, alarmType={}", matchedRules.size(), deviceId, alarmTypeDisplay);
             }
             
             // 创建报警记录
@@ -232,6 +250,13 @@ public class AlarmService {
             String captureUrl = null;
             String videoUrl = null;
             FlowContext baseContext = buildFlowContext(deviceId, assemblyId, alarmType, alarmMessage, channel, alarmData);
+            // 将中文事件名称放入context，供WebhookHandler使用
+            if (alarmTypeName != null) {
+                baseContext.putVariable("alarmTypeName", alarmTypeName);
+                logger.info("已设置alarmTypeName到context: {} (原始: {})", alarmTypeName, alarmType);
+            } else {
+                logger.warn("alarmTypeName为null，无法设置中文名称: alarmType={}", alarmType);
+            }
             
             // 执行规则动作
             // 规则按优先级排序：设备级 > 装置级 > 全局
@@ -266,15 +291,9 @@ public class AlarmService {
                     }
                 }
             } else {
-                // 没有匹配的规则，尝试执行默认流程；如果失败则执行默认抓图动作
-                FlowContext defaultContext = cloneFlowContext(baseContext);
-                boolean defaultFlowExecuted = executeDefaultFlow(defaultContext);
-                if (defaultFlowExecuted) {
-                    captureUrl = firstNonNullUrl(captureUrl, defaultContext);
-                    videoUrl = firstVideoUrl(videoUrl, defaultContext);
-                } else {
-                    logger.warn("无匹配规则且默认流程不存在，未执行任何报警处理");
-                }
+                // 没有匹配的规则，不执行任何工作流
+                // 只记录报警，不触发工作流执行
+                logger.info("无匹配规则，跳过工作流执行: deviceId={}, alarmType={}", deviceId, alarmTypeDisplay);
             }
             
             // 更新报警记录
@@ -336,6 +355,11 @@ public class AlarmService {
         context.setDeviceId(deviceId);
         context.setAssemblyId(assemblyId);
         context.setAlarmType(alarmType);
+        
+        // 将 alarmType 也放入 variables，供工作流节点使用
+        if (alarmType != null) {
+            context.putVariable("alarmType", alarmType);
+        }
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("alarmMessage", alarmMessage);
@@ -373,11 +397,99 @@ public class AlarmService {
                 logger.warn("流程定义解析失败: flowId={}", rule.getFlowId());
                 return false;
             }
+            
+            // 在执行工作流之前，先检查event_trigger节点是否会被防抖
+            // 如果会被防抖，则完全跳过不执行任何工作流
+            context.setFlowId(rule.getFlowId());
+            if (shouldSkipFlowDueToDebounce(definition, context)) {
+                logger.info("事件触发器防抖，完全跳过工作流执行: flowId={}, deviceId={}, alarmType={}", 
+                        rule.getFlowId(), context.getDeviceId(), context.getAlarmType());
+                return false;
+            }
+            
             flowExecutor.execute(definition, context);
             return true;
         } catch (Exception e) {
             logger.error("执行流程失败: flowId={}", rule.getFlowId(), e);
             return false;
+        }
+    }
+    
+    /**
+     * 检查工作流是否应该因为事件触发器防抖而跳过
+     * @param definition 工作流定义
+     * @param context 流程上下文
+     * @return 如果应该跳过则返回true
+     */
+    private boolean shouldSkipFlowDueToDebounce(FlowDefinition definition, FlowContext context) {
+        try {
+            // 查找工作流中的第一个event_trigger节点
+            com.digital.video.gateway.workflow.FlowNodeDefinition startNode = definition.getStartNode();
+            if (startNode == null) {
+                return false;
+            }
+            
+            // 如果第一个节点不是event_trigger，则不需要检查防抖
+            if (!"event_trigger".equalsIgnoreCase(startNode.getNodeType())) {
+                return false;
+            }
+            
+            // 直接检查防抖状态，不调用execute方法（避免更新lastTriggerTime）
+            // 使用反射访问EventTriggerHandler的私有防抖逻辑，或者直接复制防抖检查代码
+            // 为了简化，我们直接访问EventTriggerHandler的静态防抖记录
+            String deviceId = context.getDeviceId();
+            String alarmType = (String) context.getVariables().get("alarmType");
+            String flowId = context.getFlowId();
+            
+            if (deviceId == null) {
+                return false;
+            }
+            
+            // 构建防抖key（与EventTriggerHandler中的逻辑一致）
+            String debounceKey;
+            if (alarmType != null && !alarmType.isEmpty()) {
+                debounceKey = flowId + ":" + deviceId + ":" + alarmType;
+            } else {
+                debounceKey = flowId + ":" + deviceId;
+            }
+            
+            // 获取防抖间隔配置
+            Map<String, Object> cfg = startNode.getConfig();
+            long debounceSeconds = 5; // 默认值
+            if (cfg != null) {
+                Object debounceObj = cfg.get("debounceSeconds");
+                if (debounceObj instanceof Number) {
+                    debounceSeconds = ((Number) debounceObj).longValue();
+                }
+            }
+            
+            // 检查防抖状态（使用反射访问EventTriggerHandler的静态字段）
+            try {
+                java.lang.reflect.Field field = com.digital.video.gateway.workflow.handlers.EventTriggerHandler.class
+                        .getDeclaredField("lastTriggerTime");
+                field.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                java.util.concurrent.ConcurrentHashMap<String, Long> lastTriggerTime = 
+                        (java.util.concurrent.ConcurrentHashMap<String, Long>) field.get(null);
+                
+                Long lastTime = lastTriggerTime.get(debounceKey);
+                if (lastTime != null) {
+                    long now = System.currentTimeMillis();
+                    long elapsedSeconds = (now - lastTime) / 1000;
+                    if (elapsedSeconds < debounceSeconds) {
+                        logger.info("事件触发器防抖，完全跳过工作流执行: flowId={}, deviceId={}, alarmType={}, 距上次触发{}秒, 防抖间隔{}秒", 
+                                flowId, deviceId, alarmType, elapsedSeconds, debounceSeconds);
+                        return true; // 被防抖，应该跳过
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("无法访问EventTriggerHandler的防抖记录，跳过防抖检查", e);
+            }
+            
+            return false; // 未被防抖，可以执行
+        } catch (Exception e) {
+            logger.error("检查事件触发器防抖失败", e);
+            return false; // 出错时不跳过
         }
     }
 

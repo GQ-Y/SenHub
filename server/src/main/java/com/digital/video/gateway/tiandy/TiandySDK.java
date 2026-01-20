@@ -757,6 +757,9 @@ public class TiandySDK implements DeviceSDK {
             } else if (pictureType == NvssdkLibrary.CAPTURE_PICTURE_TYPE_JPG && !actualFilePath.endsWith(".jpg")) {
                 actualFilePath = filePath + ".jpg";
             }
+            
+            // 参考Channel.java:414，文件名需要以\0结尾（C字符串格式）
+            actualFilePath += "\0";
 
             // iQvalue: 图片质量值（通常1-100，0表示使用设备默认值）
             int iQvalue = 0; // 使用设备默认质量

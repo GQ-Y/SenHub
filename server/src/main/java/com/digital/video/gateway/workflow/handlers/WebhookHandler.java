@@ -13,6 +13,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.Connection;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -134,6 +135,16 @@ public class WebhookHandler implements FlowNodeHandler {
         String deviceId = context.getDeviceId() != null ? context.getDeviceId() : "未知设备";
         String alarmType = context.getAlarmType() != null ? context.getAlarmType() : "未知类型";
         
+        // 优先使用context中的中文名称（由AlarmService设置），如果没有则使用原始alarmType
+        String alarmTypeDisplay = (String) context.getVariables().get("alarmTypeName");
+        if (alarmTypeDisplay == null || alarmTypeDisplay.isEmpty()) {
+            // 如果context中没有中文名称，使用原始alarmType
+            alarmTypeDisplay = alarmType;
+            logger.info("Webhook未找到context中的中文名称，使用原始alarmType: {}, context变量: {}", alarmType, context.getVariables().keySet());
+        } else {
+            logger.info("Webhook使用context中的中文名称: {} (原始: {})", alarmTypeDisplay, alarmType);
+        }
+        
         // 获取抓图URL（优先使用OSS上传后的URL）
         String captureOssUrl = context.getVariables().get("captureOssUrl") instanceof String 
                 ? (String) context.getVariables().get("captureOssUrl") : null;
@@ -159,7 +170,7 @@ public class WebhookHandler implements FlowNodeHandler {
         StringBuilder content = new StringBuilder();
         content.append("【报警通知】\n");
         content.append("设备ID: ").append(deviceId).append("\n");
-        content.append("报警类型: ").append(alarmType).append("\n");
+        content.append("报警类型: ").append(alarmTypeDisplay).append("\n");
         content.append("报警时间: ").append(timeStr);
         
         // 添加抓图地址

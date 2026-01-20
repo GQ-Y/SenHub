@@ -37,8 +37,17 @@ public class EventTriggerHandler implements FlowNodeHandler {
         
         // 获取防抖间隔配置
         long debounceSeconds = DEFAULT_DEBOUNCE_SECONDS;
-        if (cfg != null && cfg.get("debounceSeconds") instanceof Number) {
-            debounceSeconds = ((Number) cfg.get("debounceSeconds")).longValue();
+        if (cfg != null) {
+            logger.debug("事件触发器节点配置: {}", cfg);
+            Object debounceObj = cfg.get("debounceSeconds");
+            if (debounceObj instanceof Number) {
+                debounceSeconds = ((Number) debounceObj).longValue();
+                logger.debug("从节点配置读取防抖间隔: {}秒", debounceSeconds);
+            } else if (debounceObj != null) {
+                logger.warn("防抖间隔配置类型错误，期望Number，实际: {}", debounceObj.getClass().getName());
+            }
+        } else {
+            logger.debug("节点配置为空，使用默认防抖间隔: {}秒", debounceSeconds);
         }
         
         String deviceId = context.getDeviceId();
@@ -64,7 +73,16 @@ public class EventTriggerHandler implements FlowNodeHandler {
         }
         
         // 防抖检查
-        String debounceKey = flowId + ":" + deviceId + ":" + alarmType;
+        // 防抖key：如果alarmType为null，则只按flowId和deviceId防抖（同一设备的所有报警类型共享防抖）
+        // 如果alarmType不为null，则按flowId、deviceId和alarmType防抖（不同报警类型独立防抖）
+        String debounceKey;
+        if (alarmType != null && !alarmType.isEmpty()) {
+            debounceKey = flowId + ":" + deviceId + ":" + alarmType;
+        } else {
+            // alarmType为null时，按设备防抖（所有报警类型共享）
+            debounceKey = flowId + ":" + deviceId;
+        }
+        
         long now = System.currentTimeMillis();
         Long lastTime = lastTriggerTime.get(debounceKey);
         
@@ -80,8 +98,8 @@ public class EventTriggerHandler implements FlowNodeHandler {
         // 更新触发时间
         lastTriggerTime.put(debounceKey, now);
         
-        logger.info("事件触发器通过: flowId={}, deviceId={}, alarmType={}, 防抖间隔={}秒",
-                flowId, deviceId, alarmType, debounceSeconds);
+        logger.info("事件触发器通过: flowId={}, deviceId={}, alarmType={}, 防抖间隔={}秒, 防抖key={}",
+                flowId, deviceId, alarmType, debounceSeconds, debounceKey);
         
         return true;
     }
