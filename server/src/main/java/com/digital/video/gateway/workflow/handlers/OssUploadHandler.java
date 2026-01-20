@@ -124,7 +124,14 @@ public class OssUploadHandler implements FlowNodeHandler {
         
         if (url != null) {
             context.putVariable("ossUrl", url);
-            context.putVariable("captureUrl", url);
+            // 根据文件类型设置不同的变量，便于webhook区分
+            if (isImage) {
+                context.putVariable("captureOssUrl", url);
+                context.putVariable("captureUrl", url);  // 兼容旧逻辑
+            } else if (isVideo) {
+                context.putVariable("recordOssUrl", url);
+                context.putVariable("videoUrl", url);
+            }
             return true;
         }
         logger.warn("OSS上传失败: {}", filePath);

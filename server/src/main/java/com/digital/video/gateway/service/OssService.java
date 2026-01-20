@@ -60,15 +60,20 @@ public class OssService {
             Config config = configService.getConfig();
             if (config != null && config.getOss() != null) {
                 Config.OssConfig newConfig = config.getOss();
+                logger.debug("refreshConfig: newConfig.enabled={}, newConfig.endpoint={}, newConfig.type={}", 
+                        newConfig.isEnabled(), newConfig.getEndpoint(), newConfig.getType());
                 // 检查配置是否变化
                 if (configChanged(newConfig)) {
-                    logger.info("检测到OSS配置变化，重新初始化");
+                    logger.info("检测到OSS配置变化，重新初始化: enabled={}, type={}, endpoint={}", 
+                            newConfig.isEnabled(), newConfig.getType(), newConfig.getEndpoint());
                     this.ossConfig = newConfig;
                     this.enabled = false;
                     if (newConfig.isEnabled()) {
                         init();
                     }
                 }
+            } else {
+                logger.debug("refreshConfig: config={}, oss={}", config != null, config != null ? config.getOss() : null);
             }
         }
     }
@@ -77,15 +82,27 @@ public class OssService {
      * 检查配置是否变化
      */
     private boolean configChanged(Config.OssConfig newConfig) {
-        if (ossConfig == null) return newConfig != null;
+        // 如果旧配置为空但新配置有效，则认为有变化
+        if (ossConfig == null) {
+            boolean changed = newConfig != null && newConfig.isEnabled();
+            logger.debug("configChanged: ossConfig=null, newConfig.enabled={}, changed={}", 
+                    newConfig != null ? newConfig.isEnabled() : null, changed);
+            return changed;
+        }
         if (newConfig == null) return true;
         
-        return ossConfig.isEnabled() != newConfig.isEnabled() ||
+        boolean changed = ossConfig.isEnabled() != newConfig.isEnabled() ||
                !java.util.Objects.equals(ossConfig.getType(), newConfig.getType()) ||
                !java.util.Objects.equals(ossConfig.getEndpoint(), newConfig.getEndpoint()) ||
                !java.util.Objects.equals(ossConfig.getAccessKeyId(), newConfig.getAccessKeyId()) ||
                !java.util.Objects.equals(ossConfig.getAccessKeySecret(), newConfig.getAccessKeySecret()) ||
                !java.util.Objects.equals(ossConfig.getBucketName(), newConfig.getBucketName());
+        
+        if (changed) {
+            logger.debug("configChanged: old.enabled={}, new.enabled={}, old.endpoint={}, new.endpoint={}", 
+                    ossConfig.isEnabled(), newConfig.isEnabled(), ossConfig.getEndpoint(), newConfig.getEndpoint());
+        }
+        return changed;
     }
 
     /**

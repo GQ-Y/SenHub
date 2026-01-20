@@ -3,6 +3,7 @@ package com.digital.video.gateway.workflow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -59,7 +60,76 @@ public class FlowExecutor {
         // 预分析工作流：检查是否包含特定节点类型，供其他节点使用
         analyzeFlowNodes(flow, context);
         
-        executeNode(flow, context, start, new HashSet<>(), 0);
+        try {
+            executeNode(flow, context, start, new HashSet<>(), 0);
+        } finally {
+            // 工作流执行完成后，清理临时文件（图片、视频）
+            cleanupTempFiles(context);
+        }
+    }
+    
+    /**
+     * 清理工作流执行过程中产生的临时文件（图片、视频）
+     * 这些文件在上传到OSS后就不再需要保存在本地
+     */
+    @SuppressWarnings("unchecked")
+    private void cleanupTempFiles(FlowContext context) {
+        List<String> filesToDelete = new ArrayList<>();
+        
+        // 收集需要删除的文件路径
+        Map<String, Object> variables = context.getVariables();
+        if (variables != null) {
+            // 从并行分支收集的临时文件列表
+            Object tempFilesObj = variables.get("_tempFilesToClean");
+            if (tempFilesObj instanceof List) {
+                filesToDelete.addAll((List<String>) tempFilesObj);
+            }
+            
+            // 主流程中的抓图文件（CaptureHandler 使用 capturePath）
+            Object capturePath = variables.get("capturePath");
+            if (capturePath instanceof String && !filesToDelete.contains(capturePath)) {
+                filesToDelete.add((String) capturePath);
+            }
+            
+            // 主流程中的录像文件
+            Object recordFilePath = variables.get("recordFilePath");
+            if (recordFilePath instanceof String && !filesToDelete.contains(recordFilePath)) {
+                filesToDelete.add((String) recordFilePath);
+            }
+        }
+        
+        if (filesToDelete.isEmpty()) {
+            logger.debug("工作流执行完成，无临时文件需要清理: flowId={}", context.getFlowId());
+            return;
+        }
+        
+        int deleted = 0;
+        int failed = 0;
+        for (String filePath : filesToDelete) {
+            if (filePath == null || filePath.isEmpty()) {
+                continue;
+            }
+            try {
+                File file = new File(filePath);
+                if (file.exists()) {
+                    if (file.delete()) {
+                        deleted++;
+                        logger.debug("已删除临时文件: {}", filePath);
+                    } else {
+                        failed++;
+                        logger.warn("删除临时文件失败: {}", filePath);
+                    }
+                }
+            } catch (Exception e) {
+                failed++;
+                logger.warn("删除临时文件异常: {}", filePath, e);
+            }
+        }
+        
+        if (deleted > 0 || failed > 0) {
+            logger.info("工作流执行完成，清理临时文件: flowId={}, 删除成功={}, 删除失败={}", 
+                    context.getFlowId(), deleted, failed);
+        }
     }
     
     /**
@@ -156,11 +226,13 @@ public class FlowExecutor {
             // 多个后续节点，并行执行各分支
             logger.info("检测到多个分支({}个)，并行执行", nextNodes.size());
             List<Future<?>> futures = new ArrayList<>();
+            List<FlowContext> branchContexts = new ArrayList<>();
             
             for (FlowNodeDefinition next : nextNodes) {
                 Set<String> nextVisiting = new HashSet<>(visiting);
                 // 每个分支创建独立的context副本，避免并发修改
                 FlowContext branchContext = copyContext(context);
+                branchContexts.add(branchContext);
                 
                 Future<?> future = branchExecutor.submit(() -> {
                     try {
@@ -172,7 +244,7 @@ public class FlowExecutor {
                 futures.add(future);
             }
             
-            // 等待所有分支完成（可选，取决于是否需要同步）
+            // 等待所有分支完成
             for (Future<?> future : futures) {
                 try {
                     future.get();  // 等待分支完成
@@ -180,6 +252,52 @@ public class FlowExecutor {
                     logger.error("等待分支完成异常", e);
                 }
             }
+            
+            // 收集所有分支context中的临时文件路径到主context，以便最后统一清理
+            for (FlowContext branchContext : branchContexts) {
+                collectTempFilePaths(branchContext, context);
+            }
+        }
+    }
+    
+    /**
+     * 从分支context收集临时文件路径到主context
+     */
+    private void collectTempFilePaths(FlowContext branchContext, FlowContext mainContext) {
+        Map<String, Object> branchVars = branchContext.getVariables();
+        if (branchVars == null) return;
+        
+        // 收集抓图路径
+        Object capturePath = branchVars.get("capturePath");
+        if (capturePath instanceof String) {
+            addToTempFileList(mainContext, (String) capturePath);
+        }
+        
+        // 收集录像路径
+        Object recordFilePath = branchVars.get("recordFilePath");
+        if (recordFilePath instanceof String) {
+            addToTempFileList(mainContext, (String) recordFilePath);
+        }
+    }
+    
+    /**
+     * 添加临时文件路径到清理列表
+     */
+    @SuppressWarnings("unchecked")
+    private void addToTempFileList(FlowContext context, String filePath) {
+        if (filePath == null || filePath.isEmpty()) return;
+        
+        Object existingList = context.getVariables().get("_tempFilesToClean");
+        List<String> tempFiles;
+        if (existingList instanceof List) {
+            tempFiles = (List<String>) existingList;
+        } else {
+            tempFiles = new ArrayList<>();
+            context.putVariable("_tempFilesToClean", tempFiles);
+        }
+        
+        if (!tempFiles.contains(filePath)) {
+            tempFiles.add(filePath);
         }
     }
     

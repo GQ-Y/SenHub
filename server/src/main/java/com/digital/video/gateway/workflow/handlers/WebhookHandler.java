@@ -133,8 +133,22 @@ public class WebhookHandler implements FlowNodeHandler {
         // 构建报警信息文本
         String deviceId = context.getDeviceId() != null ? context.getDeviceId() : "未知设备";
         String alarmType = context.getAlarmType() != null ? context.getAlarmType() : "未知类型";
+        
+        // 获取抓图URL（优先使用OSS上传后的URL）
+        String captureOssUrl = context.getVariables().get("captureOssUrl") instanceof String 
+                ? (String) context.getVariables().get("captureOssUrl") : null;
         String captureUrl = context.getVariables().get("captureUrl") instanceof String 
                 ? (String) context.getVariables().get("captureUrl") : null;
+        String imageUrl = captureOssUrl != null ? captureOssUrl : captureUrl;
+        
+        // 获取录像URL
+        String recordOssUrl = context.getVariables().get("recordOssUrl") instanceof String 
+                ? (String) context.getVariables().get("recordOssUrl") : null;
+        String videoUrl = context.getVariables().get("videoUrl") instanceof String 
+                ? (String) context.getVariables().get("videoUrl") : null;
+        String recordUrl = recordOssUrl != null ? recordOssUrl : videoUrl;
+        
+        // 获取通用ossUrl（兼容旧逻辑）
         String ossUrl = context.getVariables().get("ossUrl") instanceof String 
                 ? (String) context.getVariables().get("ossUrl") : null;
         
@@ -148,10 +162,20 @@ public class WebhookHandler implements FlowNodeHandler {
         content.append("报警类型: ").append(alarmType).append("\n");
         content.append("报警时间: ").append(timeStr);
         
-        if (ossUrl != null && !ossUrl.isEmpty()) {
+        // 添加抓图地址
+        if (imageUrl != null && !imageUrl.isEmpty()) {
+            content.append("\n抓图地址: ").append(imageUrl);
+        } else if (ossUrl != null && !ossUrl.isEmpty() && !ossUrl.endsWith(".mp4")) {
+            // 兼容旧逻辑：如果ossUrl不是视频，则作为抓图地址
             content.append("\n抓图地址: ").append(ossUrl);
-        } else if (captureUrl != null && !captureUrl.isEmpty()) {
-            content.append("\n抓图地址: ").append(captureUrl);
+        }
+        
+        // 添加录像地址
+        if (recordUrl != null && !recordUrl.isEmpty()) {
+            content.append("\n录像地址: ").append(recordUrl);
+        } else if (ossUrl != null && !ossUrl.isEmpty() && ossUrl.endsWith(".mp4")) {
+            // 兼容旧逻辑：如果ossUrl是视频，则作为录像地址
+            content.append("\n录像地址: ").append(ossUrl);
         }
         
         String message = content.toString();
