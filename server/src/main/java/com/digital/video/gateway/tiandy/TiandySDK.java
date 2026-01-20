@@ -30,6 +30,7 @@ public class TiandySDK implements DeviceSDK {
     private NvssdkLibrary.ALARM_NOTIFY_V4 emptyAlarmNotify;
     private NvssdkLibrary.ALARM_NOTIFY_V4 alarmNotifyCallback;
     private com.digital.video.gateway.service.AlarmService alarmService;
+    private com.digital.video.gateway.device.DeviceManager deviceManager;
     private NvssdkLibrary.PARACHANGE_NOTIFY_V4 emptyParaNotify;
     private NvssdkLibrary.COMRECV_NOTIFY_V4 emptyComNotify;
     private NvssdkLibrary.PROXY_NOTIFY emptyProxyNotify;
@@ -108,6 +109,64 @@ public class TiandySDK implements DeviceSDK {
     }
 
     private TiandySDK() {
+    }
+    
+    /**
+     * 设置报警服务和设备管理器（用于接收和处理报警事件）
+     * 必须在SDK初始化后调用此方法，才能正确接收报警回调
+     */
+    public void setAlarmService(com.digital.video.gateway.service.AlarmService alarmService) {
+        this.alarmService = alarmService;
+        logger.info("天地伟业SDK报警服务已设置");
+        
+        // 重新初始化报警回调（因为initCallbacks在SDK初始化时alarmService还是null）
+        initAlarmCallback();
+    }
+    
+    /**
+     * 设置设备管理器（用于通过loginHandle查找设备ID）
+     */
+    public void setDeviceManager(com.digital.video.gateway.device.DeviceManager deviceManager) {
+        this.deviceManager = deviceManager;
+        logger.info("天地伟业SDK设备管理器已设置");
+    }
+    
+    /**
+     * 初始化报警回调
+     */
+    private void initAlarmCallback() {
+        if (alarmService != null && initialized) {
+            alarmNotifyCallback = new NvssdkLibrary.ALARM_NOTIFY_V4() {
+                @Override
+                public void apply(int ulLogonID, int iChan, int iAlarmState, int iAlarmType,
+                        com.sun.jna.Pointer iUser) {
+                    try {
+                        logger.info("收到天地伟业报警回调: logonID={}, channel={}, state={}, type={}", 
+                                ulLogonID, iChan, iAlarmState, iAlarmType);
+                        if (TiandySDK.this.alarmService != null) {
+                            // 通过logonID查找真正的设备ID
+                            String deviceId = null;
+                            if (TiandySDK.this.deviceManager != null) {
+                                deviceId = TiandySDK.this.deviceManager.getDeviceIdByLoginHandle(ulLogonID, "tiandy");
+                            }
+                            if (deviceId == null) {
+                                // 如果找不到，使用logonID作为临时标识
+                                deviceId = "tiandy_" + ulLogonID;
+                                logger.warn("无法通过logonID={}找到设备，使用临时ID: {}", ulLogonID, deviceId);
+                            }
+                            
+                            String alarmTypeStr = "Tiandy_Alarm_" + iAlarmType;
+                            String alarmMessage = String.format("天地伟业报警: device=%s, channel=%d, state=%d, type=%d",
+                                    deviceId, iChan, iAlarmState, iAlarmType);
+                            TiandySDK.this.alarmService.handleAlarm(deviceId, iChan, alarmTypeStr, alarmMessage);
+                        }
+                    } catch (Exception e) {
+                        logger.error("处理天地伟业报警回调异常", e);
+                    }
+                }
+            };
+            logger.info("天地伟业SDK报警回调已重新初始化");
+        }
     }
 
     public static synchronized TiandySDK getInstance() {

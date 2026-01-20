@@ -241,6 +241,32 @@ public class DeviceManager {
     public DeviceSDK getDeviceSDK(String deviceId) {
         return deviceSDKMap.get(deviceId);
     }
+    
+    /**
+     * 通过登录句柄(userId/logonID)和品牌查找设备ID
+     * 用于报警回调中根据SDK返回的句柄查找真实的设备ID
+     * 
+     * @param loginHandle SDK登录句柄
+     * @param brand 设备品牌（用于区分不同SDK的句柄）
+     * @return 设备ID，未找到返回null
+     */
+    public String getDeviceIdByLoginHandle(int loginHandle, String brand) {
+        for (java.util.Map.Entry<String, Integer> entry : deviceLoginMap.entrySet()) {
+            if (entry.getValue() != null && entry.getValue() == loginHandle) {
+                String deviceId = entry.getKey();
+                // 如果指定了品牌，需要验证品牌匹配
+                if (brand != null) {
+                    DeviceSDK sdk = deviceSDKMap.get(deviceId);
+                    if (sdk != null && sdk.getBrand().equalsIgnoreCase(brand)) {
+                        return deviceId;
+                    }
+                } else {
+                    return deviceId;
+                }
+            }
+        }
+        return null;
+    }
 
     /**
      * 获取设备信息

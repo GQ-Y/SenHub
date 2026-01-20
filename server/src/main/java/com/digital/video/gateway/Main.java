@@ -227,6 +227,15 @@ public class Main {
                 dahuaSDK.setStatusCallbacks(deviceManager, mqttClient);
                 logger.info("大华SDK状态回调已设置");
             }
+            
+            // 7.8. 设置天地伟业SDK报警回调
+            com.digital.video.gateway.tiandy.TiandySDK tiandySDK = (com.digital.video.gateway.tiandy.TiandySDK) SDKFactory
+                    .getSDK("tiandy");
+            if (tiandySDK != null) {
+                tiandySDK.setDeviceManager(deviceManager);  // 先设置设备管理器，用于查找设备ID
+                tiandySDK.setAlarmService(alarmService);
+                logger.info("天地伟业SDK报警回调已设置");
+            }
 
             // 8. 初始化命令处理器（使用功能服务类）
             commandHandler = new CommandHandler(deviceManager, hikvisionSDK, recorder,
