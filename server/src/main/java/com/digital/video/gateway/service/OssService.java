@@ -272,15 +272,16 @@ public class OssService {
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            logger.debug("自定义OSS FormData上传响应: {}", response.body());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 String resolvedUrl = extractUrlFromResponse(response.body(), objectKey, url);
-                logger.info("文件上传 自定义OSS 成功: localPath={}, key={}, url={}", localFilePath, objectKey, resolvedUrl);
+                logger.info("FormData上传 自定义OSS 成功: localPath={}, url={}", localFilePath, resolvedUrl);
                 return resolvedUrl;
             } else {
-                logger.warn("自定义OSS上传失败: status={}, body={}", response.statusCode(), response.body());
+                logger.warn("自定义OSS FormData上传失败: status={}, body={}", response.statusCode(), response.body());
             }
         } catch (Exception e) {
-            logger.error("自定义OSS上传异常: localPath={}, key={}", localFilePath, objectKey, e);
+            logger.error("自定义OSS FormData上传异常: localPath={}, key={}", localFilePath, objectKey, e);
         }
         return null;
     }
