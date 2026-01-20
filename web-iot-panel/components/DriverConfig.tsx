@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HardDrive, CheckCircle2, XCircle, Settings2, FileCode, X, Plus } from 'lucide-react';
+import { HardDrive, CheckCircle2, XCircle, FileCode, X, AlertCircle, Loader2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { Driver } from '../types';
 import { driverService } from '../src/api/services';
@@ -10,9 +10,9 @@ import { useModal } from '../hooks/useModal';
 const Modal = ({ isOpen, onClose, title, children, footer }: any) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 overflow-hidden animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-[101] overflow-hidden animate-fade-in">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
           <h3 className="text-lg font-bold text-gray-800">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 transition-colors text-gray-500">
@@ -29,22 +29,58 @@ const Modal = ({ isOpen, onClose, title, children, footer }: any) => {
 export const DriverConfig: React.FC = () => {
   const { t } = useAppContext();
   const alertModal = useModal();
-  const [activeModal, setActiveModal] = useState<'NONE' | 'CONFIGURE' | 'LOGS' | 'NEW'>('NONE');
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
-  const [formData, setFormData] = useState<Partial<Driver>>({});
+  const [activeModal, setActiveModal] = useState<'NONE' | 'LOGS'>('NONE');
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [logContent, setLogContent] = useState<string[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<Record<string, {
+    libPath: {
+      exists: boolean;
+      isDirectory: boolean;
+      isFile: boolean;
+      readable: boolean;
+      writable: boolean;
+      executable: boolean;
+      error?: string;
+    };
+    logPath: {
+      exists: boolean;
+      isDirectory: boolean;
+      isFile: boolean;
+      readable: boolean;
+      writable: boolean;
+      error?: string;
+    };
+  }>>({});
+  const [checkingDrivers, setCheckingDrivers] = useState<Set<string>>(new Set());
   
-  // Mock Logs (如果后端不支持日志API，使用mock数据)
-  const MOCK_LOGS = `[2023-10-27 10:00:01] [INFO] SDK Initialized successfully.
-[2023-10-27 10:00:02] [INFO] Loading library from /usr/lib/hikvision/libhcnetsdk.so...
-[2023-10-27 10:00:02] [DEBUG] Handle created: 0x7f8a1234
-[2023-10-27 10:05:12] [INFO] Device connected: 192.168.1.101
-[2023-10-27 10:05:15] [WARN] Keep-alive packet latency high: 120ms
-[2023-10-27 11:20:00] [INFO] Stream started for Channel 1`;
 
-  // 加载驱动列表
+  // 检查SDK健康状态
+  const checkDriverHealth = async (driverId: string) => {
+    if (checkingDrivers.has(driverId)) return;
+    
+    setCheckingDrivers(prev => new Set(prev).add(driverId));
+    try {
+      const response = await driverService.checkDriver(driverId);
+      if (response.data) {
+        setHealthStatus(prev => ({
+          ...prev,
+          [driverId]: response.data
+        }));
+      }
+    } catch (err) {
+      console.error(`检查SDK健康状态失败: ${driverId}`, err);
+    } finally {
+      setCheckingDrivers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(driverId);
+        return newSet;
+      });
+    }
+  };
+
+  // 加载驱动列表并检查健康状态
   useEffect(() => {
     const loadDrivers = async () => {
       setIsLoading(true);
@@ -71,63 +107,74 @@ export const DriverConfig: React.FC = () => {
     loadDrivers();
   }, []);
 
-  const handleConfigure = (driver: Driver) => {
-    setSelectedDriver(driver);
-    setFormData({ ...driver });
-    setActiveModal('CONFIGURE');
+  // 获取SDK健康状态
+  const getDriverHealth = (driverId: string) => {
+    const health = healthStatus[driverId];
+    if (!health) return null;
+    
+    const libOk = health.libPath.exists && health.libPath.readable;
+    const logOk = health.logPath.exists && health.logPath.writable;
+    
+    return {
+      isHealthy: libOk && logOk,
+      libOk,
+      logOk,
+      details: health
+    };
   };
 
-  const handleLogs = (driver: Driver) => {
-    setSelectedDriver(driver);
+  const handleLogs = async () => {
     setActiveModal('LOGS');
-  };
-
-  const handleNewSDK = () => {
-    setFormData({ name: '', version: '1.0.0', libPath: '', logPath: '/var/log/new_sdk.log', logLevel: 1 });
-    setActiveModal('NEW');
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
+    setIsLoadingLogs(true);
     try {
-      if (activeModal === 'NEW') {
-        await driverService.addDriver({
-          name: formData.name,
-          version: formData.version,
-          libPath: formData.libPath,
-          logPath: formData.logPath,
-          logLevel: formData.logLevel,
+      const response = await driverService.getDriverLogs(200);
+      if (response.data && response.data.content) {
+        setLogContent(response.data.content);
+      } else {
+        setLogContent([]);
+      }
+    } catch (err: any) {
+      console.error('获取驱动日志失败:', err);
+      alertModal.showModal({
+        message: err.message || '获取驱动日志失败',
+        type: 'error',
+      });
+      setLogContent([]);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  // 一键检查所有SDK健康状态
+  const handleCheckAll = async () => {
+    // 标记所有驱动为检查中
+    const allDriverIds = drivers.map(d => d.id);
+    setCheckingDrivers(new Set(allDriverIds));
+    
+    try {
+      const response = await driverService.checkAllDrivers();
+      if (response.data && Array.isArray(response.data)) {
+        const newHealthStatus: Record<string, any> = {};
+        response.data.forEach((item: any) => {
+          newHealthStatus[item.driverId] = item.health;
         });
-      } else if (activeModal === 'CONFIGURE' && selectedDriver) {
-        await driverService.updateDriver(selectedDriver.id, {
-          libPath: formData.libPath,
-          logPath: formData.logPath,
-          logLevel: formData.logLevel,
+        setHealthStatus(newHealthStatus);
+        alertModal.showModal({
+          message: `已检查 ${response.data.length} 个SDK的健康状态`,
+          type: 'success',
         });
       }
-      setActiveModal('NONE');
-      setSelectedDriver(null);
-      // 重新加载列表
-      const response = await driverService.getDrivers();
-      const driverList = response.data.map((d: any) => ({
-        id: d.id || d.name?.toLowerCase().replace(/\s+/g, '-'),
-        name: d.name || '',
-        version: d.version || '1.0.0',
-        status: (d.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE') as 'ACTIVE' | 'INACTIVE',
-        libPath: d.libPath || '',
-        logPath: d.logPath || '',
-        logLevel: d.logLevel || 0,
-      }));
-      setDrivers(driverList);
     } catch (err: any) {
       alertModal.showModal({
-        message: err.message || '保存失败',
+        message: err.message || '检查失败',
         type: 'error',
       });
     } finally {
-      setIsSaving(false);
+      setCheckingDrivers(new Set());
     }
   };
+
+
 
   return (
     <>
@@ -144,10 +191,26 @@ export const DriverConfig: React.FC = () => {
       
       <div className="space-y-6">
        <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white shadow-xl shadow-blue-900/20">
-        <h2 className="text-2xl font-bold mb-2">{t('driver_mgmt')}</h2>
-        <p className="text-blue-100 max-w-2xl">
-            {t('driver_desc')}
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold mb-2">{t('driver_mgmt')}</h2>
+            <p className="text-blue-100 max-w-2xl">
+                管理系统集成的各类SDK驱动，包括摄像头、雷达等设备的SDK配置。启用前请确保库文件路径正确且具有访问权限。
+            </p>
+          </div>
+          <button
+            onClick={handleCheckAll}
+            disabled={isLoading}
+            className="flex items-center space-x-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <Loader2 size={20} className="animate-spin" />
+            ) : (
+              <AlertCircle size={20} />
+            )}
+            <span>一键检查全部</span>
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -169,32 +232,146 @@ export const DriverConfig: React.FC = () => {
                     <p className="text-sm text-gray-500">v{driver.version}</p>
                   </div>
                 </div>
-                <div className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${driver.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                <div className="flex items-center space-x-2">
+                  {/* SDK健康状态指示器 */}
+                  {(() => {
+                    const health = getDriverHealth(driver.id);
+                    const isChecking = checkingDrivers.has(driver.id);
+                    if (isChecking) {
+                      return (
+                        <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border bg-gray-50 text-gray-600 border-gray-200">
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>检查中</span>
+                        </div>
+                      );
+                    }
+                    if (health) {
+                      return (
+                        <div className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+                          health.isHealthy 
+                            ? 'bg-green-50 text-green-700 border-green-200' 
+                            : 'bg-red-50 text-red-700 border-red-200'
+                        }`}>
+                          {health.isHealthy ? <CheckCircle2 size={12}/> : <AlertCircle size={12}/>}
+                          <span>{health.isHealthy ? '健康' : '异常'}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  <div className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${driver.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
                    {driver.status === 'ACTIVE' ? <CheckCircle2 size={12}/> : <XCircle size={12}/>}
                    <span>{driver.status}</span>
+                </div>
                 </div>
               </div>
 
               <div className="space-y-3 mb-6">
-                <div className="bg-gray-50 rounded-lg p-3 text-sm font-mono text-gray-600 break-all border border-gray-100">
-                  <span className="text-gray-400 select-none">LIB: </span>{driver.libPath}
+                <div className={`bg-gray-50 rounded-lg p-3 text-sm font-mono break-all border ${
+                  (() => {
+                    const health = getDriverHealth(driver.id);
+                    if (health && !health.libOk) {
+                      return 'border-red-200 bg-red-50/30';
+                    }
+                    return 'border-gray-100';
+                  })()
+                }`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-gray-400 select-none">LIB: </span>
+                    {(() => {
+                      const health = getDriverHealth(driver.id);
+                      if (health) {
+                        if (!health.libOk) {
+                          return <span className="text-xs text-red-600 flex items-center space-x-1">
+                            <AlertCircle size={12} />
+                            <span>文件异常</span>
+                          </span>;
+                        }
+                        return <span className="text-xs text-green-600 flex items-center space-x-1">
+                          <CheckCircle2 size={12} />
+                          <span>正常</span>
+                        </span>;
+                      }
+                      return null;
+                    })()}
+                  </div>
+                  <div className="text-gray-600">{driver.libPath}</div>
+                  {(() => {
+                    const health = getDriverHealth(driver.id);
+                    if (health && health.details.libPath) {
+                      const lib = health.details.libPath;
+                      if (!lib.exists) {
+                        return <div className="text-xs text-red-600 mt-1">文件不存在</div>;
+                      }
+                      if (!lib.readable) {
+                        return <div className="text-xs text-red-600 mt-1">无读取权限</div>;
+                      }
+                    }
+                    return null;
+                  })()}
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-sm font-mono text-gray-600 break-all border border-gray-100">
-                  <span className="text-gray-400 select-none">LOG: </span>{driver.logPath}
+                <div className={`bg-gray-50 rounded-lg p-3 text-sm font-mono break-all border ${
+                  (() => {
+                    const health = getDriverHealth(driver.id);
+                    if (health && !health.logOk) {
+                      return 'border-red-200 bg-red-50/30';
+                    }
+                    return 'border-gray-100';
+                  })()
+                }`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-gray-400 select-none">LOG: </span>
+                    {(() => {
+                      const health = getDriverHealth(driver.id);
+                      if (health) {
+                        if (!health.logOk) {
+                          return <span className="text-xs text-red-600 flex items-center space-x-1">
+                            <AlertCircle size={12} />
+                            <span>路径异常</span>
+                          </span>;
+                        }
+                        return <span className="text-xs text-green-600 flex items-center space-x-1">
+                          <CheckCircle2 size={12} />
+                          <span>正常</span>
+                        </span>;
+                      }
+                      return null;
+                    })()}
+                  </div>
+                  <div className="text-gray-600">{driver.logPath}</div>
+                  {(() => {
+                    const health = getDriverHealth(driver.id);
+                    if (health && health.details.logPath) {
+                      const log = health.details.logPath;
+                      if (!log.exists) {
+                        return <div className="text-xs text-red-600 mt-1">路径不存在</div>;
+                      }
+                      if (!log.writable) {
+                        return <div className="text-xs text-red-600 mt-1">无写入权限</div>;
+                      }
+                    }
+                    return null;
+                  })()}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 pt-4 border-t border-gray-100">
               <button 
-                onClick={() => handleConfigure(driver)}
-                className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium transition-colors text-sm"
+                onClick={() => checkDriverHealth(driver.id)}
+                disabled={checkingDrivers.has(driver.id)}
+                className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                title="检查SDK健康状态"
               >
-                <Settings2 size={16} />
-                <span>{t('configure')}</span>
+                {checkingDrivers.has(driver.id) ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <AlertCircle size={16} />
+                )}
+                <span>健康检查</span>
               </button>
                <button 
-                onClick={() => handleLogs(driver)}
+                onClick={handleLogs}
                 className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium transition-colors text-sm"
                >
                 <FileCode size={16} />
@@ -203,130 +380,31 @@ export const DriverConfig: React.FC = () => {
             </div>
           </div>
         ))}
-
-        {/* Add New Driver Card */}
-         <div 
-            onClick={handleNewSDK}
-            className="bg-gray-50 rounded-2xl p-6 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center min-h-[280px] text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/10 transition-all cursor-pointer group"
-         >
-            <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Plus size={32} className="text-gray-300 group-hover:text-blue-500" />
-            </div>
-            <span className="font-semibold">{t('integrate_new')}</span>
-         </div>
       </div>
       )}
-
-      {/* Configuration Modal */}
-      <Modal
-        isOpen={activeModal === 'CONFIGURE'}
-        onClose={() => setActiveModal('NONE')}
-        title={t('driver_config')}
-        footer={
-          <>
-            <button onClick={() => setActiveModal('NONE')} disabled={isSaving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium disabled:opacity-50">{t('cancel')}</button>
-            <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center">
-              {isSaving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>}
-              {t('save')}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('lib_path')}</label>
-                <input 
-                    type="text" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    value={formData.libPath || ''}
-                    onChange={(e) => setFormData({...formData, libPath: e.target.value})}
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('log_path')}</label>
-                <input 
-                    type="text" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    value={formData.logPath || ''}
-                    onChange={(e) => setFormData({...formData, logPath: e.target.value})}
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('log_level')}</label>
-                <select 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.logLevel || 0}
-                    onChange={(e) => setFormData({...formData, logLevel: parseInt(e.target.value)})}
-                >
-                    <option value="0">0 - None</option>
-                    <option value="1">1 - Error</option>
-                    <option value="2">2 - Info</option>
-                    <option value="3">3 - Debug</option>
-                </select>
-            </div>
-        </div>
-      </Modal>
 
       {/* Logs Modal */}
       <Modal
         isOpen={activeModal === 'LOGS'}
         onClose={() => setActiveModal('NONE')}
-        title={`${t('driver_logs')}: ${selectedDriver?.name}`}
+        title={t('driver_logs')}
         footer={
             <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium">{t('cancel')}</button>
         }
       >
-        <div className="bg-gray-900 rounded-xl p-4 overflow-auto max-h-[300px]">
-            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap">{MOCK_LOGS}</pre>
-        </div>
-      </Modal>
-
-      {/* New SDK Modal */}
-      <Modal
-        isOpen={activeModal === 'NEW'}
-        onClose={() => setActiveModal('NONE')}
-        title={t('add_driver_title')}
-        footer={
-          <>
-            <button onClick={() => setActiveModal('NONE')} disabled={isSaving} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium disabled:opacity-50">{t('cancel')}</button>
-            <button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center">
-              {isSaving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>}
-              {t('save')}
-            </button>
-          </>
-        }
-      >
-         <div className="space-y-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('driver_name')}</label>
-                <input 
-                    type="text" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Huawei HoloSens SDK"
-                    value={formData.name || ''}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                />
+        <div className="bg-gray-900 rounded-xl p-4 overflow-auto max-h-[400px]">
+          {isLoadingLogs ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={24} className="animate-spin text-green-400" />
+              <span className="ml-2 text-green-400">加载中...</span>
             </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('version')}</label>
-                <input 
-                    type="text" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. 1.0.0"
-                    value={formData.version || ''}
-                    onChange={(e) => setFormData({...formData, version: e.target.value})}
-                />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('lib_path')}</label>
-                <input 
-                    type="text" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    placeholder="/usr/lib/..."
-                    value={formData.libPath || ''}
-                    onChange={(e) => setFormData({...formData, libPath: e.target.value})}
-                />
-            </div>
+          ) : logContent.length === 0 ? (
+            <div className="text-gray-500 text-center py-8">暂无日志内容</div>
+          ) : (
+            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap">
+              {logContent.join('\n')}
+            </pre>
+          )}
         </div>
       </Modal>
 

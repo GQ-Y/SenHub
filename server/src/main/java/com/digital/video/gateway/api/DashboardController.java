@@ -51,14 +51,16 @@ public class DashboardController {
             // 获取24小时告警数量
             int alerts24h = database.getAlarmCount24h();
 
-            // 计算存储用量
-            String storageUsed = calculateStorageUsed();
+            // 计算系统存储用量
+            Map<String, Object> storageInfo = calculateSystemStorage();
 
             Map<String, Object> stats = new HashMap<>();
             stats.put("activeDevices", totalDevices);
             stats.put("onlineStatus", String.format("%.1f%%", onlinePercentage));
             stats.put("alerts24h", alerts24h);
-            stats.put("storageUsed", storageUsed);
+            stats.put("storageUsed", storageInfo.get("used"));
+            stats.put("storageTotal", storageInfo.get("total"));
+            stats.put("storagePercent", storageInfo.get("percent"));
 
             response.status(200);
             response.type("application/json");
@@ -71,32 +73,30 @@ public class DashboardController {
     }
 
     /**
-     * 计算存储用量
+     * 计算系统存储用量（程序所在分区的存储信息）
      */
-    private String calculateStorageUsed() {
+    private Map<String, Object> calculateSystemStorage() {
+        Map<String, Object> storageInfo = new HashMap<>();
         try {
-            long totalBytes = 0;
-
-            // 计算录制文件大小
-            if (config.getRecorder() != null && config.getRecorder().getRecordPath() != null) {
-                File recordDir = new File(config.getRecorder().getRecordPath());
-                if (recordDir.exists() && recordDir.isDirectory()) {
-                    totalBytes += getDirectorySize(recordDir);
-                }
-            }
-
-            // 计算下载文件大小
-            File downloadsDir = new File("./storage/downloads");
-            if (downloadsDir.exists() && downloadsDir.isDirectory()) {
-                totalBytes += getDirectorySize(downloadsDir);
-            }
-
-            // 转换为可读格式
-            return formatBytes(totalBytes);
+            // 获取程序所在目录的磁盘信息
+            File rootDir = new File(".");
+            long totalSpace = rootDir.getTotalSpace();
+            long freeSpace = rootDir.getFreeSpace();
+            long usedSpace = totalSpace - freeSpace;
+            
+            // 计算使用百分比
+            double usagePercent = totalSpace > 0 ? (usedSpace * 100.0 / totalSpace) : 0;
+            
+            storageInfo.put("used", formatBytes(usedSpace));
+            storageInfo.put("total", formatBytes(totalSpace));
+            storageInfo.put("percent", String.format("%.1f%%", usagePercent));
         } catch (Exception e) {
-            logger.error("计算存储用量失败", e);
-            return "0 B";
+            logger.error("计算系统存储用量失败", e);
+            storageInfo.put("used", "0 B");
+            storageInfo.put("total", "0 B");
+            storageInfo.put("percent", "0.0%");
         }
+        return storageInfo;
     }
 
     /**

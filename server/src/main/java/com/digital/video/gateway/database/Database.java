@@ -1,8 +1,10 @@
 package com.digital.video.gateway.database;
 
+import com.digital.video.gateway.Common.LibraryPathHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -123,6 +125,15 @@ public class Database {
                 "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
                 ")";
 
+        String createNotificationsTable = "CREATE TABLE IF NOT EXISTS notifications (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "title TEXT NOT NULL, " +
+                "message TEXT NOT NULL, " +
+                "type TEXT DEFAULT 'info', " +
+                "read INTEGER DEFAULT 0, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
+
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
                 "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port); " +
                 "CREATE INDEX IF NOT EXISTS idx_brand ON devices(brand); " +
@@ -130,7 +141,9 @@ public class Database {
                 "CREATE INDEX IF NOT EXISTS idx_driver_id ON drivers(driver_id); " +
                 "CREATE INDEX IF NOT EXISTS idx_device_history_device_id ON device_history(device_id); " +
                 "CREATE INDEX IF NOT EXISTS idx_device_history_recorded_at ON device_history(recorded_at); " +
-                "CREATE INDEX IF NOT EXISTS idx_alarm_history_recorded_at ON alarm_history(recorded_at);";
+                "CREATE INDEX IF NOT EXISTS idx_alarm_history_recorded_at ON alarm_history(recorded_at); " +
+                "CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read); " +
+                "CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
@@ -139,6 +152,7 @@ public class Database {
             stmt.execute(createDriversTable);
             stmt.execute(createDeviceHistoryTable);
             stmt.execute(createAlarmHistoryTable);
+            stmt.execute(createNotificationsTable);
             stmt.execute(createIndex);
 
             // 检查并添加channel列（如果表已存在但缺少该列）
@@ -349,15 +363,144 @@ public class Database {
     }
 
     /**
+     * 检测实际的SDK库文件路径
+     * @param sdkName SDK名称：hikvision, tiandy, dahua, livox
+     * @return 检测到的库目录路径，如果未找到则返回null
+     */
+    private String detectActualSDKLibPath(String sdkName) {
+        String userDir = System.getProperty("user.dir");
+        String archDir = LibraryPathHelper.getArchitectureDir();
+        String osName = System.getProperty("os.name").toLowerCase();
+        String osType = (osName.contains("mac") || osName.contains("darwin")) ? "macos" : "linux";
+        
+        // 定义每个SDK的库文件名
+        String[] libraryFileNames;
+        String[] searchPaths;
+        
+        if ("livox".equalsIgnoreCase(sdkName)) {
+            // Livox SDK使用操作系统类型路径
+            String libExt = osType.contains("mac") ? ".dylib" : ".so";
+            libraryFileNames = new String[]{"liblivoxjni" + libExt};
+            searchPaths = new String[]{
+                userDir + "/lib/" + osType,
+                userDir + "/lib/linux",
+                userDir + "/lib/macos"
+            };
+        } else {
+            // 其他SDK使用架构路径
+            if ("hikvision".equalsIgnoreCase(sdkName)) {
+                libraryFileNames = new String[]{"libhcnetsdk.so", "libhcnetsdk.so.x86_64", "libhcnetsdk.so.aarch64"};
+            } else if ("tiandy".equalsIgnoreCase(sdkName)) {
+                libraryFileNames = new String[]{"libnvssdk.so", "libnvssdk.so.x86_64"};
+            } else if ("dahua".equalsIgnoreCase(sdkName)) {
+                libraryFileNames = new String[]{"libdhnetsdk.so", "libdhnetsdk.so.x86_64", "libdhnetsdk.so.aarch64"};
+            } else {
+                return null;
+            }
+            
+            // 构建搜索路径列表
+            searchPaths = new String[]{
+                userDir + "/lib/" + archDir + "/" + sdkName,
+                userDir + "/lib/x86/" + sdkName,
+                userDir + "/lib/arm/" + sdkName,
+                userDir + "/lib/" + sdkName
+            };
+        }
+        
+        // 遍历搜索路径，查找库文件
+        for (String searchPath : searchPaths) {
+            File searchDir = new File(searchPath);
+            if (searchDir.exists() && searchDir.isDirectory()) {
+                for (String libFileName : libraryFileNames) {
+                    File libFile = new File(searchDir, libFileName);
+                    if (libFile.exists() && libFile.isFile()) {
+                        logger.info("检测到{} SDK库文件: {}", sdkName, searchPath);
+                        return searchPath.replace(userDir + "/", "./");
+                    }
+                }
+                // 也检查目录中是否有任何.so或.dylib文件（作为备选）
+                File[] files = searchDir.listFiles((dir, name) -> 
+                    name.endsWith(".so") || name.endsWith(".dylib"));
+                if (files != null && files.length > 0) {
+                    logger.info("在目录中找到库文件，使用路径: {}", searchPath);
+                    return searchPath.replace(userDir + "/", "./");
+                }
+            }
+        }
+        
+        logger.warn("未找到{} SDK库文件，使用默认路径", sdkName);
+        return null;
+    }
+
+    /**
      * 初始化默认SDK驱动配置
      */
     private void initDefaultDriver() {
-        // 使用默认配置值（SDK库已复制到项目目录）
+        String userDir = System.getProperty("user.dir");
+        String archDir = LibraryPathHelper.getArchitectureDir();
+        String osName = System.getProperty("os.name").toLowerCase();
+        String osType = (osName.contains("mac") || osName.contains("darwin")) ? "macos" : "linux";
+        
+        // 初始化海康威视SDK - 检测实际路径
+        String hikvisionPath = detectActualSDKLibPath("hikvision");
+        if (hikvisionPath == null) {
+            // 如果检测不到，使用默认路径
+            String defaultPath = LibraryPathHelper.getSDKLibPath("hikvision");
+            hikvisionPath = defaultPath != null ? defaultPath.replace(userDir + "/", "./") : "./lib/" + archDir + "/hikvision";
+            logger.warn("海康SDK使用默认路径: {}", hikvisionPath);
+        }
         initDefaultDriverWithConfig(
                 "hikvision_sdk",
                 "Hikvision SDK",
                 "6.1.9.45",
-                "./lib/hikvision",
+                hikvisionPath,
+                "./sdkLog",
+                3,
+                "ACTIVE");
+        
+        // 初始化天地伟业SDK - 仅x86架构，检测实际路径
+        if ("x86".equals(archDir)) {
+            String tiandyPath = detectActualSDKLibPath("tiandy");
+            if (tiandyPath == null) {
+                String defaultPath = LibraryPathHelper.getSDKLibPath("tiandy");
+                tiandyPath = defaultPath != null ? defaultPath.replace(userDir + "/", "./") : "./lib/x86/tiandy";
+            }
+            initDefaultDriverWithConfig(
+                    "tiandy_sdk",
+                    "Tiandy SDK",
+                    "1.0.0",
+                    tiandyPath,
+                    "./sdkLog",
+                    3,
+                    "ACTIVE");
+        }
+        
+        // 初始化大华SDK - 检测实际路径
+        String dahuaPath = detectActualSDKLibPath("dahua");
+        if (dahuaPath == null) {
+            String defaultPath = LibraryPathHelper.getSDKLibPath("dahua");
+            dahuaPath = defaultPath != null ? defaultPath.replace(userDir + "/", "./") : "./lib/" + archDir + "/dahua";
+        }
+        initDefaultDriverWithConfig(
+                "dahua_sdk",
+                "Dahua SDK",
+                "1.0.0",
+                dahuaPath,
+                "./sdkLog",
+                3,
+                "ACTIVE");
+        
+        // 初始化雷达SDK (Livox) - 检测实际路径
+        String livoxPath = detectActualSDKLibPath("livox");
+        if (livoxPath == null) {
+            String defaultPath = LibraryPathHelper.getLivoxLibPath(osType);
+            livoxPath = defaultPath.replace(userDir + "/", "./");
+        }
+        initDefaultDriverWithConfig(
+                "livox_sdk",
+                "Livox Radar SDK",
+                "1.0.0",
+                livoxPath,
                 "./sdkLog",
                 3,
                 "ACTIVE");
@@ -744,11 +887,108 @@ public class Database {
                     .executeUpdate("DELETE FROM device_history WHERE recorded_at < datetime('now', '-30 days')");
             int deleted2 = stmt
                     .executeUpdate("DELETE FROM alarm_history WHERE recorded_at < datetime('now', '-30 days')");
-            if (deleted1 > 0 || deleted2 > 0) {
-                logger.info("清理旧历史数据完成: device_history={}, alarm_history={}", deleted1, deleted2);
+            int deleted3 = stmt
+                    .executeUpdate("DELETE FROM notifications WHERE created_at < datetime('now', '-30 days')");
+            if (deleted1 > 0 || deleted2 > 0 || deleted3 > 0) {
+                logger.info("清理旧历史数据完成: device_history={}, alarm_history={}, notifications={}", deleted1, deleted2, deleted3);
             }
         } catch (SQLException e) {
             logger.error("清理旧历史数据失败", e);
+        }
+    }
+
+    // ==================== 通知管理方法 ====================
+
+    /**
+     * 创建通知
+     */
+    public boolean createNotification(String title, String message, String type) {
+        String sql = "INSERT INTO notifications (title, message, type, read, created_at) VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, title);
+            pstmt.setString(2, message);
+            pstmt.setString(3, type != null ? type : "info");
+            pstmt.executeUpdate();
+            logger.debug("通知已创建: {}", title);
+            return true;
+        } catch (SQLException e) {
+            logger.error("创建通知失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 获取所有通知（按创建时间倒序）
+     */
+    public List<Map<String, Object>> getAllNotifications(int limit) {
+        List<Map<String, Object>> notifications = new ArrayList<>();
+        String sql = "SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, limit > 0 ? limit : 100);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Map<String, Object> notification = new HashMap<>();
+                notification.put("id", String.valueOf(rs.getInt("id")));
+                notification.put("title", rs.getString("title"));
+                notification.put("message", rs.getString("message"));
+                notification.put("type", rs.getString("type"));
+                notification.put("read", rs.getInt("read") == 1);
+                notification.put("time", formatTimeAgo(rs.getTimestamp("created_at")));
+                notifications.add(notification);
+            }
+        } catch (SQLException e) {
+            logger.error("获取通知列表失败", e);
+        }
+        return notifications;
+    }
+
+    /**
+     * 标记通知为已读
+     */
+    public boolean markNotificationAsRead(String notificationId) {
+        String sql = "UPDATE notifications SET read = 1 WHERE id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(notificationId));
+            int rows = pstmt.executeUpdate();
+            return rows > 0;
+        } catch (SQLException e) {
+            logger.error("标记通知为已读失败: {}", notificationId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 标记所有通知为已读
+     */
+    public boolean markAllNotificationsAsRead() {
+        String sql = "UPDATE notifications SET read = 1 WHERE read = 0";
+        try (Statement stmt = connection.createStatement()) {
+            int rows = stmt.executeUpdate(sql);
+            logger.info("已标记 {} 条通知为已读", rows);
+            return true;
+        } catch (SQLException e) {
+            logger.error("标记所有通知为已读失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 格式化时间为相对时间（如"2分钟前"）
+     */
+    private String formatTimeAgo(java.sql.Timestamp timestamp) {
+        if (timestamp == null) return "未知";
+        long now = System.currentTimeMillis();
+        long time = timestamp.getTime();
+        long diff = now - time;
+        
+        if (diff < 60000) { // 小于1分钟
+            return "刚刚";
+        } else if (diff < 3600000) { // 小于1小时
+            return (diff / 60000) + "分钟前";
+        } else if (diff < 86400000) { // 小于1天
+            return (diff / 3600000) + "小时前";
+        } else {
+            return (diff / 86400000) + "天前";
         }
     }
 

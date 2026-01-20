@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import spark.Request;
 import spark.Response;
 
+import java.io.File;
 import java.util.*;
 
 /**
@@ -164,6 +165,182 @@ public class DriverController {
             response.status(500);
             return createErrorResponse(500, "删除驱动失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 检查所有SDK健康状态
+     * GET /api/drivers/check-all
+     */
+    @SuppressWarnings("unchecked")
+    public String checkAllDrivers(Request request, Response response) {
+        try {
+            List<Map<String, Object>> drivers = database.getAllDrivers();
+            List<Map<String, Object>> results = new ArrayList<>();
+            
+            for (Map<String, Object> driver : drivers) {
+                String driverId = (String) driver.get("id");
+                Map<String, Object> checkResult = checkDriverHealth(driverId);
+                if (checkResult != null) {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("driverId", driverId);
+                    result.put("driverName", driver.get("name"));
+                    result.put("health", checkResult);
+                    results.add(result);
+                }
+            }
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(results);
+        } catch (Exception e) {
+            logger.error("检查所有SDK健康状态失败", e);
+            response.status(500);
+            return createErrorResponse(500, "检查所有SDK健康状态失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 检查单个SDK文件是否存在及权限（内部方法）
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> checkDriverHealth(String driverId) {
+        try {
+            Map<String, Object> driver = database.getDriver(driverId);
+            if (driver == null) {
+                return null;
+            }
+            
+            String libPath = (String) driver.get("libPath");
+            String logPath = (String) driver.get("logPath");
+            
+            Map<String, Object> checkResult = new HashMap<>();
+            
+            // 检查库文件路径
+            if (libPath != null && !libPath.isEmpty()) {
+                File libFile = new File(libPath);
+                Map<String, Object> libCheck = new HashMap<>();
+                libCheck.put("exists", libFile.exists());
+                libCheck.put("isDirectory", libFile.isDirectory());
+                libCheck.put("isFile", libFile.isFile());
+                libCheck.put("readable", libFile.canRead());
+                libCheck.put("writable", libFile.canWrite());
+                libCheck.put("executable", libFile.canExecute());
+                checkResult.put("libPath", libCheck);
+            } else {
+                Map<String, Object> libCheck = new HashMap<>();
+                libCheck.put("exists", false);
+                libCheck.put("error", "库文件路径未配置");
+                checkResult.put("libPath", libCheck);
+            }
+            
+            // 检查日志路径
+            if (logPath != null && !logPath.isEmpty()) {
+                File logFile = new File(logPath);
+                Map<String, Object> logCheck = new HashMap<>();
+                logCheck.put("exists", logFile.exists());
+                logCheck.put("isDirectory", logFile.isDirectory());
+                logCheck.put("isFile", logFile.isFile());
+                logCheck.put("readable", logFile.canRead());
+                logCheck.put("writable", logFile.canWrite());
+                checkResult.put("logPath", logCheck);
+            } else {
+                Map<String, Object> logCheck = new HashMap<>();
+                logCheck.put("exists", false);
+                logCheck.put("error", "日志路径未配置");
+                checkResult.put("logPath", logCheck);
+            }
+            
+            return checkResult;
+        } catch (Exception e) {
+            logger.error("检查SDK文件失败: {}", driverId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 检查SDK文件是否存在及权限
+     * GET /api/drivers/:id/check
+     */
+    public String checkDriver(Request request, Response response) {
+        try {
+            String driverId = request.params(":id");
+            Map<String, Object> checkResult = checkDriverHealth(driverId);
+            
+            if (checkResult == null) {
+                response.status(404);
+                return createErrorResponse(404, "驱动不存在");
+            }
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(checkResult);
+        } catch (Exception e) {
+            logger.error("检查SDK文件失败", e);
+            response.status(500);
+            return createErrorResponse(500, "检查SDK文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取统一的驱动日志
+     * GET /api/drivers/logs
+     */
+    public String getDriverLogs(Request request, Response response) {
+        try {
+            String linesParam = request.queryParams("lines");
+            int lines = linesParam != null ? Integer.parseInt(linesParam) : 100;
+            if (lines > 1000) lines = 1000; // 限制最大行数
+            
+            // 读取统一的SDK日志文件
+            File logFile = new File("./sdkLog/sdk.log");
+            if (!logFile.exists()) {
+                // 如果主日志文件不存在，尝试查找其他日志文件
+                File logDir = new File("./sdkLog");
+                if (logDir.exists() && logDir.isDirectory()) {
+                    File[] logFiles = logDir.listFiles((dir, name) -> name.endsWith(".log"));
+                    if (logFiles != null && logFiles.length > 0) {
+                        logFile = logFiles[0]; // 使用第一个找到的日志文件
+                    }
+                }
+            }
+            
+            if (!logFile.exists()) {
+                response.status(404);
+                return createErrorResponse(404, "驱动日志文件不存在");
+            }
+            
+            List<String> logLines = readLastLines(logFile, lines);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("file", logFile.getAbsolutePath());
+            result.put("lines", logLines.size());
+            result.put("content", logLines);
+            
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(result);
+        } catch (Exception e) {
+            logger.error("获取驱动日志失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取驱动日志失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 读取文件的最后N行
+     */
+    private List<String> readLastLines(File file, int n) throws java.io.IOException {
+        List<String> lines = new ArrayList<>();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+                if (lines.size() > n) {
+                    lines.remove(0);
+                }
+            }
+        }
+        return lines;
     }
 
     private String createSuccessResponse(Object data) {

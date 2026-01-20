@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useAppContext } from '../contexts/AppContext';
+import { notificationService, Notification } from '../src/api/services';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -104,40 +105,32 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
     navigate('/login');
   };
   const [showNotifications, setShowNotifications] = useState(false);
-  const [readStatus, setReadStatus] = useState<Record<string, boolean>>({
-    '1': false,
-    '2': false,
-    '3': true
-  });
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
 
-  // 根据语言动态生成通知数据
-  const notifications = useMemo<Notification[]>(() => [
-    {
-      id: '1',
-      title: language === 'zh' ? '设备上线通知' : 'Device Online',
-      message: language === 'zh' ? '设备 Main Gate Cam 01 已成功连接' : 'Device Main Gate Cam 01 has connected successfully',
-      time: language === 'zh' ? '2分钟前' : '2 mins ago',
-      type: 'success',
-      read: readStatus['1']
-    },
-    {
-      id: '2',
-      title: language === 'zh' ? '系统警告' : 'System Warning',
-      message: language === 'zh' ? '设备 Parking Lot PTZ 连接不稳定' : 'Device Parking Lot PTZ connection is unstable',
-      time: language === 'zh' ? '15分钟前' : '15 mins ago',
-      type: 'warning',
-      read: readStatus['2']
-    },
-    {
-      id: '3',
-      title: language === 'zh' ? 'MQTT 连接' : 'MQTT Connected',
-      message: language === 'zh' ? 'MQTT 代理已成功连接' : 'MQTT broker connected successfully',
-      time: language === 'zh' ? '1小时前' : '1 hour ago',
-      type: 'info',
-      read: readStatus['3']
+  // 加载通知列表
+  const loadNotifications = async () => {
+    setIsLoadingNotifications(true);
+    try {
+      const response = await notificationService.getNotifications(50);
+      if (response.data) {
+        setNotifications(response.data);
+      }
+    } catch (err) {
+      console.error('加载通知失败:', err);
+    } finally {
+      setIsLoadingNotifications(false);
     }
-  ], [language, readStatus]);
+  };
+
+  // 初始加载和定期刷新通知
+  useEffect(() => {
+    loadNotifications();
+    // 每30秒刷新一次通知
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const toggleLanguage = () => {
     setLanguage(language === 'en' ? 'zh' : 'en');
@@ -145,18 +138,23 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const markAllAsRead = () => {
-    setReadStatus(prev => {
-      const newStatus = { ...prev };
-      Object.keys(newStatus).forEach(key => {
-        newStatus[key] = true;
-      });
-      return newStatus;
-    });
+  const markAllAsRead = async () => {
+    try {
+      await notificationService.markAllAsRead();
+      await loadNotifications(); // 重新加载通知列表
+    } catch (err) {
+      console.error('标记所有通知为已读失败:', err);
+    }
   };
 
-  const markAsRead = (id: string) => {
-    setReadStatus(prev => ({ ...prev, [id]: true }));
+  const markAsRead = async (id: string) => {
+    try {
+      await notificationService.markAsRead(id);
+      // 更新本地状态
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.error('标记通知为已读失败:', err);
+    }
   };
 
   // 点击外部关闭弹窗

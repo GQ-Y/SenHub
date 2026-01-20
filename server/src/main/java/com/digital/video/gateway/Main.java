@@ -521,6 +521,7 @@ public class Main {
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);
         DashboardController dashboardController = new DashboardController(deviceManager, database, config);
+        NotificationController notificationController = new NotificationController(database);
 
         // 初始化新增控制器（使用已初始化的服务实例）
         AssemblyController assemblyController = new AssemblyController(assemblyService);
@@ -567,8 +568,11 @@ public class Main {
         Spark.post("/api/devices/:id/export", deviceController::exportVideo);
         Spark.get("/api/devices/:id/export/file", deviceController::getExportFile);
 
-        // 驱动路由
+        // 驱动路由（注意：具体路由必须在参数路由之前注册）
         Spark.get("/api/drivers", driverController::getDrivers);
+        Spark.get("/api/drivers/check-all", driverController::checkAllDrivers);
+        Spark.get("/api/drivers/logs", driverController::getDriverLogs);
+        Spark.get("/api/drivers/:id/check", driverController::checkDriver);
         Spark.get("/api/drivers/:id", driverController::getDriver);
         Spark.post("/api/drivers", driverController::addDriver);
         Spark.put("/api/drivers/:id", driverController::updateDriver);
@@ -590,6 +594,11 @@ public class Main {
         // 仪表板路由
         Spark.get("/api/dashboard/stats", dashboardController::getStats);
         Spark.get("/api/dashboard/chart", dashboardController::getChart);
+
+        // 通知路由
+        Spark.get("/api/notifications", notificationController::getNotifications);
+        Spark.post("/api/notifications/read", notificationController::markAsRead);
+        Spark.post("/api/notifications/read-all", notificationController::markAllAsRead);
 
         // 装置路由
         Spark.get("/api/assemblies", assemblyController::getAssemblies);

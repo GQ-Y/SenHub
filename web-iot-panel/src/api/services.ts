@@ -295,6 +295,75 @@ export const driverService = {
     const response = await del<{ message: string }>(`/drivers/${encodeURIComponent(driverId)}`);
     return response;
   },
+
+  /**
+   * 检查SDK文件健康状态
+   */
+  async checkDriver(driverId: string) {
+    const response = await get<{
+      libPath: {
+        exists: boolean;
+        isDirectory: boolean;
+        isFile: boolean;
+        readable: boolean;
+        writable: boolean;
+        executable: boolean;
+        error?: string;
+      };
+      logPath: {
+        exists: boolean;
+        isDirectory: boolean;
+        isFile: boolean;
+        readable: boolean;
+        writable: boolean;
+        error?: string;
+      };
+    }>(`/drivers/${encodeURIComponent(driverId)}/check`);
+    return response;
+  },
+
+  /**
+   * 一键检查所有SDK健康状态
+   */
+  async checkAllDrivers() {
+    const response = await get<Array<{
+      driverId: string;
+      driverName: string;
+      health: {
+        libPath: {
+          exists: boolean;
+          isDirectory: boolean;
+          isFile: boolean;
+          readable: boolean;
+          writable: boolean;
+          executable: boolean;
+          error?: string;
+        };
+        logPath: {
+          exists: boolean;
+          isDirectory: boolean;
+          isFile: boolean;
+          readable: boolean;
+          writable: boolean;
+          error?: string;
+        };
+      };
+    }>>('/drivers/check-all');
+    return response;
+  },
+
+  /**
+   * 获取统一的驱动日志
+   */
+  async getDriverLogs(lines?: number) {
+    const params = lines ? { lines: lines.toString() } : undefined;
+    const response = await get<{
+      file: string;
+      lines: number;
+      content: string[];
+    }>('/drivers/logs', params);
+    return response;
+  },
 };
 
 // ==================== MQTT服务 ====================
@@ -402,6 +471,8 @@ export interface DashboardStats {
   onlineStatus: string;
   alerts24h: number;
   storageUsed: string;
+  storageTotal?: string;
+  storagePercent?: string;
 }
 
 export interface ChartData {
@@ -846,6 +917,43 @@ export const radarService = {
     };
 
     return ws;
+  },
+};
+
+// ==================== 通知服务 ====================
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  read: boolean;
+  time: string;
+}
+
+export const notificationService = {
+  /**
+   * 获取通知列表
+   */
+  async getNotifications(limit?: number) {
+    const params = limit ? { limit: limit.toString() } : undefined;
+    const response = await get<Notification[]>('/notifications', params);
+    return response;
+  },
+
+  /**
+   * 标记通知为已读
+   */
+  async markAsRead(notificationId: string) {
+    const response = await post<{ message: string }>('/notifications/read', { id: notificationId });
+    return response;
+  },
+
+  /**
+   * 标记所有通知为已读
+   */
+  async markAllAsRead() {
+    const response = await post<{ message: string; success: boolean }>('/notifications/read-all', {});
+    return response;
   },
 };
 

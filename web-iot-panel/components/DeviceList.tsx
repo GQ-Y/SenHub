@@ -37,9 +37,9 @@ const CustomModal = ({
 }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 overflow-hidden animate-fade-in transform transition-all scale-100">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-[101] overflow-hidden animate-fade-in transform transition-all scale-100">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
           <h3 className="text-lg font-bold text-gray-800">{title}</h3>
           <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 transition-colors text-gray-500">
@@ -57,6 +57,21 @@ const CustomModal = ({
       </div>
     </div>
   );
+};
+
+// 品牌中文映射
+const BRAND_MAP: Record<string, string> = {
+  hikvision: '海康威视',
+  tiandy: '天地伟业',
+  dahua: '大华',
+  auto: '自动检测'
+};
+
+// 品牌端口映射
+const BRAND_PORT_MAP: Record<string, number> = {
+  hikvision: 8000,
+  tiandy: 3000,
+  dahua: 37777
 };
 
 export const DeviceList: React.FC = () => {
@@ -137,6 +152,16 @@ export const DeviceList: React.FC = () => {
   useEffect(() => {
     loadDevices();
   }, [searchTerm, statusFilter]);
+
+  // 品牌变化时自动填充端口
+  useEffect(() => {
+    if (formData.brand && formData.brand.toLowerCase() !== 'auto') {
+      const port = BRAND_PORT_MAP[formData.brand.toLowerCase()];
+      if (port && formData.port !== port) {
+        setFormData(prev => ({ ...prev, port }));
+      }
+    }
+  }, [formData.brand]);
 
   const openAddModal = () => {
     setFormData({ name: '', ip: '', port: 8000, brand: defaultBrand, model: '', username: 'admin', password: '123456' });
@@ -495,24 +520,39 @@ export const DeviceList: React.FC = () => {
                 onChange={e => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand')}</label>
-              <select
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.brand || defaultBrand}
-                onChange={e => setFormData({ ...formData, brand: e.target.value })}
-                disabled={isLoadingBrands}
-              >
-                {isLoadingBrands ? (
-                  <option>加载中...</option>
-                ) : (
-                  brands.map(brand => (
-                    <option key={brand} value={brand}>
-                      {brand === 'Auto' ? (language === 'zh' ? '自动检测' : 'Auto Detect') : brand}
-                    </option>
-                  ))
-                )}
-              </select>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('brand')}</label>
+              {isLoadingBrands ? (
+                <div className="text-sm text-gray-500">加载中...</div>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  {brands.map(brand => {
+                    const brandKey = brand.toLowerCase();
+                    const brandLabel = BRAND_MAP[brandKey] || brand;
+                    const isSelected = (formData.brand || defaultBrand).toLowerCase() === brandKey;
+                    return (
+                      <label
+                        key={brand}
+                        className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-blue-600 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="brand"
+                          value={brand}
+                          checked={isSelected}
+                          onChange={e => setFormData({ ...formData, brand: e.target.value })}
+                          className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="font-medium text-sm">{brandLabel}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('model')}</label>

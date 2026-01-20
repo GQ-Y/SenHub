@@ -6,18 +6,21 @@ import { CHART_DATA } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
 import { dashboardService, systemService } from '../src/api/services';
 
-const StatCard = ({ icon: Icon, label, value, trend, colorClass, bgClass }: any) => (
+const StatCard = ({ icon: Icon, label, value, trend, trendValue, colorClass, bgClass, subtitle }: any) => (
   <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300">
     <div className="flex items-center justify-between mb-4">
       <div className={`p-3 rounded-xl ${bgClass}`}>
         <Icon className={colorClass} size={24} />
       </div>
-      <span className={`text-xs font-semibold px-2 py-1 rounded-full ${trend === 'up' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-        {trend === 'up' ? '+2.5%' : '-1.2%'}
-      </span>
+      {trend && trendValue && (
+        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${trend === 'up' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+          {trend === 'up' ? '+' : '-'}{trendValue}
+        </span>
+      )}
     </div>
     <h3 className="text-3xl font-bold text-gray-800 mb-1">{value}</h3>
     <p className="text-sm text-gray-500 font-medium">{label}</p>
+    {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
   </div>
 );
 
@@ -29,6 +32,8 @@ export const Dashboard: React.FC = () => {
     onlineStatus: '0%',
     alerts24h: 0,
     storageUsed: '0 B',
+    storageTotal: '0 B',
+    storagePercent: '0.0%',
   });
   const [chartData, setChartData] = useState(CHART_DATA);
   const [isLoading, setIsLoading] = useState(true);
@@ -135,7 +140,6 @@ export const Dashboard: React.FC = () => {
           icon={Shield} 
           label={t('active_devices')}
           value={stats.activeDevices.toString()} 
-          trend="up" 
           colorClass="text-blue-600" 
           bgClass="bg-blue-50"
         />
@@ -143,7 +147,6 @@ export const Dashboard: React.FC = () => {
           icon={Wifi} 
           label={t('online_status')}
           value={stats.onlineStatus} 
-          trend="up" 
           colorClass="text-green-600" 
           bgClass="bg-green-50"
         />
@@ -151,7 +154,6 @@ export const Dashboard: React.FC = () => {
           icon={AlertTriangle} 
           label={t('alerts_24h')} 
           value={stats.alerts24h.toString()} 
-          trend="down" 
           colorClass="text-orange-600" 
           bgClass="bg-orange-50"
         />
@@ -159,7 +161,7 @@ export const Dashboard: React.FC = () => {
           icon={HardDrive} 
           label={t('storage_used')} 
           value={stats.storageUsed} 
-          trend="up" 
+          subtitle={stats.storageTotal ? `${stats.storagePercent} / ${stats.storageTotal}` : undefined}
           colorClass="text-purple-600" 
           bgClass="bg-purple-50"
         />
