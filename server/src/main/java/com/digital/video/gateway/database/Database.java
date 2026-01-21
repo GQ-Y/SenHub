@@ -200,6 +200,9 @@ public class Database {
 
             // 创建摄像头事件类型表
             CameraEventTypeTable.createTables(connection);
+            
+            // 创建标准事件表和品牌映射表
+            CanonicalEventTable.createTables(connection);
 
             logger.info("数据库表创建成功");
         }

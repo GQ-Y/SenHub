@@ -88,7 +88,12 @@ public class AlarmRuleController {
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
             rule.setFlowId((String) body.get("flowId"));
-            // 处理 eventTypeIds（JSON数组）
+            // 处理 eventKeys（标准事件键列表，JSON数组，优先使用）
+            Object eventKeys = body.get("eventKeys");
+            if (eventKeys != null) {
+                rule.setEventKeys(objectMapper.writeValueAsString(eventKeys));
+            }
+            // 兼容：处理 eventTypeIds（JSON数组，保留用于兼容旧规则）
             Object eventTypeIds = body.get("eventTypeIds");
             if (eventTypeIds != null) {
                 rule.setEventTypeIds(objectMapper.writeValueAsString(eventTypeIds));
@@ -129,7 +134,12 @@ public class AlarmRuleController {
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
             rule.setFlowId((String) body.get("flowId"));
-            // 处理 eventTypeIds（JSON数组）
+            // 处理 eventKeys（标准事件键列表，JSON数组，优先使用）
+            Object eventKeys = body.get("eventKeys");
+            if (eventKeys != null) {
+                rule.setEventKeys(objectMapper.writeValueAsString(eventKeys));
+            }
+            // 兼容：处理 eventTypeIds（JSON数组，保留用于兼容旧规则）
             Object eventTypeIds = body.get("eventTypeIds");
             if (eventTypeIds != null) {
                 rule.setEventTypeIds(objectMapper.writeValueAsString(eventTypeIds));

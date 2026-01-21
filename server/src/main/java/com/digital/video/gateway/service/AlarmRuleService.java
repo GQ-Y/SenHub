@@ -279,15 +279,15 @@ public class AlarmRuleService {
                 continue;
             }
             
-            // 3. 检查eventTypeIds（如果规则配置了事件类型ID列表，则必须匹配）
-            boolean eventTypeMatched = checkEventTypeIds(rule, alarmType);
-            if (!eventTypeMatched) {
-                logger.info("规则 {} 事件类型不匹配: eventTypeIds={}, alarmType={}", 
-                        rule.getName(), rule.getEventTypeIds(), alarmTypeDisplay);
+            // 3. 检查事件类型匹配（优先使用eventKeys，兼容eventTypeIds）
+            boolean eventMatched = checkEventMatch(rule, alarmType);
+            if (!eventMatched) {
+                logger.info("规则 {} 事件类型不匹配: eventKeys={}, eventTypeIds={}, alarmType={}", 
+                        rule.getName(), rule.getEventKeys(), rule.getEventTypeIds(), alarmTypeDisplay);
                 continue;
             } else {
-                logger.debug("规则 {} 事件类型匹配: eventTypeIds={}, alarmType={}", 
-                        rule.getName(), rule.getEventTypeIds(), alarmTypeDisplay);
+                logger.debug("规则 {} 事件类型匹配: eventKeys={}, eventTypeIds={}, alarmType={}", 
+                        rule.getName(), rule.getEventKeys(), rule.getEventTypeIds(), alarmTypeDisplay);
             }
             
             // 4. 检查conditions条件
@@ -328,71 +328,126 @@ public class AlarmRuleService {
     }
 
     /**
-     * 检查事件类型ID是否匹配
-     * 如果规则配置了eventTypeIds，则报警类型必须在该列表中
+     * 检查事件类型是否匹配
+     * 只使用eventKeys（标准事件键）进行匹配
+     * 如果规则只有eventTypeIds，会自动转换为eventKeys
      */
-    private boolean checkEventTypeIds(AlarmRule rule, String alarmType) {
-        // 如果规则没有配置eventTypeIds，则匹配所有事件类型（兼容旧规则）
-        String eventTypeIdsStr = rule.getEventTypeIds();
-        if (eventTypeIdsStr == null || eventTypeIdsStr.isEmpty() || eventTypeIdsStr.trim().equals("null")) {
-            return true; // 没有配置eventTypeIds，匹配所有
+    private boolean checkEventMatch(AlarmRule rule, String alarmType) {
+        // alarmType应该是eventKey格式（由EventResolver解析后传入）
+        if (alarmType == null || alarmType.isEmpty()) {
+            return false;
         }
+        
+        // 获取规则的eventKeys（如果规则只有eventTypeIds，需要转换）
+        List<String> ruleEventKeys = getRuleEventKeys(rule);
+        
+        if (ruleEventKeys == null || ruleEventKeys.isEmpty()) {
+            // 既没有eventKeys也没有eventTypeIds，匹配所有事件类型
+            logger.debug("规则 {} 未配置事件类型，匹配所有事件: alarmType={}", rule.getName(), alarmType);
+            return true;
+        }
+        
+        // 直接匹配eventKey
+        boolean matched = ruleEventKeys.contains(alarmType);
+        if (matched) {
+            logger.info("eventKeys匹配: eventKey={}, ruleEventKeys={}", alarmType, ruleEventKeys);
+        } else {
+            logger.info("eventKeys不匹配: eventKey={}, ruleEventKeys={}", alarmType, ruleEventKeys);
+        }
+        return matched;
+    }
+    
+    /**
+     * 获取规则的事件键列表
+     * 如果规则配置了eventKeys，直接返回
+     * 如果规则只有eventTypeIds，将其转换为eventKeys
+     */
+    private List<String> getRuleEventKeys(AlarmRule rule) {
+        // 优先使用eventKeys
+        String eventKeysStr = rule.getEventKeys();
+        if (eventKeysStr != null && !eventKeysStr.isEmpty() && !eventKeysStr.trim().equals("null")) {
+            try {
+                List<String> eventKeys = objectMapper.readValue(eventKeysStr, 
+                        new TypeReference<List<String>>() {});
+                if (eventKeys != null && !eventKeys.isEmpty()) {
+                    return eventKeys;
+                }
+            } catch (Exception e) {
+                logger.error("解析eventKeys失败: ruleId={}, eventKeys={}", rule.getRuleId(), eventKeysStr, e);
+            }
+        }
+        
+        // 如果没有eventKeys，尝试从eventTypeIds转换
+        String eventTypeIdsStr = rule.getEventTypeIds();
+        if (eventTypeIdsStr != null && !eventTypeIdsStr.isEmpty() && !eventTypeIdsStr.trim().equals("null")) {
+            return convertEventTypeIdsToEventKeys(eventTypeIdsStr);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 将eventTypeIds转换为eventKeys
+     * 通过camera_event_types表找到对应的brand和event_code，然后通过brand_event_mapping找到eventKey
+     */
+    private List<String> convertEventTypeIdsToEventKeys(String eventTypeIdsStr) {
+        List<String> eventKeys = new ArrayList<>();
         
         try {
             // 解析eventTypeIds JSON数组
             List<Integer> eventTypeIds = objectMapper.readValue(eventTypeIdsStr, 
                     new TypeReference<List<Integer>>() {});
             if (eventTypeIds == null || eventTypeIds.isEmpty()) {
-                return true; // 空列表，匹配所有（虽然不应该出现）
+                return eventKeys;
             }
             
-            // 从alarmType解析品牌和事件代码（如"Tiandy_Alarm_6" -> brand=tiandy, code=6）
-            String[] parts = alarmType.split("_");
-            if (parts.length < 3 || !parts[1].equalsIgnoreCase("Alarm")) {
-                logger.debug("无法解析报警类型: {}", alarmType);
-                return false; // 无法解析，不匹配
-            }
-            
-            String brand = parts[0].toLowerCase();
-            int eventCode;
-            try {
-                eventCode = Integer.parseInt(parts[2]);
-            } catch (NumberFormatException e) {
-                logger.debug("报警类型事件代码解析失败: {}", alarmType);
-                return false;
-            }
-            
-            // 查询camera_event_types表，根据品牌和事件代码获取事件类型ID
             try (Connection conn = database.getConnection()) {
-                String sql = "SELECT id FROM camera_event_types WHERE brand = ? AND event_code = ? LIMIT 1";
-                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                    pstmt.setString(1, brand);
-                    pstmt.setInt(2, eventCode);
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        if (rs.next()) {
-                            int eventTypeId = rs.getInt("id");
-                            // 检查事件类型ID是否在规则的eventTypeIds列表中
-                            boolean matched = eventTypeIds.contains(eventTypeId);
-                            if (!matched) {
-                                logger.info("事件类型ID不匹配: eventTypeId={}, ruleEventTypeIds={}, alarmType={}, brand={}, eventCode={}", 
-                                        eventTypeId, eventTypeIds, alarmType, brand, eventCode);
-                            } else {
-                                logger.debug("事件类型ID匹配: eventTypeId={}, ruleEventTypeIds={}, alarmType={}", 
-                                        eventTypeId, eventTypeIds, alarmType);
+                // 对于每个eventTypeId，查找对应的eventKey
+                for (Integer eventTypeId : eventTypeIds) {
+                    // 通过camera_event_types找到brand和event_code
+                    String sql = "SELECT brand, event_code FROM camera_event_types WHERE id = ? LIMIT 1";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                        pstmt.setInt(1, eventTypeId);
+                        try (ResultSet rs = pstmt.executeQuery()) {
+                            if (rs.next()) {
+                                String brand = rs.getString("brand");
+                                int eventCode = rs.getInt("event_code");
+                                
+                                // 通过brand_event_mapping找到对应的eventKey
+                                // 注意：同一个brand+eventCode可能对应多个source_kind（如alarm_type和vca_event），
+                                // 我们需要找到所有匹配的eventKey
+                                String sql2 = "SELECT DISTINCT event_key FROM brand_event_mapping " +
+                                        "WHERE brand = ? AND source_code = ? AND enabled = 1";
+                                try (PreparedStatement pstmt2 = conn.prepareStatement(sql2)) {
+                                    pstmt2.setString(1, brand);
+                                    pstmt2.setInt(2, eventCode);
+                                    try (ResultSet rs2 = pstmt2.executeQuery()) {
+                                        while (rs2.next()) {
+                                            String eventKey = rs2.getString("event_key");
+                                            if (eventKey != null && !eventKey.isEmpty() && !eventKeys.contains(eventKey)) {
+                                                eventKeys.add(eventKey);
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            return matched;
-                        } else {
-                            logger.info("未找到对应的事件类型: brand={}, eventCode={}, alarmType={}", brand, eventCode, alarmType);
-                            return false; // 未找到对应的事件类型，不匹配
                         }
                     }
                 }
             }
+            
+            if (!eventKeys.isEmpty()) {
+                logger.info("将eventTypeIds转换为eventKeys: eventTypeIds={}, eventKeys={}", eventTypeIds, eventKeys);
+            } else {
+                logger.warn("eventTypeIds转换后未找到对应的eventKeys: eventTypeIds={}", eventTypeIds);
+            }
         } catch (Exception e) {
-            logger.error("检查事件类型ID失败: ruleId={}, alarmType={}", rule.getRuleId(), alarmType, e);
-            return false; // 出错时不匹配，确保安全
+            logger.error("转换eventTypeIds到eventKeys失败: eventTypeIds={}", eventTypeIdsStr, e);
         }
+        
+        return eventKeys;
     }
+    
     
     /**
      * 检查规则条件

@@ -167,36 +167,50 @@ public class AlarmService {
             return;
         }
         
+        // 使用EventResolver解析标准事件（兼容旧alarmType字符串格式）
+        String eventKey = null;
+        String eventNameZh = null;
+        String eventNameEn = null;
+        String category = null;
+        String alarmTypeDisplay = alarmType;
+        String alarmTypeName = null; // 纯中文名称（不含原始alarmType）
+        
+        if (eventResolver != null) {
+            try {
+                EventResolver.ResolveResult result = eventResolver.resolveFromAlarmTypeString(alarmType);
+                if (result != null) {
+                    eventKey = result.getEventKey();
+                    eventNameZh = result.getEventNameZh();
+                    eventNameEn = result.getEventNameEn();
+                    category = result.getCategory();
+                    alarmTypeDisplay = eventNameZh + "(" + alarmType + ")";
+                    alarmTypeName = eventNameZh;
+                    logger.info("事件解析成功: alarmType={}, eventKey={}, eventNameZh={}", 
+                            alarmType, eventKey, eventNameZh);
+                } else {
+                    logger.warn("事件解析失败，使用原始alarmType: alarmType={}", alarmType);
+                }
+            } catch (Exception e) {
+                logger.error("事件解析异常: alarmType={}", alarmType, e);
+            }
+        } else {
+            logger.warn("eventResolver为null，无法解析事件类型");
+        }
+        
         // 报警防抖检查：同一设备同一类型报警在防抖间隔内只处理一次
-        String debounceKey = deviceId + ":" + alarmType;
+        // 使用eventKey（如果可用）作为防抖key，确保相同标准事件不会重复触发
+        String debounceKey = deviceId + ":" + (eventKey != null ? eventKey : alarmType);
         long now = System.currentTimeMillis();
         Long lastTime = lastAlarmTime.get(debounceKey);
         if (lastTime != null && (now - lastTime) < alarmDebounceIntervalMs) {
-            logger.debug("报警防抖，跳过处理: deviceId={}, alarmType={}, 距上次处理: {}ms, 防抖间隔: {}ms", 
-                    deviceId, alarmType, now - lastTime, alarmDebounceIntervalMs);
+            logger.debug("报警防抖，跳过处理: deviceId={}, eventKey={}, alarmType={}, 距上次处理: {}ms, 防抖间隔: {}ms", 
+                    deviceId, eventKey, alarmType, now - lastTime, alarmDebounceIntervalMs);
             return;
         }
         lastAlarmTime.put(debounceKey, now);
         
-        // 获取事件类型的中文名称用于日志
-        String alarmTypeDisplay = alarmType;
-        String alarmTypeName = null; // 纯中文名称（不含原始alarmType）
-        try {
-            if (database != null) {
-                try (Connection conn = database.getConnection()) {
-                    String eventName = com.digital.video.gateway.database.CameraEventTypeTable.getEventNameByAlarmType(conn, alarmType);
-                    if (eventName != null && !eventName.equals(alarmType)) {
-                        alarmTypeDisplay = eventName + "(" + alarmType + ")";
-                        alarmTypeName = eventName; // 保存纯中文名称供WebhookHandler使用
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // 忽略错误，使用原始alarmType
-        }
-        
-        logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, message={}", 
-            deviceId, channel, alarmTypeDisplay, alarmMessage);
+        logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, eventKey={}, message={}", 
+            deviceId, channel, alarmTypeDisplay, eventKey, alarmMessage);
         
         try {
             // 获取设备信息
@@ -224,18 +238,20 @@ public class AlarmService {
                 }
             }
             
-            // 匹配规则
+            // 匹配规则（使用eventKey，如果可用）
             List<AlarmRule> matchedRules = new ArrayList<>();
             if (alarmRuleService != null) {
-                matchedRules = alarmRuleService.matchRules(deviceId, assemblyId, alarmType, alarmData, alarmTypeDisplay);
-                logger.info("匹配到 {} 条规则: deviceId={}, alarmType={}", matchedRules.size(), deviceId, alarmTypeDisplay);
+                String matchKey = eventKey != null ? eventKey : alarmType;
+                matchedRules = alarmRuleService.matchRules(deviceId, assemblyId, matchKey, alarmData, alarmTypeDisplay);
+                logger.info("匹配到 {} 条规则: deviceId={}, eventKey={}, alarmType={}", 
+                        matchedRules.size(), deviceId, eventKey, alarmTypeDisplay);
             }
             
             // 创建报警记录
             AlarmRecord alarmRecord = new AlarmRecord();
             alarmRecord.setDeviceId(deviceId);
             alarmRecord.setAssemblyId(assemblyId);
-            alarmRecord.setAlarmType(alarmType);
+            alarmRecord.setAlarmType(eventKey != null ? eventKey : alarmType); // 优先使用eventKey
             alarmRecord.setAlarmLevel("warning");
             alarmRecord.setChannel(channel);
             if (alarmData != null) {
@@ -249,13 +265,21 @@ public class AlarmService {
             
             String captureUrl = null;
             String videoUrl = null;
-            FlowContext baseContext = buildFlowContext(deviceId, assemblyId, alarmType, alarmMessage, channel, alarmData);
-            // 将中文事件名称放入context，供WebhookHandler使用
+            FlowContext baseContext = buildFlowContext(deviceId, assemblyId, eventKey != null ? eventKey : alarmType, 
+                    alarmMessage, channel, alarmData);
+            // 将标准事件信息放入context，供WebhookHandler使用
+            if (eventKey != null) {
+                baseContext.putVariable("eventKey", eventKey);
+                baseContext.putVariable("eventNameZh", eventNameZh);
+                baseContext.putVariable("eventNameEn", eventNameEn);
+                baseContext.putVariable("category", category);
+                baseContext.putVariable("originalAlarmType", alarmType);
+                logger.info("已设置标准事件信息到context: eventKey={}, eventNameZh={}, originalAlarmType={}", 
+                        eventKey, eventNameZh, alarmType);
+            }
             if (alarmTypeName != null) {
                 baseContext.putVariable("alarmTypeName", alarmTypeName);
                 logger.info("已设置alarmTypeName到context: {} (原始: {})", alarmTypeName, alarmType);
-            } else {
-                logger.warn("alarmTypeName为null，无法设置中文名称: alarmType={}", alarmType);
             }
             
             // 执行规则动作
@@ -344,9 +368,13 @@ public class AlarmService {
     
     // 临时字段，用于访问database
     private com.digital.video.gateway.database.Database database;
+    private EventResolver eventResolver;
     
     public void setDatabase(com.digital.video.gateway.database.Database database) {
         this.database = database;
+        if (database != null) {
+            this.eventResolver = new EventResolver(database);
+        }
     }
 
     private FlowContext buildFlowContext(String deviceId, String assemblyId, String alarmType,

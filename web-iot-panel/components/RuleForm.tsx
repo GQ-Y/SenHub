@@ -22,9 +22,16 @@ const EventTypeToggle: React.FC<{
   return (
     <label className="flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-lg cursor-pointer">
       <div className="flex-1 min-w-0">
-        <span className="text-sm text-gray-800">{event.eventName}</span>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-800">{event.eventName}</span>
+          {event.eventKey && (
+            <span className="text-xs text-gray-400 px-1.5 py-0.5 bg-gray-100 rounded">
+              {event.eventKey}
+            </span>
+          )}
+        </div>
         {event.description && (
-          <span className="text-xs text-gray-400 ml-2">({event.description})</span>
+          <span className="text-xs text-gray-400 ml-2 block mt-0.5">{event.description}</span>
         )}
       </div>
       <button
@@ -55,13 +62,16 @@ const BrandEventGroup: React.FC<{
 }> = ({ brand, brandLabel, events, selectedIds, onToggle }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   
-  // 按类别分组
+  // 按类别和sourceKind分组（优先按sourceKind分组，以便区分基础报警和智能分析）
   const groupedEvents = useMemo(() => {
     const groups: Record<string, CameraEventType[]> = {};
     events.forEach(event => {
-      const category = event.category || 'basic';
-      if (!groups[category]) groups[category] = [];
-      groups[category].push(event);
+      // 优先使用sourceKind来分组，如果没有则使用category
+      const groupKey = event.sourceKind 
+        ? `${event.category}_${event.sourceKind}` 
+        : event.category || 'basic';
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(event);
     });
     return groups;
   }, [events]);
@@ -113,14 +123,31 @@ const BrandEventGroup: React.FC<{
 };
 
 // 获取类别标签
-const getCategoryLabel = (category: string): string => {
-  const labels: Record<string, string> = {
+const getCategoryLabel = (groupKey: string): string => {
+  // 处理格式：category_sourceKind 或 category
+  const parts = groupKey.split('_');
+  const category = parts[0];
+  const sourceKind = parts[1];
+  
+  const categoryLabels: Record<string, string> = {
     basic: '基础事件',
     vca: '智能分析',
     face: '人脸识别',
     its: '交通事件',
   };
-  return labels[category] || category;
+  
+  const sourceKindLabels: Record<string, string> = {
+    alarm_type: '基础报警',
+    vca_event: '智能分析事件',
+    command: '命令事件',
+  };
+  
+  let label = categoryLabels[category] || category;
+  if (sourceKind && sourceKindLabels[sourceKind]) {
+    label += ` (${sourceKindLabels[sourceKind]})`;
+  }
+  
+  return label;
 };
 
 export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flows = [], eventTypes = {} }) => {

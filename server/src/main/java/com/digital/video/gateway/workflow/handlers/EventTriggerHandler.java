@@ -51,7 +51,12 @@ public class EventTriggerHandler implements FlowNodeHandler {
         }
         
         String deviceId = context.getDeviceId();
-        String alarmType = (String) context.getVariables().get("alarmType");
+        // 优先使用eventKey（标准事件键），兼容alarmType（旧格式）
+        String eventKey = (String) context.getVariables().get("eventKey");
+        String alarmType = eventKey != null ? eventKey : (String) context.getVariables().get("alarmType");
+        if (alarmType == null) {
+            alarmType = context.getAlarmType(); // 回退到context的alarmType字段
+        }
         String flowId = context.getFlowId();
         
         if (deviceId == null) {
@@ -59,8 +64,20 @@ public class EventTriggerHandler implements FlowNodeHandler {
             return false;
         }
         
-        // 检查是否有报警类型过滤
-        if (cfg != null && cfg.get("alarmTypes") != null) {
+        // 检查是否有事件类型过滤（支持eventKeys和alarmTypes两种配置）
+        if (cfg != null) {
+            // 优先检查eventKeys（标准事件键列表）
+            Object eventKeysObj = cfg.get("eventKeys");
+            if (eventKeysObj instanceof java.util.List) {
+                @SuppressWarnings("unchecked")
+                java.util.List<String> allowedEventKeys = (java.util.List<String>) eventKeysObj;
+                if (!allowedEventKeys.isEmpty() && !allowedEventKeys.contains(eventKey != null ? eventKey : alarmType)) {
+                    logger.debug("事件触发器: 事件键 {} 不在监听列表中，跳过", eventKey != null ? eventKey : alarmType);
+                    return false;
+                }
+            }
+            
+            // 兼容：检查alarmTypes（旧配置）
             Object alarmTypesObj = cfg.get("alarmTypes");
             if (alarmTypesObj instanceof java.util.List) {
                 @SuppressWarnings("unchecked")
@@ -73,11 +90,12 @@ public class EventTriggerHandler implements FlowNodeHandler {
         }
         
         // 防抖检查
-        // 防抖key：如果alarmType为null，则只按flowId和deviceId防抖（同一设备的所有报警类型共享防抖）
-        // 如果alarmType不为null，则按flowId、deviceId和alarmType防抖（不同报警类型独立防抖）
+        // 防抖key：优先使用eventKey（标准事件键），如果没有则使用alarmType
+        // 如果alarmType为null，则只按flowId和deviceId防抖（同一设备的所有报警类型共享防抖）
         String debounceKey;
-        if (alarmType != null && !alarmType.isEmpty()) {
-            debounceKey = flowId + ":" + deviceId + ":" + alarmType;
+        String debounceEventKey = eventKey != null ? eventKey : alarmType;
+        if (debounceEventKey != null && !debounceEventKey.isEmpty()) {
+            debounceKey = flowId + ":" + deviceId + ":" + debounceEventKey;
         } else {
             // alarmType为null时，按设备防抖（所有报警类型共享）
             debounceKey = flowId + ":" + deviceId;
@@ -98,8 +116,8 @@ public class EventTriggerHandler implements FlowNodeHandler {
         // 更新触发时间
         lastTriggerTime.put(debounceKey, now);
         
-        logger.info("事件触发器通过: flowId={}, deviceId={}, alarmType={}, 防抖间隔={}秒, 防抖key={}",
-                flowId, deviceId, alarmType, debounceSeconds, debounceKey);
+        logger.info("事件触发器通过: flowId={}, deviceId={}, eventKey={}, alarmType={}, 防抖间隔={}秒, 防抖key={}",
+                flowId, deviceId, eventKey, alarmType, debounceSeconds, debounceKey);
         
         return true;
     }

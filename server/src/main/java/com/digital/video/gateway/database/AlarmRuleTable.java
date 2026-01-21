@@ -61,7 +61,7 @@ public class AlarmRuleTable {
                 }
             }
 
-            // 兼容旧表：新增event_type_ids列
+            // 兼容旧表：新增event_type_ids列（保留用于兼容）
             try {
                 stmt.executeQuery("SELECT event_type_ids FROM alarm_rules LIMIT 1");
             } catch (SQLException e) {
@@ -73,6 +73,27 @@ public class AlarmRuleTable {
                     logger.debug("添加event_type_ids列失败（可能已存在）: {}", ex.getMessage());
                 }
             }
+            
+            // 新增event_keys列（标准事件键列表，JSON数组）
+            try {
+                stmt.executeQuery("SELECT event_keys FROM alarm_rules LIMIT 1");
+            } catch (SQLException e) {
+                logger.info("检测到缺少event_keys列，正在添加...");
+                try {
+                    stmt.execute("ALTER TABLE alarm_rules ADD COLUMN event_keys TEXT");
+                    logger.info("已添加event_keys列");
+                } catch (SQLException ex) {
+                    logger.debug("添加event_keys列失败（可能已存在）: {}", ex.getMessage());
+                }
+            }
+            
+            // 为event_keys创建索引
+            try {
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_alarm_rules_event_keys ON alarm_rules(event_keys)");
+            } catch (SQLException ex) {
+                logger.debug("创建event_keys索引失败（可能已存在）: {}", ex.getMessage());
+            }
+            
             logger.info("报警规则表创建成功");
         }
     }

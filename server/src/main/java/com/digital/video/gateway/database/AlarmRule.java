@@ -22,7 +22,8 @@ public class AlarmRule {
     private String actions; // JSON string
     private String conditions; // JSON string
     private String flowId; // 关联的流程定义
-    private String eventTypeIds; // 选中的事件类型ID列表（JSON数组）
+    private String eventTypeIds; // 选中的事件类型ID列表（JSON数组，保留用于兼容）
+    private String eventKeys; // 选中的标准事件键列表（JSON数组，如 ["PERIMETER_INTRUSION", "MOTION_DETECTION"]）
     private Timestamp createdAt;
     private Timestamp updatedAt;
 
@@ -65,6 +66,9 @@ public class AlarmRule {
 
     public String getEventTypeIds() { return eventTypeIds; }
     public void setEventTypeIds(String eventTypeIds) { this.eventTypeIds = eventTypeIds; }
+    
+    public String getEventKeys() { return eventKeys; }
+    public void setEventKeys(String eventKeys) { this.eventKeys = eventKeys; }
 
     public Timestamp getCreatedAt() { return createdAt; }
     public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
@@ -98,6 +102,11 @@ public class AlarmRule {
         } catch (SQLException ignore) {
             // 兼容旧表
         }
+        try {
+            rule.setEventKeys(rs.getString("event_keys"));
+        } catch (SQLException ignore) {
+            // 兼容旧表
+        }
         rule.setCreatedAt(rs.getTimestamp("created_at"));
         rule.setUpdatedAt(rs.getTimestamp("updated_at"));
         return rule;
@@ -121,6 +130,7 @@ public class AlarmRule {
         map.put("conditions", conditions);
         map.put("flowId", flowId);
         map.put("eventTypeIds", eventTypeIds);
+        map.put("eventKeys", eventKeys);
         if (createdAt != null) map.put("createdAt", createdAt.toString());
         if (updatedAt != null) map.put("updatedAt", updatedAt.toString());
         return map;

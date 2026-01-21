@@ -210,4 +210,14 @@ public interface NvssdkLibrary extends Library {
     interface FULLFRAME_NOTIFY_V4 extends com.sun.jna.Callback {
         void apply(int iConnectID, int iStreamType, Pointer pcData, int iLen, Pointer pvHeader, Pointer pvUserData);
     }
+
+    // 智能分析报警信息获取接口
+    // 当iAlarmType为6或9时，需要通过此接口获取具体的智能分析事件类型
+    // 参数：
+    //   _iLogonID: 登录句柄
+    //   _iAlarmIndex: 报警索引（通常为通道号）
+    //   _lpBuf: 输出缓冲区，用于接收CurVcaAlarmInfo结构体
+    //   _iBufSize: 缓冲区大小
+    // 返回：0-成功，其他-失败
+    int NetClient_VCAGetAlarmInfo(int _iLogonID, int _iAlarmIndex, Pointer _lpBuf, int _iBufSize);
 }

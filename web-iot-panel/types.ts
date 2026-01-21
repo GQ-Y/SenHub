@@ -131,6 +131,9 @@ export interface CameraEventType {
   category: 'basic' | 'vca' | 'face' | 'its';
   description?: string;
   enabled?: boolean;
+  // 新字段：支持标准事件映射
+  sourceKind?: string; // 事件来源类型：'alarm_type' | 'vca_event' | 'command' 等
+  eventKey?: string; // 标准事件键（如 'ALARM_INPUT', 'PERIMETER_INTRUSION' 等）
 }
 
 // 规则范围枚举

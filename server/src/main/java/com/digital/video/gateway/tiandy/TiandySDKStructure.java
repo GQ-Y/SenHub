@@ -96,6 +96,29 @@ public class TiandySDKStructure {
     }
 
     /**
+     * 智能分析报警信息结构体
+     * 用于NetClient_VCAGetAlarmInfo接口返回
+     * 参考：NetClientTypes.h中的vca_TAlarmInfo（示例代码使用）和net_sdk_types.h中的tagCurVcaAlarmInfo
+     * 注意：示例代码使用vca_TAlarmInfo，但SDK头文件定义的是CurVcaAlarmInfo
+     * 这里使用vca_TAlarmInfo的简化版本，因为示例代码中明确使用了这个结构体
+     */
+    public static class VcaTAlarmInfo extends Structure {
+        public int iID; // 报警消息ID，用于获取具体信息
+        public int iChannel; // 通道号
+        public int iState; // 报警状态 1-报警，0-消警
+        public int iEventType; // 事件类型 0-单绊线越界 1-双绊线越界 2-周界检测 3-徘徊 4-停车 5-奔跑
+                              // 6-区域人员密度 7-物品遗留 8-物品丢失 9-人脸识别 10-视频诊断
+                              // 11-智能跟踪 12-流量统计 13-人群聚集 14-离岗检测 15-音频诊断
+        public int iRuleID; // 规则ID
+        public int uiTargetID; // 目标ID
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("iID", "iChannel", "iState", "iEventType", "iRuleID", "uiTargetID");
+        }
+    }
+
+    /**
      * 网络客户端参数结构体
      * 用于同步预览接口
      */

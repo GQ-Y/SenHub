@@ -158,7 +158,68 @@ public class TiandySDK implements DeviceSDK {
                             String alarmTypeStr = "Tiandy_Alarm_" + iAlarmType;
                             String alarmMessage = String.format("天地伟业报警: device=%s, channel=%d, state=%d, type=%d",
                                     deviceId, iChan, iAlarmState, iAlarmType);
-                            TiandySDK.this.alarmService.handleAlarm(deviceId, iChan, alarmTypeStr, alarmMessage);
+                            
+                            // 如果是智能分析报警（iAlarmType=6或9），尝试获取具体的事件类型
+                            if (iAlarmType == 6 || iAlarmType == 9) {
+                                try {
+                                    if (TiandySDK.this.nvssdkLibrary != null) {
+                                        // 使用通道号作为报警索引（根据SDK文档，iAlarmIndex应该是通道号）
+                                        // 注意：示例代码中使用iAlarmState作为索引，但根据SDK文档，应该使用通道号
+                                        TiandySDKStructure.VcaTAlarmInfo vcaAlarmInfo = new TiandySDKStructure.VcaTAlarmInfo();
+                                        int result = TiandySDK.this.nvssdkLibrary.NetClient_VCAGetAlarmInfo(ulLogonID, iChan, vcaAlarmInfo.getPointer(), vcaAlarmInfo.size());
+                                        if (result == 0) {
+                                            vcaAlarmInfo.read();
+                                            int eventType = vcaAlarmInfo.iEventType;
+                                            logger.info("获取智能分析报警详细信息: logonID={}, channel={}, alarmType={}, eventType={}, ruleID={}, targetID={}", 
+                                                    ulLogonID, iChan, iAlarmType, eventType, vcaAlarmInfo.iRuleID, vcaAlarmInfo.uiTargetID);
+                                            
+                                            // 根据eventType构建更精确的alarmType（如Tiandy_Alarm_102表示周界入侵）
+                                            // 注意：eventType是智能分析事件代码（如0-单绊线越界，2-周界入侵），不是iAlarmType
+                                            // 但为了保持一致性，我们使用eventType来构建alarmType
+                                            // 注意：eventType的值范围是0-15（基础事件）或100+（扩展事件），需要根据实际情况映射
+                                            if (eventType >= 0) {
+                                                // 如果eventType是基础事件（0-15），直接使用；如果是扩展事件（100+），也直接使用
+                                                alarmTypeStr = "Tiandy_Alarm_" + eventType;
+                                                alarmMessage = String.format("天地伟业智能分析报警: device=%s, channel=%d, state=%d, alarmType=%d, eventType=%d, ruleID=%d, targetID=%d",
+                                                        deviceId, iChan, iAlarmState, iAlarmType, eventType, vcaAlarmInfo.iRuleID, vcaAlarmInfo.uiTargetID);
+                                            }
+                                        } else {
+                                            logger.warn("获取智能分析报警信息失败: logonID={}, channel={}, alarmType={}, result={}, 尝试使用iAlarmState作为索引", 
+                                                    ulLogonID, iChan, iAlarmType, result);
+                                            // 如果使用通道号失败，尝试使用iAlarmState作为索引（如示例代码所示）
+                                            vcaAlarmInfo = new TiandySDKStructure.VcaTAlarmInfo();
+                                            result = TiandySDK.this.nvssdkLibrary.NetClient_VCAGetAlarmInfo(ulLogonID, iAlarmState, vcaAlarmInfo.getPointer(), vcaAlarmInfo.size());
+                                            if (result == 0) {
+                                                vcaAlarmInfo.read();
+                                                int eventType = vcaAlarmInfo.iEventType;
+                                                logger.info("使用iAlarmState作为索引成功获取智能分析报警信息: logonID={}, channel={}, alarmType={}, eventType={}, ruleID={}", 
+                                                        ulLogonID, iChan, iAlarmType, eventType, vcaAlarmInfo.iRuleID);
+                                                if (eventType >= 0) {
+                                                    alarmTypeStr = "Tiandy_Alarm_" + eventType;
+                                                    alarmMessage = String.format("天地伟业智能分析报警: device=%s, channel=%d, state=%d, alarmType=%d, eventType=%d, ruleID=%d",
+                                                            deviceId, iChan, iAlarmState, iAlarmType, eventType, vcaAlarmInfo.iRuleID);
+                                                }
+                                            } else {
+                                                logger.warn("使用iAlarmState作为索引也失败: logonID={}, channel={}, alarmType={}, result={}", 
+                                                        ulLogonID, iChan, iAlarmType, result);
+                                            }
+                                        }
+                                    } else {
+                                        logger.warn("nvssdkLibrary未初始化，无法获取智能分析报警详细信息: logonID={}, channel={}, alarmType={}", 
+                                                ulLogonID, iChan, iAlarmType);
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("调用NetClient_VCAGetAlarmInfo异常: logonID={}, channel={}, alarmType={}", 
+                                            ulLogonID, iChan, iAlarmType, e);
+                                }
+                            }
+                            
+                            // 使用EventResolver解析标准事件（如果可用）
+                            if (TiandySDK.this.alarmService != null) {
+                                // 直接调用handleAlarm，AlarmService内部会使用EventResolver解析
+                                // 但为了更好的性能，我们也可以在这里直接解析并传递eventKey
+                                TiandySDK.this.alarmService.handleAlarm(deviceId, iChan, alarmTypeStr, alarmMessage);
+                            }
                         }
                     } catch (Exception e) {
                         logger.error("处理天地伟业报警回调异常", e);
