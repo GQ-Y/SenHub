@@ -35,6 +35,16 @@ public class LivoxJNI {
             // 尝试从项目目录加载
             File libFile = new File(libDir, libName);
             if (libFile.exists()) {
+                // 在加载JNI库之前，先设置库路径，确保能找到依赖库（liblivox_lidar_sdk_shared.so）
+                String currentLibPath = System.getProperty("java.library.path");
+                String newLibPath = libDir;
+                if (currentLibPath != null && !currentLibPath.isEmpty()) {
+                    newLibPath = libDir + ":" + currentLibPath;
+                }
+                System.setProperty("java.library.path", newLibPath);
+                log.debug("设置java.library.path: {}", newLibPath);
+                
+                // 加载JNI库
                 System.load(libFile.getAbsolutePath());
                 log.info("已加载 Livox JNI 库: {}", libFile.getAbsolutePath());
             } else {
