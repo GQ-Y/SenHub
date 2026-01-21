@@ -124,8 +124,8 @@ public class Main {
         logger.info("启动综合性数字视频监控网关预警系统...");
 
         try {
-            // 0. 清理旧日志（在加载配置之前，先清理默认路径）
-            logger.info("正在清理旧日志文件...");
+            // 0. 清理旧日志（在logback初始化之前清理，避免删除正在使用的日志文件）
+            // 注意：logback在类加载时就会初始化，所以这里只清理旧的滚动日志文件
             int cleanedCount = LogCleaner.cleanAllLogs("./logs", "./sdkLog");
             
             // 1. 加载配置
@@ -157,8 +157,6 @@ public class Main {
             
             if (cleanedCount > 0) {
                 logger.info("已清理 {} 个旧日志文件", cleanedCount);
-            } else {
-                logger.info("无需清理的日志文件");
             }
 
             // 2. 初始化多品牌SDK工厂

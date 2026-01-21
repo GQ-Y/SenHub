@@ -35,6 +35,12 @@ public class LogCleaner {
                     .filter(Files::isRegularFile)
                     .filter(path -> {
                         String fileName = path.getFileName().toString();
+                        // 只清理旧的滚动日志文件，不删除当前正在使用的日志文件
+                        // 保留 app.log 和 sdk.log（当前日志文件）
+                        if (fileName.equals("app.log") || fileName.equals("sdk.log")) {
+                            return false;
+                        }
+                        // 清理旧的滚动日志文件（带日期后缀的）
                         return fileName.endsWith(".log") || 
                                fileName.endsWith(".log.gz") ||
                                fileName.endsWith(".log.zip");
