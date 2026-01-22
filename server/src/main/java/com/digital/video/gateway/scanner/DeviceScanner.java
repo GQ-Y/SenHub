@@ -3,6 +3,7 @@ package com.digital.video.gateway.scanner;
 import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.database.DeviceInfo;
+import com.digital.video.gateway.device.DeviceManager;
 import com.digital.video.gateway.hikvision.HCNetSDK;
 import com.digital.video.gateway.hikvision.HikvisionSDK;
 import com.sun.jna.Pointer;
@@ -27,6 +28,7 @@ public class DeviceScanner {
     private static final Logger logger = LoggerFactory.getLogger(DeviceScanner.class);
     private HikvisionSDK sdk;
     private Database database;
+    private DeviceManager deviceManager;
     private Config.ScannerConfig config;
     private Config.DeviceConfig deviceConfig;
     private int listenHandle = -1;
@@ -39,10 +41,11 @@ public class DeviceScanner {
     private static final int NET_DVR_DEVICE_ADD = 0x1000; // 设备上线
     private static final int NET_DVR_DEVICE_OFFLINE = 0x1001; // 设备离线
 
-    public DeviceScanner(HikvisionSDK sdk, Database database, Config.ScannerConfig scannerConfig,
-            Config.DeviceConfig deviceConfig) {
+    public DeviceScanner(HikvisionSDK sdk, Database database, DeviceManager deviceManager,
+            Config.ScannerConfig scannerConfig, Config.DeviceConfig deviceConfig) {
         this.sdk = sdk;
         this.database = database;
+        this.deviceManager = deviceManager;
         this.config = scannerConfig;
         this.deviceConfig = deviceConfig;
     }
@@ -129,6 +132,7 @@ public class DeviceScanner {
 
     /**
      * 处理发现的设备
+     * 必须登录成功后才保存到数据库
      */
     private void handleDeviceFound(String ip, int port, String deviceName) {
         // 如果配置了网段过滤，检查发现的设备 IP 是否在网段内
@@ -151,28 +155,70 @@ public class DeviceScanner {
                 return;
             }
 
-            // 创建新设备信息
-            DeviceInfo device = new DeviceInfo();
-            device.setDeviceId(deviceId);
-            device.setIp(ip);
-            device.setPort(port);
-            device.setName(deviceName != null ? deviceName : "未知设备");
-            device.setUsername(deviceConfig.getDefaultUsername());
-            device.setPassword(deviceConfig.getDefaultPassword());
-            device.setStatus(0);
-            device.setUserId(-1);
+            // 尝试使用不同品牌的认证配置进行登录
+            boolean loginSuccess = false;
+            DeviceInfo device = null;
+            String detectedBrand = DeviceInfo.BRAND_AUTO;
 
-            // 生成RTSP URL（使用RTSP端口，不是SDK端口）
-            int rtspPort = deviceConfig.getRtspPort();
-            device.setRtspUrl(String.format("rtsp://%s:%d/Streaming/Channels/101", ip, rtspPort));
+            // 尝试不同品牌的配置
+            Config.BrandPreset[] brandPresets = {
+                deviceConfig.getHikvision(),
+                deviceConfig.getTiandy(),
+                deviceConfig.getDahua()
+            };
+            String[] brandNames = {DeviceInfo.BRAND_HIKVISION, DeviceInfo.BRAND_TIANDY, DeviceInfo.BRAND_DAHUA};
 
-            // 保存到数据库
-            database.saveOrUpdateDevice(device);
-            logger.info("发现新设备: {}:{} ({})", ip, port, device.getName());
+            for (int i = 0; i < brandPresets.length; i++) {
+                Config.BrandPreset preset = brandPresets[i];
+                String brand = brandNames[i];
+                int brandPort = preset.getPort();
+                String brandUsername = preset.getUsername();
+                String brandPassword = preset.getPassword();
 
-            // 触发回调
-            if (deviceFoundCallback != null) {
-                deviceFoundCallback.accept(device);
+                // 创建临时设备信息用于登录尝试
+                DeviceInfo tempDevice = new DeviceInfo();
+                tempDevice.setDeviceId(deviceId);
+                tempDevice.setIp(ip);
+                tempDevice.setPort(brandPort);
+                tempDevice.setUsername(brandUsername);
+                tempDevice.setPassword(brandPassword);
+                tempDevice.setBrand(brand);
+                tempDevice.setStatus(0);
+                tempDevice.setUserId(-1);
+
+                logger.debug("尝试使用品牌 {} 的配置登录设备: {}:{} (用户名: {})", brand, ip, brandPort, brandUsername);
+
+                // 尝试登录
+                if (deviceManager != null && deviceManager.loginDevice(tempDevice)) {
+                    // 登录成功
+                    device = tempDevice;
+                    device.setName(deviceName != null ? deviceName : "未知设备");
+                    detectedBrand = brand;
+                    loginSuccess = true;
+
+                    // 生成RTSP URL（使用RTSP端口，不是SDK端口）
+                    int rtspPort = deviceConfig.getRtspPort();
+                    device.setRtspUrl(String.format("rtsp://%s:%d/Streaming/Channels/101", ip, rtspPort));
+
+                    logger.info("扫描发现设备并登录成功: {}:{} (品牌: {}, 端口: {})", ip, brandPort, brand, brandPort);
+                    break;
+                } else {
+                    logger.debug("使用品牌 {} 的配置登录失败: {}:{}", brand, ip, brandPort);
+                }
+            }
+
+            // 只有登录成功才保存到数据库
+            if (loginSuccess && device != null) {
+                // 保存到数据库
+                database.saveOrUpdateDevice(device);
+                logger.info("扫描发现的新设备已保存到数据库: {}:{} (品牌: {})", ip, device.getPort(), detectedBrand);
+
+                // 触发回调
+                if (deviceFoundCallback != null) {
+                    deviceFoundCallback.accept(device);
+                }
+            } else {
+                logger.debug("扫描发现的设备登录失败，未保存到数据库: {}:{}", ip, port);
             }
 
         } catch (Exception e) {
@@ -284,10 +330,10 @@ public class DeviceScanner {
             // 扫描IP范围：10-100
             for (int i = config.getScanRangeStart(); i <= config.getScanRangeEnd(); i++) {
                 final String ip = networkSegment + "." + i;
-                final int port = deviceConfig.getDefaultPort();
+                final int defaultPort = deviceConfig.getDefaultPort();
 
                 // 使用线程池并发扫描
-                scanExecutor.submit(() -> scanDevice(ip, port));
+                scanExecutor.submit(() -> scanDevice(ip, defaultPort));
             }
 
             logger.info("主动扫描任务已提交，IP范围: {}.{}-{}",
@@ -358,36 +404,80 @@ public class DeviceScanner {
 
     /**
      * 扫描单个设备
-     * 使用TCP连接测试设备是否在线
+     * 使用不同品牌的端口进行TCP连接测试，如果连接成功则尝试登录
      */
-    private void scanDevice(String ip, int port) {
+    private void scanDevice(String ip, int defaultPort) {
         try {
-            // 使用TCP连接测试设备是否在线
-            java.net.Socket socket = new java.net.Socket();
-            socket.setSoTimeout(2000); // 2秒超时
-            boolean connected = false;
+            // 获取不同品牌的端口配置
+            Config.BrandPreset[] brandPresets = {
+                deviceConfig.getHikvision(),
+                deviceConfig.getTiandy(),
+                deviceConfig.getDahua()
+            };
+            String[] brandNames = {DeviceInfo.BRAND_HIKVISION, DeviceInfo.BRAND_TIANDY, DeviceInfo.BRAND_DAHUA};
 
-            try {
-                socket.connect(new java.net.InetSocketAddress(ip, port), 2000);
-                connected = true;
-            } catch (Exception e) {
-                // 连接失败，设备可能不在线或端口未开放
-                logger.debug("设备连接失败: {}:{} - {}", ip, port, e.getMessage());
-            } finally {
+            boolean deviceFound = false;
+
+            // 尝试不同品牌的端口
+            for (int i = 0; i < brandPresets.length; i++) {
+                Config.BrandPreset preset = brandPresets[i];
+                int brandPort = preset.getPort();
+
+                // 使用TCP连接测试设备是否在线
+                java.net.Socket socket = new java.net.Socket();
+                socket.setSoTimeout(2000); // 2秒超时
+                boolean connected = false;
+
                 try {
-                    socket.close();
+                    socket.connect(new java.net.InetSocketAddress(ip, brandPort), 2000);
+                    connected = true;
                 } catch (Exception e) {
-                    // Ignore
+                    // 连接失败，设备可能不在线或端口未开放
+                    logger.debug("设备连接失败: {}:{} (品牌: {}) - {}", ip, brandPort, brandNames[i], e.getMessage());
+                } finally {
+                    try {
+                        socket.close();
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+
+                if (connected) {
+                    logger.debug("发现设备在线: {}:{} (品牌: {})", ip, brandPort, brandNames[i]);
+                    // 设备在线，尝试登录并保存到数据库
+                    handleDeviceFound(ip, brandPort, null);
+                    deviceFound = true;
+                    break; // 找到一个可用的端口就停止
                 }
             }
 
-            if (connected) {
-                logger.debug("发现设备在线: {}:{}", ip, port);
-                // 设备在线，保存到数据库并触发登录
-                handleDeviceFound(ip, port, null);
+            // 如果所有品牌端口都失败，尝试使用默认端口
+            if (!deviceFound) {
+                java.net.Socket socket = new java.net.Socket();
+                socket.setSoTimeout(2000);
+                boolean connected = false;
+
+                try {
+                    socket.connect(new java.net.InetSocketAddress(ip, defaultPort), 2000);
+                    connected = true;
+                } catch (Exception e) {
+                    logger.debug("设备连接失败: {}:{} (默认端口) - {}", ip, defaultPort, e.getMessage());
+                } finally {
+                    try {
+                        socket.close();
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+
+                if (connected) {
+                    logger.debug("发现设备在线: {}:{} (默认端口)", ip, defaultPort);
+                    // 设备在线，尝试登录并保存到数据库
+                    handleDeviceFound(ip, defaultPort, null);
+                }
             }
         } catch (Exception e) {
-            logger.debug("扫描设备失败: {}:{} - {}", ip, port, e.getMessage());
+            logger.debug("扫描设备失败: {}:{} - {}", ip, defaultPort, e.getMessage());
         }
     }
 
@@ -396,6 +486,233 @@ public class DeviceScanner {
      */
     public boolean isRunning() {
         return running;
+    }
+
+    /**
+     * 手动扫描（不写入数据库）
+     * @param session 扫描会话，用于更新进度
+     * @return 扫描到的设备列表
+     */
+    public java.util.List<com.digital.video.gateway.api.ScannerController.ScannedDevice> manualScan(
+            com.digital.video.gateway.api.ScannerController.ScanSession session) {
+        java.util.List<com.digital.video.gateway.api.ScannerController.ScannedDevice> results = 
+                new java.util.ArrayList<>();
+        
+        try {
+            String networkSegment = getCurrentNetworkSegment();
+            if (networkSegment == null) {
+                logger.warn("无法获取当前网段，跳过手动扫描");
+                return results;
+            }
+
+            logger.info("开始手动扫描，网段: {}，IP范围: {}.{}-{}",
+                    networkSegment, networkSegment, config.getScanRangeStart(), config.getScanRangeEnd());
+
+            // 使用线程池并发扫描
+            if (scanExecutor == null) {
+                scanExecutor = Executors.newFixedThreadPool(10);
+            }
+
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(
+                    config.getScanRangeEnd() - config.getScanRangeStart() + 1);
+
+            // 扫描IP范围
+            for (int i = config.getScanRangeStart(); i <= config.getScanRangeEnd(); i++) {
+                final String ip = networkSegment + "." + i;
+                final int defaultPort = deviceConfig.getDefaultPort();
+
+                scanExecutor.submit(() -> {
+                    try {
+                        java.util.List<com.digital.video.gateway.api.ScannerController.ScannedDevice> deviceResults = 
+                                scanDeviceForManual(ip, defaultPort);
+                        synchronized (results) {
+                            results.addAll(deviceResults);
+                            session.setTotalScanned(session.getTotalScanned() + 1);
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            // 等待所有扫描完成（最多等待5分钟）
+            latch.await(5, java.util.concurrent.TimeUnit.MINUTES);
+
+            logger.info("手动扫描完成，发现设备: {}", results.size());
+            return results;
+        } catch (Exception e) {
+            logger.error("手动扫描失败", e);
+            return results;
+        }
+    }
+
+    /**
+     * 扫描单个设备（手动扫描模式，不写入数据库）
+     */
+    private java.util.List<com.digital.video.gateway.api.ScannerController.ScannedDevice> scanDeviceForManual(
+            String ip, int defaultPort) {
+        java.util.List<com.digital.video.gateway.api.ScannerController.ScannedDevice> results = 
+                new java.util.ArrayList<>();
+        
+        try {
+            // 获取不同品牌的端口配置
+            Config.BrandPreset[] brandPresets = {
+                deviceConfig.getHikvision(),
+                deviceConfig.getTiandy(),
+                deviceConfig.getDahua()
+            };
+            String[] brandNames = {DeviceInfo.BRAND_HIKVISION, DeviceInfo.BRAND_TIANDY, DeviceInfo.BRAND_DAHUA};
+
+            // 尝试不同品牌的端口
+            for (int i = 0; i < brandPresets.length; i++) {
+                Config.BrandPreset preset = brandPresets[i];
+                int brandPort = preset.getPort();
+                String brand = brandNames[i];
+
+                // 使用TCP连接测试设备是否在线
+                java.net.Socket socket = new java.net.Socket();
+                socket.setSoTimeout(2000);
+                boolean connected = false;
+
+                try {
+                    socket.connect(new java.net.InetSocketAddress(ip, brandPort), 2000);
+                    connected = true;
+                } catch (Exception e) {
+                    logger.debug("设备连接失败: {}:{} (品牌: {}) - {}", ip, brandPort, brand, e.getMessage());
+                } finally {
+                    try {
+                        socket.close();
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+
+                if (connected) {
+                    logger.debug("发现设备在线: {}:{} (品牌: {})", ip, brandPort, brand);
+                    
+                    // 尝试登录
+                    com.digital.video.gateway.api.ScannerController.ScannedDevice scannedDevice = 
+                            tryLoginForManual(ip, brandPort, brand, preset);
+                    if (scannedDevice != null) {
+                        results.add(scannedDevice);
+                        break; // 找到一个可用的端口就停止
+                    }
+                }
+            }
+
+            // 如果所有品牌端口都失败，尝试使用默认端口
+            if (results.isEmpty()) {
+                java.net.Socket socket = new java.net.Socket();
+                socket.setSoTimeout(2000);
+                boolean connected = false;
+
+                try {
+                    socket.connect(new java.net.InetSocketAddress(ip, defaultPort), 2000);
+                    connected = true;
+                } catch (Exception e) {
+                    logger.debug("设备连接失败: {}:{} (默认端口) - {}", ip, defaultPort, e.getMessage());
+                } finally {
+                    try {
+                        socket.close();
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+
+                if (connected) {
+                    logger.debug("发现设备在线: {}:{} (默认端口)", ip, defaultPort);
+                    // 尝试使用默认配置登录
+                    Config.BrandPreset defaultPreset = deviceConfig.getHikvision();
+                    com.digital.video.gateway.api.ScannerController.ScannedDevice scannedDevice = 
+                            tryLoginForManual(ip, defaultPort, DeviceInfo.BRAND_AUTO, defaultPreset);
+                    if (scannedDevice != null) {
+                        results.add(scannedDevice);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("扫描设备失败: {}:{} - {}", ip, defaultPort, e.getMessage());
+        }
+
+        return results;
+    }
+
+    /**
+     * 尝试登录设备（手动扫描模式，不写入数据库）
+     */
+    private com.digital.video.gateway.api.ScannerController.ScannedDevice tryLoginForManual(
+            String ip, int port, String brand, Config.BrandPreset preset) {
+        try {
+            String deviceId = ip;
+            String brandUsername = preset.getUsername();
+            String brandPassword = preset.getPassword();
+
+            // 创建临时设备信息用于登录尝试
+            DeviceInfo tempDevice = new DeviceInfo();
+            tempDevice.setDeviceId(deviceId);
+            tempDevice.setIp(ip);
+            tempDevice.setPort(port);
+            tempDevice.setUsername(brandUsername);
+            tempDevice.setPassword(brandPassword);
+            tempDevice.setBrand(brand);
+            tempDevice.setStatus(0);
+            tempDevice.setUserId(-1);
+
+            logger.debug("尝试使用品牌 {} 的配置登录设备: {}:{} (用户名: {})", brand, ip, port, brandUsername);
+
+            // 尝试登录（但不保存到数据库）
+            boolean loginSuccess = false;
+            String detectedBrand = brand;
+            int userId = -1;
+            String deviceName = "未知设备";
+            String errorMessage = null;
+
+            if (deviceManager != null) {
+                // 临时保存登录状态，用于获取设备信息
+                boolean result = deviceManager.loginDevice(tempDevice);
+                if (result) {
+                    loginSuccess = true;
+                    detectedBrand = tempDevice.getBrand();
+                    userId = tempDevice.getUserId();
+                    deviceName = tempDevice.getName() != null ? tempDevice.getName() : "未知设备";
+                    
+                    // 登出设备（因为这是手动扫描，不保留登录状态）
+                    deviceManager.logoutDevice(deviceId);
+                } else {
+                    errorMessage = "登录失败";
+                }
+            }
+
+            // 创建扫描结果
+            com.digital.video.gateway.api.ScannerController.ScannedDevice scannedDevice = 
+                    new com.digital.video.gateway.api.ScannerController.ScannedDevice();
+            scannedDevice.setIp(ip);
+            scannedDevice.setPort(port);
+            scannedDevice.setName(deviceName);
+            scannedDevice.setBrand(detectedBrand);
+            scannedDevice.setLoginSuccess(loginSuccess);
+            scannedDevice.setUserId(userId);
+            scannedDevice.setErrorMessage(errorMessage);
+            scannedDevice.setUsername(brandUsername);
+            scannedDevice.setPassword(brandPassword);
+
+            if (loginSuccess) {
+                logger.info("手动扫描发现设备并登录成功: {}:{} (品牌: {})", ip, port, detectedBrand);
+            }
+
+            return scannedDevice;
+        } catch (Exception e) {
+            logger.error("尝试登录设备失败: {}:{}", ip, port, e);
+            com.digital.video.gateway.api.ScannerController.ScannedDevice scannedDevice = 
+                    new com.digital.video.gateway.api.ScannerController.ScannedDevice();
+            scannedDevice.setIp(ip);
+            scannedDevice.setPort(port);
+            scannedDevice.setName("未知设备");
+            scannedDevice.setBrand(brand);
+            scannedDevice.setLoginSuccess(false);
+            scannedDevice.setErrorMessage(e.getMessage());
+            return scannedDevice;
+        }
     }
 
 }

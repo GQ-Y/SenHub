@@ -12,11 +12,13 @@ import {
   X,
   AlertTriangle,
   Check,
-  Settings
+  Settings,
+  Scan,
+  Loader2
 } from 'lucide-react';
 import { Device, DeviceStatus } from '../types';
 import { useAppContext } from '../contexts/AppContext';
-import { deviceService } from '../src/api/services';
+import { deviceService, scannerService, ScanSession, ScannedDevice } from '../src/api/services';
 import { Modal } from './Modal';
 import { useModal } from '../hooks/useModal';
 import { QuickConfigModal } from './QuickConfigModal';
@@ -81,7 +83,7 @@ export const DeviceList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
   // Local state for actions
-  const [activeModal, setActiveModal] = useState<'NONE' | 'ADD' | 'EDIT' | 'DELETE' | 'REBOOT'>('NONE');
+  const [activeModal, setActiveModal] = useState<'NONE' | 'ADD' | 'EDIT' | 'DELETE' | 'REBOOT' | 'SCAN'>('NONE');
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [showQuickConfig, setShowQuickConfig] = useState(false);
   const [configDevice, setConfigDevice] = useState<Device | null>(null);
@@ -89,6 +91,12 @@ export const DeviceList: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [error, setError] = useState<string>('');
+
+  // 扫描相关状态
+  const [scanSession, setScanSession] = useState<ScanSession | null>(null);
+  const [selectedScanDevices, setSelectedScanDevices] = useState<Set<string>>(new Set());
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanPollInterval, setScanPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   // 弹窗管理
   const modal = useModal();
@@ -184,15 +192,99 @@ export const DeviceList: React.FC = () => {
     setActiveModal('REBOOT');
   };
 
+  const openScanModal = () => {
+    setActiveModal('SCAN');
+    setScanSession(null);
+    setSelectedScanDevices(new Set());
+    setIsScanning(false);
+  };
+
+  const startScan = async () => {
+    setIsScanning(true);
+    setSelectedScanDevices(new Set());
+    try {
+      const response = await scannerService.startScan();
+      const sessionId = response.data.sessionId;
+      
+      // 开始轮询扫描状态
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await scannerService.getScanStatus(sessionId);
+          const session = statusResponse.data;
+          setScanSession(session);
+          
+          if (session.status === 'completed' || session.status === 'error') {
+            clearInterval(pollInterval);
+            setIsScanning(false);
+            setScanPollInterval(null);
+          }
+        } catch (err) {
+          console.error('获取扫描状态失败:', err);
+        }
+      }, 1000); // 每秒轮询一次
+      
+      setScanPollInterval(pollInterval);
+    } catch (err: any) {
+      modal.showModal({
+        message: err.message || '启动扫描失败',
+        type: 'error',
+      });
+      setIsScanning(false);
+    }
+  };
+
+  const handleAddScanDevices = async () => {
+    if (!scanSession || selectedScanDevices.size === 0) return;
+    
+    setIsLoading(true);
+    try {
+      const deviceIps = Array.from(selectedScanDevices);
+      const response = await scannerService.addDevices(scanSession.sessionId, deviceIps);
+      
+      modal.showModal({
+        message: `成功添加 ${response.data.addedCount} 个设备，失败 ${response.data.failedCount} 个`,
+        type: response.data.failedCount === 0 ? 'success' : 'warning',
+      });
+      
+      // 关闭扫描弹窗并刷新设备列表
+      handleCloseModal();
+      await loadDevices();
+    } catch (err: any) {
+      modal.showModal({
+        message: err.message || '添加设备失败',
+        type: 'error',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 清理轮询
+  useEffect(() => {
+    return () => {
+      if (scanPollInterval) {
+        clearInterval(scanPollInterval);
+      }
+    };
+  }, [scanPollInterval]);
+
   const openQuickConfig = (device: Device) => {
     setConfigDevice(device);
     setShowQuickConfig(true);
   };
 
   const handleCloseModal = () => {
+    // 清理扫描轮询
+    if (scanPollInterval) {
+      clearInterval(scanPollInterval);
+      setScanPollInterval(null);
+    }
     setActiveModal('NONE');
     setSelectedDevice(null);
     setIsLoading(false);
+    setIsScanning(false);
+    setScanSession(null);
+    setSelectedScanDevices(new Set());
   };
 
   const handleSave = async () => {
@@ -355,6 +447,13 @@ export const DeviceList: React.FC = () => {
             >
               <RefreshCw size={16} className={isLoadingDevices ? 'animate-spin' : ''} />
               <span>{t('refresh')}</span>
+            </button>
+            <button
+              onClick={openScanModal}
+              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium text-sm shadow-lg shadow-purple-200"
+            >
+              <Scan size={16} />
+              <span>扫描设备</span>
             </button>
             <button
               onClick={openAddModal}
@@ -650,6 +749,160 @@ export const DeviceList: React.FC = () => {
             }}
           />
         )}
+
+        {/* Scan Modal */}
+        <CustomModal
+          isOpen={activeModal === 'SCAN'}
+          onClose={handleCloseModal}
+          title="设备扫描"
+          footer={
+            <>
+              <button 
+                onClick={handleCloseModal} 
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
+              >
+                {t('cancel')}
+              </button>
+              {!isScanning && scanSession && scanSession.status === 'completed' && (
+                <button
+                  onClick={handleAddScanDevices}
+                  disabled={isLoading || selectedScanDevices.size === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 flex items-center disabled:opacity-50"
+                >
+                  {isLoading && <Loader2 size={16} className="animate-spin mr-2" />}
+                  添加选中设备 ({selectedScanDevices.size})
+                </button>
+              )}
+              {!isScanning && !scanSession && (
+                <button
+                  onClick={startScan}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium shadow-lg shadow-purple-200"
+                >
+                  开始扫描
+                </button>
+              )}
+            </>
+          }
+        >
+          <div className="space-y-4">
+            {!scanSession && !isScanning && (
+              <div className="text-center py-8">
+                <Scan size={48} className="mx-auto mb-4 text-gray-300" />
+                <p className="text-gray-600">点击"开始扫描"按钮开始扫描局域网中的设备</p>
+              </div>
+            )}
+
+            {isScanning && (
+              <div className="text-center py-8">
+                <Loader2 size={48} className="mx-auto mb-4 text-purple-600 animate-spin" />
+                <p className="text-gray-600">正在扫描设备...</p>
+                {scanSession && (
+                  <p className="text-sm text-gray-500 mt-2">
+                    已扫描: {scanSession.totalScanned} / {scanSession.totalScanned + (scanSession.totalScanned > 0 ? 0 : 91)}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {scanSession && scanSession.status === 'completed' && (
+              <div className="space-y-4">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-green-800">扫描完成</p>
+                      <p className="text-sm text-green-600 mt-1">
+                        共扫描 {scanSession.totalScanned} 个设备，成功登录 {scanSession.successCount} 个，失败 {scanSession.failedCount} 个
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {scanSession.devices.length > 0 ? (
+                  <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-xl">
+                    <table className="w-full text-left">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
+                            <input
+                              type="checkbox"
+                              checked={scanSession.devices.filter(d => d.loginSuccess).length > 0 && 
+                                       scanSession.devices.filter(d => d.loginSuccess).every(d => selectedScanDevices.has(d.ip))}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  const successDevices = scanSession.devices.filter(d => d.loginSuccess);
+                                  setSelectedScanDevices(new Set(successDevices.map(d => d.ip)));
+                                } else {
+                                  setSelectedScanDevices(new Set());
+                                }
+                              }}
+                              className="rounded"
+                            />
+                          </th>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">IP地址</th>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">端口</th>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">设备名称</th>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">品牌</th>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {scanSession.devices.map((device, index) => (
+                          <tr key={`${device.ip}-${device.port}-${index}`} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedScanDevices.has(device.ip)}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedScanDevices);
+                                  if (e.target.checked && device.loginSuccess) {
+                                    newSet.add(device.ip);
+                                  } else {
+                                    newSet.delete(device.ip);
+                                  }
+                                  setSelectedScanDevices(newSet);
+                                }}
+                                disabled={!device.loginSuccess}
+                                className="rounded"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-sm font-mono text-gray-900">{device.ip}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{device.port}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{device.name || '未知设备'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{BRAND_MAP[device.brand] || device.brand}</td>
+                            <td className="px-4 py-3">
+                              {device.loginSuccess ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                  <Check size={12} className="mr-1" />
+                                  登录成功
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                  <X size={12} className="mr-1" />
+                                  登录失败
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>未发现任何设备</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {scanSession && scanSession.status === 'error' && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="font-semibold text-red-800">扫描失败</p>
+                <p className="text-sm text-red-600 mt-1">{scanSession.errorMessage || '未知错误'}</p>
+              </div>
+            )}
+          </div>
+        </CustomModal>
 
       </div>
     </>

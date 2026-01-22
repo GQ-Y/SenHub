@@ -14,7 +14,7 @@ mqtt:
 
 # 设备扫描配置
 scanner:
-  enabled: true  # 是否启用自动扫描
+  enabled: false  # 是否启用自动扫描
   interval: 300  # 扫描间隔（秒）
   listen_port: 7200  # 监听端口
   listen_ip: "0.0.0.0"  # 监听IP地址

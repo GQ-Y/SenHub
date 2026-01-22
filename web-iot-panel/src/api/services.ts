@@ -920,6 +920,58 @@ export const radarService = {
   },
 };
 
+// ==================== 扫描服务 ====================
+export interface ScanSession {
+  sessionId: string;
+  status: 'scanning' | 'completed' | 'error';
+  totalScanned: number;
+  successCount: number;
+  failedCount: number;
+  devices: ScannedDevice[];
+  errorMessage?: string;
+  startTime: number;
+  endTime?: number;
+}
+
+export interface ScannedDevice {
+  ip: string;
+  port: number;
+  name: string;
+  brand: string;
+  loginSuccess: boolean;
+  errorMessage?: string;
+  userId: number;
+}
+
+export const scannerService = {
+  /**
+   * 启动扫描
+   */
+  async startScan() {
+    const response = await post<{ sessionId: string; status: string }>('/scanner/start', {});
+    return response;
+  },
+
+  /**
+   * 获取扫描状态
+   */
+  async getScanStatus(sessionId: string) {
+    const response = await get<ScanSession>(`/scanner/status/${encodeURIComponent(sessionId)}`);
+    return response;
+  },
+
+  /**
+   * 添加扫描到的设备到数据库
+   */
+  async addDevices(sessionId: string, deviceIps: string[]) {
+    const response = await post<{ addedCount: number; failedCount: number; errors: string[] }>(
+      '/scanner/add-devices',
+      { sessionId, deviceIps }
+    );
+    return response;
+  },
+};
+
 // ==================== 通知服务 ====================
 export interface Notification {
   id: string;

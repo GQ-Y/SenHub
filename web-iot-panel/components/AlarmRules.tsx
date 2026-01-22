@@ -230,14 +230,71 @@ export const AlarmRules: React.FC = () => {
     return flow ? flow.name : flowId;
   };
 
+  // 解析事件类型ID列表
+  const parseEventTypeIds = (rule: AlarmRule): number[] => {
+    if (rule.eventTypeIds) {
+      // 如果是数组，直接返回
+      if (Array.isArray(rule.eventTypeIds)) {
+        return rule.eventTypeIds;
+      }
+      // 如果是字符串，尝试解析JSON
+      if (typeof rule.eventTypeIds === 'string') {
+        try {
+          const parsed = JSON.parse(rule.eventTypeIds);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch (e) {
+          console.warn('解析eventTypeIds失败:', e);
+        }
+      }
+    }
+    return [];
+  };
+
   // 获取已选事件类型数量
   const getEventTypeCount = (rule: AlarmRule) => {
-    if (rule.eventTypeIds && Array.isArray(rule.eventTypeIds)) {
-      return rule.eventTypeIds.length;
+    const ids = parseEventTypeIds(rule);
+    if (ids.length > 0) {
+      return ids.length;
     }
     // 兼容旧规则
     if (rule.alarmType) return 1;
     return 0;
+  };
+
+  // 获取事件类型名称列表（最多显示3个，超过显示"等N个"）
+  const getEventTypeNames = (rule: AlarmRule): string => {
+    const ids = parseEventTypeIds(rule);
+    if (ids.length === 0) {
+      // 兼容旧规则
+      if (rule.alarmType) {
+        return getAlarmTypeLabel(rule.alarmType);
+      }
+      return t('no_event_selected');
+    }
+
+    // 从eventTypes中查找对应的名称
+    const names: string[] = [];
+    for (const [brand, events] of Object.entries(eventTypes)) {
+      for (const event of events) {
+        if (ids.includes(event.eventTypeId)) {
+          names.push(event.name || `事件${event.eventTypeId}`);
+          if (names.length >= 3) break;
+        }
+      }
+      if (names.length >= 3) break;
+    }
+
+    if (names.length === 0) {
+      return `${ids.length} ${t('alarm_type')}`;
+    }
+
+    if (ids.length <= 3) {
+      return names.join('、');
+    } else {
+      return `${names.join('、')} 等${ids.length}个`;
+    }
   };
 
   return (
@@ -349,13 +406,18 @@ export const AlarmRules: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="font-medium text-gray-900">{rule.name}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
-                          {getEventTypeCount(rule) > 0 
-                            ? `${getEventTypeCount(rule)} ${t('alarm_type')}`
-                            : (rule.alarmType ? getAlarmTypeLabel(rule.alarmType) : t('no_event_selected'))
-                          }
-                        </span>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {getEventTypeCount(rule) > 0 ? (
+                            <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium" title={getEventTypeNames(rule)}>
+                              {getEventTypeNames(rule)}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium">
+                              {rule.alarmType ? getAlarmTypeLabel(rule.alarmType) : t('no_event_selected')}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {getScopeLabel(rule)}

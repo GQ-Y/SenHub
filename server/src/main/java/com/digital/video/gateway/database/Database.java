@@ -50,6 +50,8 @@ public class Database {
             initDefaultUser();
             // 初始化默认SDK驱动配置
             initDefaultDriver();
+            // 初始化默认系统配置
+            initDefaultConfig();
             return true;
         } catch (SQLException e) {
             logger.error("数据库初始化失败", e);
@@ -112,7 +114,7 @@ public class Database {
         String createDeviceHistoryTable = "CREATE TABLE IF NOT EXISTS device_history (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                 "device_id TEXT NOT NULL, " +
-                "status TEXT NOT NULL, " +
+                "status INTEGER NOT NULL, " +
                 "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
                 ")";
 
@@ -535,6 +537,18 @@ public class Database {
     }
 
     /**
+     * 初始化默认系统配置
+     * 确保关键配置项有默认值，特别是自动扫描功能默认关闭
+     */
+    private void initDefaultConfig() {
+        // 初始化自动扫描配置：默认关闭
+        if (getConfig("scanner.enabled") == null) {
+            saveOrUpdateConfig("scanner.enabled", "false", "boolean");
+            logger.info("默认系统配置已设置: scanner.enabled = false");
+        }
+    }
+
+    /**
      * 将ResultSet映射为DeviceInfo对象
      */
     private DeviceInfo mapResultSetToDevice(ResultSet rs) throws SQLException {
@@ -830,37 +844,102 @@ public class Database {
 
     /**
      * 获取24小时内的设备连接趋势数据
+     * 基于系统时间，只显示过去24小时内已经发生的时间点
      */
     public List<Map<String, Object>> getDeviceConnectivityTrend24h() {
         List<Map<String, Object>> trendData = new ArrayList<>();
-        String sql = "SELECT " +
-                "strftime('%H', recorded_at) as hour, " +
-                "COUNT(DISTINCT CASE WHEN status = 1 THEN device_id END) as online_count " +
-                "FROM device_history " +
-                "WHERE recorded_at >= datetime('now', '-24 hours') " +
-                "GROUP BY strftime('%H', recorded_at) " +
-                "ORDER BY hour";
-
-        try (Statement stmt = connection.createStatement();
-                ResultSet rs = stmt.executeQuery(sql)) {
-            Map<String, Integer> hourData = new HashMap<>();
-            while (rs.next()) {
-                String hour = rs.getString("hour");
-                int onlineCount = rs.getInt("online_count");
-                hourData.put(hour, onlineCount);
+        
+        try {
+            // 获取当前所有在线设备数量（作为基准）
+            String currentOnlineSql = "SELECT COUNT(*) as count FROM devices WHERE status = 1";
+            int currentOnlineCount = 0;
+            try (Statement stmt = connection.createStatement();
+                    ResultSet rs = stmt.executeQuery(currentOnlineSql)) {
+                if (rs.next()) {
+                    currentOnlineCount = rs.getInt("count");
+                }
             }
 
-            // 生成24小时数据点（每4小时一个点）
-            String[] timePoints = { "00", "04", "08", "12", "16", "20", "24" };
-            for (String time : timePoints) {
+            // 查询过去24小时的历史数据，按小时分组
+            // 使用系统时间（datetime('now', 'localtime')）确保时区正确
+            String sql = "SELECT " +
+                    "strftime('%H', datetime(recorded_at, 'localtime')) as hour, " +
+                    "COUNT(DISTINCT CASE WHEN CAST(status AS INTEGER) = 1 THEN device_id END) as online_count " +
+                    "FROM device_history " +
+                    "WHERE datetime(recorded_at, 'localtime') >= datetime('now', 'localtime', '-24 hours') " +
+                    "GROUP BY strftime('%H', datetime(recorded_at, 'localtime')) " +
+                    "ORDER BY hour";
+
+            Map<String, Integer> hourData = new HashMap<>();
+            try (Statement stmt = connection.createStatement();
+                    ResultSet rs = stmt.executeQuery(sql)) {
+                while (rs.next()) {
+                    String hour = rs.getString("hour");
+                    int onlineCount = rs.getInt("online_count");
+                    hourData.put(hour, onlineCount);
+                }
+            }
+
+            // 获取当前系统时间
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            int currentHour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+            
+            // 生成固定的时间点（每4小时一个点：00, 04, 08, 12, 16, 20）
+            // 注意：移除24:00，因为24:00是下一天的00:00，不在过去24小时内
+            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
+            
+            for (int hourInt : timePoints) {
                 Map<String, Object> dataPoint = new HashMap<>();
-                dataPoint.put("name", time + ":00");
-                int online = hourData.getOrDefault(time, 0);
+                String hourStr = String.format("%02d", hourInt);
+                dataPoint.put("name", hourStr + ":00");
+                
+                int online = 0;
+                
+                // 对于固定的时间点（00, 04, 08, 12, 16, 20），它们要么是今天的时间点，要么是昨天的时间点
+                // 由于我们查询的是过去24小时的数据，这些时间点都应该在过去24小时内
+                // 如果时间点 <= 当前小时，是今天的时间点；如果 > 当前小时，是昨天的时间点
+                // 两种情况都在过去24小时内
+                
+                // 如果该小时有历史数据，使用历史数据
+                if (hourData.containsKey(hourStr)) {
+                    online = hourData.get(hourStr);
+                } else {
+                    // 如果没有历史数据，使用当前在线数量（假设设备一直保持在线状态）
+                    // 注意：这里假设设备在过去24小时内一直保持当前状态
+                    online = currentOnlineCount;
+                }
+                
                 dataPoint.put("online", online);
                 trendData.add(dataPoint);
             }
         } catch (SQLException e) {
             logger.error("获取设备连接趋势失败", e);
+            // 如果查询失败，返回基于当前设备状态的默认数据（只包含过去24小时的时间点）
+            try {
+                String currentOnlineSql = "SELECT COUNT(*) as count FROM devices WHERE status = 1";
+                try (Statement stmt = connection.createStatement();
+                        ResultSet rs = stmt.executeQuery(currentOnlineSql)) {
+                    int currentOnline = 0;
+                    if (rs.next()) {
+                        currentOnline = rs.getInt("count");
+                    }
+                    java.util.Calendar cal = java.util.Calendar.getInstance();
+                    int currentHour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+                    int[] timePoints = { 0, 4, 8, 12, 16, 20 };
+                    for (int hourInt : timePoints) {
+                        // 只包含过去24小时内的时间点
+                        if (hourInt <= currentHour) {
+                            Map<String, Object> dataPoint = new HashMap<>();
+                            String hourStr = String.format("%02d", hourInt);
+                            dataPoint.put("name", hourStr + ":00");
+                            dataPoint.put("online", currentOnline);
+                            trendData.add(dataPoint);
+                        }
+                    }
+                }
+            } catch (SQLException ex) {
+                logger.error("生成默认趋势数据失败", ex);
+            }
         }
         return trendData;
     }

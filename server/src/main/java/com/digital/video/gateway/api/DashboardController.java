@@ -140,11 +140,12 @@ public class DashboardController {
      */
     public String getChart(Request request, Response response) {
         try {
-            // 从数据库获取24小时连接趋势数据
+            // 从数据库获取24小时连接趋势数据（已包含智能补充逻辑）
             List<Map<String, Object>> chartData = database.getDeviceConnectivityTrend24h();
 
-            // 如果历史数据不足，使用当前设备状态作为补充
-            if (chartData.isEmpty() || chartData.size() < 7) {
+            // 确保返回的数据格式正确
+            if (chartData.isEmpty()) {
+                // 如果仍然为空，使用当前设备状态生成默认数据
                 List<DeviceInfo> devices = deviceManager.getAllDevices();
                 int onlineDevices = 0;
                 for (DeviceInfo device : devices) {
@@ -153,7 +154,7 @@ public class DashboardController {
                     }
                 }
 
-                // 生成默认数据
+                // 生成默认数据（所有时间点都使用当前在线数量）
                 String[] timePoints = { "00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00" };
                 chartData = new ArrayList<>();
                 for (String time : timePoints) {

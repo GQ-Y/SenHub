@@ -46,6 +46,9 @@ import spark.Spark;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 综合性数字视频监控网关系统主程序
@@ -79,6 +82,7 @@ public class Main {
     private com.digital.video.gateway.workflow.FlowService flowService;
     private com.digital.video.gateway.api.FlowController flowController;
     private FlowExecutor flowExecutor;
+    private ScheduledExecutorService statisticsScheduler;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -302,16 +306,22 @@ public class Main {
             logger.info("命令处理器初始化成功");
 
             // 9. 启动设备扫描器（暂时使用海康SDK，后续可扩展为多品牌）
-            scanner = new DeviceScanner(hikvisionSDK, database, config.getScanner(), config.getDevice());
+            scanner = new DeviceScanner(hikvisionSDK, database, deviceManager, config.getScanner(), config.getDevice());
             scanner.setDeviceFoundCallback(this::onDeviceFound);
             if (scanner.start()) {
                 logger.info("设备扫描器启动成功");
+            } else {
+                logger.info("设备扫描器未启动（可能已禁用）");
             }
 
             // 10. 启动保活系统
             keeper = new Keeper(deviceManager, config.getKeeper(), recorder);
             keeper.start();
             logger.info("保活系统启动成功");
+
+            // 10.5. 启动设备状态统计任务（每小时记录一次设备状态快照）
+            startDeviceStatusStatisticsTask();
+            logger.info("设备状态统计任务已启动");
 
             // 11. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
@@ -522,6 +532,59 @@ public class Main {
     }
 
     /**
+     * 启动设备状态统计任务
+     * 每小时记录一次所有设备的当前状态，用于生成连接趋势图表
+     */
+    private void startDeviceStatusStatisticsTask() {
+        statisticsScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "DeviceStatusStatistics");
+            t.setDaemon(true);
+            return t;
+        });
+
+        // 计算到下一个整点的延迟时间（例如：如果现在是14:30，则延迟30分钟）
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        int currentMinute = cal.get(java.util.Calendar.MINUTE);
+        int currentSecond = cal.get(java.util.Calendar.SECOND);
+        long delayToNextHour = (60 - currentMinute) * 60 - currentSecond;
+
+        // 立即执行一次，然后每小时执行一次
+        statisticsScheduler.schedule(() -> {
+            recordDeviceStatusSnapshot();
+        }, delayToNextHour, TimeUnit.SECONDS);
+
+        statisticsScheduler.scheduleAtFixedRate(
+                this::recordDeviceStatusSnapshot,
+                delayToNextHour + 3600, // 第一次执行后，再等1小时
+                3600, // 每小时执行一次
+                TimeUnit.SECONDS
+        );
+
+        logger.info("设备状态统计任务已启动，将在{}秒后首次执行，之后每小时执行一次", delayToNextHour);
+    }
+
+    /**
+     * 记录设备状态快照
+     * 记录所有设备的当前状态到device_history表，用于生成连接趋势图表
+     */
+    private void recordDeviceStatusSnapshot() {
+        try {
+            List<DeviceInfo> devices = deviceManager.getAllDevices();
+            int recordedCount = 0;
+            
+            for (DeviceInfo device : devices) {
+                // 记录当前设备状态（即使状态未变化，也要记录用于统计）
+                database.recordDeviceHistory(device.getDeviceId(), device.getStatus());
+                recordedCount++;
+            }
+            
+            logger.debug("设备状态快照已记录: {} 个设备", recordedCount);
+        } catch (Exception e) {
+            logger.error("记录设备状态快照失败", e);
+        }
+    }
+
+    /**
      * 启动HTTP服务器
      */
     private void startHttpServer() {
@@ -607,6 +670,9 @@ public class Main {
         radarController = new RadarController(radarTestService, database,
                 backgroundModelService, defenseZoneService, intrusionDetectionService, radarService);
 
+        // 初始化扫描控制器
+        ScannerController scannerController = new ScannerController(scanner, deviceManager, database);
+
         // 注意：WebSocket端点注册在startHttpServer()方法中，因为必须在HTTP路由之前
 
         // 注册路由
@@ -655,6 +721,11 @@ public class Main {
         Spark.get("/api/system/config", systemController::getConfig);
         Spark.put("/api/system/config", systemController::updateConfig);
         Spark.get("/api/system/health", systemController::healthCheck);
+
+        // 扫描路由
+        Spark.post("/api/scanner/start", scannerController::startScan);
+        Spark.get("/api/scanner/status/:sessionId", scannerController::getScanStatus);
+        Spark.post("/api/scanner/add-devices", scannerController::addDevices);
         Spark.post("/api/system/mqtt/restart", systemController::restartMqtt);
         Spark.get("/api/system/logs", systemController::getLogs);
         Spark.post("/api/system/notification/test", systemController::testNotification);
@@ -780,6 +851,19 @@ public class Main {
             // 停止设备扫描器
             if (scanner != null) {
                 scanner.stop();
+            }
+
+            // 停止设备状态统计任务
+            if (statisticsScheduler != null) {
+                statisticsScheduler.shutdown();
+                try {
+                    if (!statisticsScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                        statisticsScheduler.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    statisticsScheduler.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
             }
 
             // 停止录制管理器
