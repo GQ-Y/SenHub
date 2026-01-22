@@ -14,7 +14,9 @@ import {
   Minimize,
   Trash2,
   Play,
-  Video as VideoIcon
+  Video as VideoIcon,
+  Code,
+  X
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
@@ -50,6 +52,13 @@ export const DeviceDetail: React.FC = () => {
 
   // 云台控制速率 (1-100)
   const [ptzRate, setPtzRate] = useState<number>(50);
+
+  // 开发调试弹窗状态
+  const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
+  const [debugPan, setDebugPan] = useState<number>(0);
+  const [debugTilt, setDebugTilt] = useState<number>(0);
+  const [debugZoom, setDebugZoom] = useState<number>(1);
+  const [isDebugLoading, setIsDebugLoading] = useState(false);
 
   // 弹窗管理
   const modal = useModal();
@@ -234,6 +243,45 @@ export const DeviceDetail: React.FC = () => {
       }
     } catch (err: any) {
       console.error('PTZ控制失败:', err);
+    }
+  };
+
+  // PTZ 绝对定位控制
+  const handlePtzGoto = async () => {
+    if (!deviceId) return;
+    
+    setIsDebugLoading(true);
+    try {
+      const response = await deviceService.ptzGoto(deviceId, debugPan, debugTilt, debugZoom);
+      if (response.data) {
+        modal.showModal({
+          message: t('ptz_goto_success'),
+          type: 'success',
+        });
+        // 延迟抓图更新画面
+        setTimeout(async () => {
+          try {
+            const snapshotResponse = await deviceService.captureSnapshot(deviceId, 1);
+            if (snapshotResponse.data?.url) {
+              const baseUrl = API_CONFIG.BASE_URL.replace(/\/api$/, '') || 'http://192.168.1.210:8084';
+              const fullUrl = snapshotResponse.data.url.startsWith('http')
+                ? snapshotResponse.data.url
+                : `${baseUrl}${snapshotResponse.data.url}`;
+              setSnapshot(fullUrl);
+            }
+          } catch (err) {
+            console.error('PTZ定位后自动抓图失败:', err);
+          }
+        }, 1000);
+      }
+    } catch (err: any) {
+      console.error('PTZ绝对定位失败:', err);
+      modal.showModal({
+        message: t('ptz_goto_failed') + ': ' + (err.message || '未知错误'),
+        type: 'error',
+      });
+    } finally {
+      setIsDebugLoading(false);
     }
   };
 
@@ -450,6 +498,93 @@ export const DeviceDetail: React.FC = () => {
         />
       )}
 
+      {/* 开发调试弹窗 */}
+      {isDebugModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-800">{t('dev_debug')}</h3>
+              <button
+                onClick={() => setIsDebugModalOpen(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="text-sm font-medium text-gray-600 mb-2">{t('ptz_absolute_position')}</div>
+              
+              {/* 水平角度 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('pan_angle')} (0° - 360°)
+                </label>
+                <input
+                  type="number"
+                  value={debugPan}
+                  onChange={(e) => setDebugPan(parseFloat(e.target.value) || 0)}
+                  min="0"
+                  max="360"
+                  step="0.1"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="0.0"
+                />
+              </div>
+              
+              {/* 垂直角度 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('tilt_angle')} (-90° - 90°)
+                </label>
+                <input
+                  type="number"
+                  value={debugTilt}
+                  onChange={(e) => setDebugTilt(parseFloat(e.target.value) || 0)}
+                  min="-90"
+                  max="90"
+                  step="0.1"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="0.0"
+                />
+              </div>
+              
+              {/* 变倍 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('zoom_level')} (1.0x - 40.0x)
+                </label>
+                <input
+                  type="number"
+                  value={debugZoom}
+                  onChange={(e) => setDebugZoom(parseFloat(e.target.value) || 1)}
+                  min="1"
+                  max="40"
+                  step="0.1"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="1.0"
+                />
+              </div>
+
+              {/* 定位按钮 */}
+              <button
+                onClick={handlePtzGoto}
+                disabled={isDebugLoading}
+                className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+              >
+                {isDebugLoading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <RotateCw size={18} />
+                    <span>{t('goto_position')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -477,9 +612,12 @@ export const DeviceDetail: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors shadow-sm">
-              <Settings size={18} />
-              <span>{t('settings')}</span>
+            <button 
+              onClick={() => setIsDebugModalOpen(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              <Code size={18} />
+              <span>{t('dev_debug')}</span>
             </button>
             <button
               onClick={handleReboot}

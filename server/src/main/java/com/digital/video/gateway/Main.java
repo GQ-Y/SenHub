@@ -692,6 +692,7 @@ public class Main {
         Spark.post("/api/devices/:id/snapshot", deviceController::captureSnapshot);
         Spark.get("/api/devices/:id/snapshot/file", deviceController::getSnapshotFile);
         Spark.post("/api/devices/:id/ptz", deviceController::ptzControl);
+        Spark.post("/api/devices/:id/ptz/goto", deviceController::ptzGoto);
         Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
         Spark.get("/api/devices/:id/record-video", deviceController::getRecordVideo);
         Spark.get("/api/devices/:id/video", deviceController::getVideoFile);

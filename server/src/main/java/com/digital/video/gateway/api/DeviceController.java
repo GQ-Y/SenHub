@@ -621,6 +621,59 @@ public class DeviceController {
     }
 
     /**
+     * PTZ绝对定位控制
+     * POST /api/devices/:id/ptz/goto
+     * 直接指定水平角度、垂直角度、变倍参数控制球机
+     */
+    public String ptzGoto(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            
+            // 获取PTZ参数
+            if (body.get("pan") == null || body.get("tilt") == null) {
+                response.status(400);
+                return createErrorResponse(400, "pan和tilt参数不能为空");
+            }
+            
+            float pan = ((Number) body.get("pan")).floatValue();   // 水平角度 0-360°
+            float tilt = ((Number) body.get("tilt")).floatValue(); // 垂直角度
+            float zoom = body.get("zoom") != null ? ((Number) body.get("zoom")).floatValue() : 1.0f; // 变倍，默认1.0
+
+            int channel = device.getChannel() > 0 ? device.getChannel() : 1;
+
+            // 使用PTZService进行绝对定位
+            boolean result = ptzService.gotoAngle(deviceId, channel, pan, tilt, zoom);
+
+            if (!result) {
+                response.status(500);
+                return createErrorResponse(500, "PTZ绝对定位失败");
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("message", "云台定位命令已执行");
+            data.put("pan", pan);
+            data.put("tilt", tilt);
+            data.put("zoom", zoom);
+
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("PTZ绝对定位失败", e);
+            response.status(500);
+            return createErrorResponse(500, "PTZ绝对定位失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 根据设备品牌获取合理的云台默认速度
      */
     private int getDefaultSpeed(String brand) {

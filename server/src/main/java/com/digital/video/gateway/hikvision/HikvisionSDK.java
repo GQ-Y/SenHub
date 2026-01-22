@@ -1249,26 +1249,60 @@ public class HikvisionSDK implements DeviceSDK {
 
         try {
             HCNetSDK.NET_DVR_PTZPOS struPos = new HCNetSDK.NET_DVR_PTZPOS();
-            // 海康绝对定位参数：角度*10。例如水平 36.5 度传 365
-            struPos.wPanPos = (short) (pan * 10);
-            struPos.wTiltPos = (short) (tilt * 10);
-            struPos.wZoomPos = (short) (zoom * 10);
+            // wAction: 1-定位PTZ, 2-定位P, 3-定位T, 4-定位Z, 5-定位PT
+            struPos.wAction = 1;
+            
+            // 海康绝对定位参数使用BCD码格式
+            // 例如：48.1° -> 0x0481, 120.5° -> 0x1205
+            // 需要将十进制角度*10后转换为BCD码
+            struPos.wPanPos = (short) toBCD((int) (pan * 10));
+            struPos.wTiltPos = (short) toBCD((int) (tilt * 10));
+            struPos.wZoomPos = (short) toBCD((int) (zoom * 10));
             struPos.write();
+
+            logger.info("海康云台绝对定位参数: userId={}, channel={}, pan={}°->BCD:0x{}, tilt={}°->BCD:0x{}, zoom={}x->BCD:0x{}",
+                    userId, channel, pan, Integer.toHexString(struPos.wPanPos & 0xFFFF), 
+                    tilt, Integer.toHexString(struPos.wTiltPos & 0xFFFF),
+                    zoom, Integer.toHexString(struPos.wZoomPos & 0xFFFF));
 
             boolean result = hCNetSDK.NET_DVR_SetDVRConfig(userId, HCNetSDK.NET_DVR_SET_PTZPOS, channel,
                     struPos.getPointer(), struPos.size());
             if (!result) {
-                logger.error("海康云台绝对定位失败: userId={}, channel={}, 错误码={}", userId, channel, getLastError());
+                int errorCode = getLastError();
+                logger.error("海康云台绝对定位失败: userId={}, channel={}, 错误码={}", userId, channel, errorCode);
+                if (errorCode == 11) {
+                    logger.warn("错误码11(无权限): 可能原因: 1.设备不支持绝对定位 2.通道号错误 3.需要管理员权限");
+                }
                 return false;
             }
 
-            logger.info("海康云台绝对定位成功: userId={}, channel={}, pan={}, tilt={}, zoom={}",
+            logger.info("海康云台绝对定位成功: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
                     userId, channel, pan, tilt, zoom);
             return true;
         } catch (Exception e) {
             logger.error("海康云台绝对定位异常: userId={}, channel={}", userId, channel, e);
             return false;
         }
+    }
+    
+    /**
+     * 将十进制数转换为BCD码
+     * 例如：481 -> 0x0481, 1205 -> 0x1205
+     * @param decimal 十进制数 (0-9999)
+     * @return BCD码
+     */
+    private int toBCD(int decimal) {
+        if (decimal < 0) decimal = 0;
+        if (decimal > 9999) decimal = 9999;
+        
+        int bcd = 0;
+        int shift = 0;
+        while (decimal > 0) {
+            bcd |= (decimal % 10) << shift;
+            decimal /= 10;
+            shift += 4;
+        }
+        return bcd;
     }
 
     @Override

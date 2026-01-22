@@ -126,6 +126,21 @@ export const deviceService = {
   },
 
   /**
+   * PTZ绝对定位控制
+   * @param deviceId 设备ID
+   * @param pan 水平角度 (0-360°)
+   * @param tilt 垂直角度
+   * @param zoom 变倍 (默认1.0)
+   */
+  async ptzGoto(deviceId: string, pan: number, tilt: number, zoom: number = 1.0) {
+    const response = await post<{ message: string; pan: number; tilt: number; zoom: number }>(
+      `/devices/${encodeURIComponent(deviceId)}/ptz/goto`,
+      { pan, tilt, zoom }
+    );
+    return response;
+  },
+
+  /**
    * 获取视频流地址（返回最新录制的视频）
    */
   async getStreamUrl(deviceId: string) {
