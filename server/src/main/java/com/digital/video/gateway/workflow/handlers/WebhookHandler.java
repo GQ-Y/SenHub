@@ -173,12 +173,48 @@ public class WebhookHandler implements FlowNodeHandler {
         content.append("报警类型: ").append(alarmTypeDisplay).append("\n");
         content.append("报警时间: ").append(timeStr);
         
+        // 检查是否有GIS信息（GIS信息上传事件）
+        Map<String, Object> payload = context.getPayload();
+        if (payload != null && payload.containsKey("alarmData")) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> alarmData = (Map<String, Object>) payload.get("alarmData");
+            if (alarmData != null && alarmData.containsKey("latitude") && alarmData.containsKey("longitude")) {
+                // 添加GIS信息
+                content.append("\n\n【GIS信息】");
+                content.append("\n位置: ").append(alarmData.get("latitude")).append(", ").append(alarmData.get("longitude"));
+                if (alarmData.containsKey("latitudeDecimal") && alarmData.containsKey("longitudeDecimal")) {
+                    content.append("\n坐标: (").append(alarmData.get("latitudeDecimal"))
+                           .append(", ").append(alarmData.get("longitudeDecimal")).append(")");
+                }
+                if (alarmData.containsKey("azimuth")) {
+                    content.append("\n朝向: ").append(alarmData.get("azimuth")).append("° (")
+                           .append(alarmData.get("azimuthDescription")).append(")");
+                }
+                if (alarmData.containsKey("ptz")) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> ptz = (Map<String, Object>) alarmData.get("ptz");
+                    if (ptz != null) {
+                        content.append("\nPTZ: 水平=").append(ptz.get("panPos"))
+                               .append("° 垂直=").append(ptz.get("tiltPos"))
+                               .append("° 变倍=").append(ptz.get("zoomPos")).append("x");
+                    }
+                }
+                if (alarmData.containsKey("horizontalFov") && alarmData.containsKey("verticalFov")) {
+                    content.append("\n视场角: 水平=").append(alarmData.get("horizontalFov"))
+                           .append("° 垂直=").append(alarmData.get("verticalFov")).append("°");
+                }
+                if (alarmData.containsKey("visibleRadius")) {
+                    content.append("\n可视半径: ").append(alarmData.get("visibleRadius")).append("m");
+                }
+            }
+        }
+        
         // 添加抓图地址
         if (imageUrl != null && !imageUrl.isEmpty()) {
-            content.append("\n抓图地址: ").append(imageUrl);
+            content.append("\n\n抓图地址: ").append(imageUrl);
         } else if (ossUrl != null && !ossUrl.isEmpty() && !ossUrl.endsWith(".mp4")) {
             // 兼容旧逻辑：如果ossUrl不是视频，则作为抓图地址
-            content.append("\n抓图地址: ").append(ossUrl);
+            content.append("\n\n抓图地址: ").append(ossUrl);
         }
         
         // 添加录像地址

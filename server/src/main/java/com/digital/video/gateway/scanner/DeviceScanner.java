@@ -668,8 +668,8 @@ public class DeviceScanner {
             String errorMessage = null;
 
             if (deviceManager != null) {
-                // 临时保存登录状态，用于获取设备信息
-                boolean result = deviceManager.loginDevice(tempDevice);
+                // 使用不保存到数据库的登录方法
+                boolean result = deviceManager.loginDeviceWithoutSave(tempDevice);
                 if (result) {
                     loginSuccess = true;
                     detectedBrand = tempDevice.getBrand();

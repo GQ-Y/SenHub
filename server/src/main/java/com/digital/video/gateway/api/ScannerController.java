@@ -224,7 +224,9 @@ public class ScannerController {
 
             int addedCount = 0;
             int failedCount = 0;
+            int skippedCount = 0;
             List<String> errors = new ArrayList<>();
+            List<String> addedDevices = new ArrayList<>();
 
             for (String deviceIp : deviceIps) {
                 try {
@@ -243,6 +245,8 @@ public class ScannerController {
                     // 检查设备是否已存在
                     DeviceInfo existingDevice = database.getDeviceByIpPort(scannedDevice.getIp(), scannedDevice.getPort());
                     if (existingDevice != null) {
+                        skippedCount++;
+                        errors.add("设备 " + deviceIp + " 已存在，已跳过");
                         logger.debug("设备已存在，跳过: {}:{}", scannedDevice.getIp(), scannedDevice.getPort());
                         continue;
                     }
@@ -269,6 +273,7 @@ public class ScannerController {
                     // 保存到数据库
                     database.saveOrUpdateDevice(device);
                     addedCount++;
+                    addedDevices.add(deviceIp);
 
                     logger.info("已添加扫描设备到数据库: {}:{} (品牌: {})", 
                             scannedDevice.getIp(), scannedDevice.getPort(), scannedDevice.getBrand());
@@ -283,7 +288,9 @@ public class ScannerController {
             response.type("application/json");
             Map<String, Object> result = new HashMap<>();
             result.put("addedCount", addedCount);
+            result.put("skippedCount", skippedCount);
             result.put("failedCount", failedCount);
+            result.put("addedDevices", addedDevices);
             result.put("errors", errors);
             return createSuccessResponse(result);
         } catch (Exception e) {

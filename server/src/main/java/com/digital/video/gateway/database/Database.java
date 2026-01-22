@@ -136,6 +136,14 @@ public class Database {
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
                 ")";
 
+        String createWorkflowExecutionHistoryTable = "CREATE TABLE IF NOT EXISTS workflow_execution_history (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "flow_id TEXT NOT NULL, " +
+                "rule_id TEXT, " +
+                "device_id TEXT, " +
+                "executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                ")";
+
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
                 "CREATE INDEX IF NOT EXISTS idx_ip_port ON devices(ip, port); " +
                 "CREATE INDEX IF NOT EXISTS idx_brand ON devices(brand); " +
@@ -145,7 +153,9 @@ public class Database {
                 "CREATE INDEX IF NOT EXISTS idx_device_history_recorded_at ON device_history(recorded_at); " +
                 "CREATE INDEX IF NOT EXISTS idx_alarm_history_recorded_at ON alarm_history(recorded_at); " +
                 "CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read); " +
-                "CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);";
+                "CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at); " +
+                "CREATE INDEX IF NOT EXISTS idx_workflow_execution_flow_id ON workflow_execution_history(flow_id); " +
+                "CREATE INDEX IF NOT EXISTS idx_workflow_execution_executed_at ON workflow_execution_history(executed_at);";
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
@@ -155,6 +165,7 @@ public class Database {
             stmt.execute(createDeviceHistoryTable);
             stmt.execute(createAlarmHistoryTable);
             stmt.execute(createNotificationsTable);
+            stmt.execute(createWorkflowExecutionHistoryTable);
             stmt.execute(createIndex);
 
             // 检查并添加channel列（如果表已存在但缺少该列）
@@ -880,10 +891,6 @@ public class Database {
                 }
             }
 
-            // 获取当前系统时间
-            java.util.Calendar cal = java.util.Calendar.getInstance();
-            int currentHour = cal.get(java.util.Calendar.HOUR_OF_DAY);
-            
             // 生成固定的时间点（每4小时一个点：00, 04, 08, 12, 16, 20）
             // 注意：移除24:00，因为24:00是下一天的00:00，不在过去24小时内
             int[] timePoints = { 0, 4, 8, 12, 16, 20 };
@@ -958,6 +965,135 @@ public class Database {
             logger.error("获取24小时告警数量失败", e);
         }
         return 0;
+    }
+
+    /**
+     * 获取24小时内的报警事件趋势数据（按小时统计）
+     * 从alarm_records表统计
+     */
+    public List<Map<String, Object>> getAlarmEventTrend24h() {
+        List<Map<String, Object>> trendData = new ArrayList<>();
+        
+        try {
+            // 查询过去24小时的报警事件，按小时分组
+            String sql = "SELECT " +
+                    "strftime('%H', datetime(recorded_at, 'localtime')) as hour, " +
+                    "COUNT(*) as alarm_count " +
+                    "FROM alarm_records " +
+                    "WHERE datetime(recorded_at, 'localtime') >= datetime('now', 'localtime', '-24 hours') " +
+                    "GROUP BY strftime('%H', datetime(recorded_at, 'localtime')) " +
+                    "ORDER BY hour";
+
+            Map<String, Integer> hourData = new HashMap<>();
+            try (Statement stmt = connection.createStatement();
+                    ResultSet rs = stmt.executeQuery(sql)) {
+                while (rs.next()) {
+                    String hour = rs.getString("hour");
+                    int alarmCount = rs.getInt("alarm_count");
+                    hourData.put(hour, alarmCount);
+                }
+            }
+
+            // 生成固定的时间点（每4小时一个点：00, 04, 08, 12, 16, 20）
+            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
+            
+            for (int hourInt : timePoints) {
+                Map<String, Object> dataPoint = new HashMap<>();
+                String hourStr = String.format("%02d", hourInt);
+                dataPoint.put("name", hourStr + ":00");
+                
+                // 获取该小时的报警数量，如果没有数据则为0
+                int alarmCount = hourData.getOrDefault(hourStr, 0);
+                dataPoint.put("alarms", alarmCount);
+                
+                trendData.add(dataPoint);
+            }
+        } catch (SQLException e) {
+            logger.error("获取报警事件趋势失败", e);
+            // 返回空数据
+            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
+            for (int hourInt : timePoints) {
+                Map<String, Object> dataPoint = new HashMap<>();
+                String hourStr = String.format("%02d", hourInt);
+                dataPoint.put("name", hourStr + ":00");
+                dataPoint.put("alarms", 0);
+                trendData.add(dataPoint);
+            }
+        }
+        return trendData;
+    }
+
+    /**
+     * 记录工作流执行历史
+     */
+    public boolean recordWorkflowExecution(String flowId, String ruleId, String deviceId) {
+        String sql = "INSERT INTO workflow_execution_history (flow_id, rule_id, device_id, executed_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, flowId);
+            pstmt.setString(2, ruleId);
+            pstmt.setString(3, deviceId);
+            pstmt.executeUpdate();
+            logger.debug("工作流执行记录已保存: flowId={}, ruleId={}, deviceId={}", flowId, ruleId, deviceId);
+            return true;
+        } catch (SQLException e) {
+            logger.error("记录工作流执行失败: flowId={}", flowId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 获取24小时内的工作流执行趋势数据（按小时统计）
+     */
+    public List<Map<String, Object>> getWorkflowExecutionTrend24h() {
+        List<Map<String, Object>> trendData = new ArrayList<>();
+        
+        try {
+            // 查询过去24小时的工作流执行记录，按小时分组
+            String sql = "SELECT " +
+                    "strftime('%H', datetime(executed_at, 'localtime')) as hour, " +
+                    "COUNT(*) as workflow_count " +
+                    "FROM workflow_execution_history " +
+                    "WHERE datetime(executed_at, 'localtime') >= datetime('now', 'localtime', '-24 hours') " +
+                    "GROUP BY strftime('%H', datetime(executed_at, 'localtime')) " +
+                    "ORDER BY hour";
+
+            Map<String, Integer> hourData = new HashMap<>();
+            try (Statement stmt = connection.createStatement();
+                    ResultSet rs = stmt.executeQuery(sql)) {
+                while (rs.next()) {
+                    String hour = rs.getString("hour");
+                    int workflowCount = rs.getInt("workflow_count");
+                    hourData.put(hour, workflowCount);
+                }
+            }
+
+            // 生成固定的时间点（每4小时一个点：00, 04, 08, 12, 16, 20）
+            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
+            
+            for (int hourInt : timePoints) {
+                Map<String, Object> dataPoint = new HashMap<>();
+                String hourStr = String.format("%02d", hourInt);
+                dataPoint.put("name", hourStr + ":00");
+                
+                // 获取该小时的工作流执行数量，如果没有数据则为0
+                int workflowCount = hourData.getOrDefault(hourStr, 0);
+                dataPoint.put("workflows", workflowCount);
+                
+                trendData.add(dataPoint);
+            }
+        } catch (SQLException e) {
+            logger.error("获取工作流执行趋势失败", e);
+            // 返回空数据
+            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
+            for (int hourInt : timePoints) {
+                Map<String, Object> dataPoint = new HashMap<>();
+                String hourStr = String.format("%02d", hourInt);
+                dataPoint.put("name", hourStr + ":00");
+                dataPoint.put("workflows", 0);
+                trendData.add(dataPoint);
+            }
+        }
+        return trendData;
     }
 
     /**

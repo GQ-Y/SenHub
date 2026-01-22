@@ -75,11 +75,10 @@ export const MOCK_DRIVERS: Driver[] = [
 ];
 
 export const CHART_DATA = [
-  { name: '00:00', online: 4, offline: 0 },
-  { name: '04:00', online: 4, offline: 0 },
-  { name: '08:00', online: 3, offline: 1 },
-  { name: '12:00', online: 4, offline: 0 },
-  { name: '16:00', online: 4, offline: 0 },
-  { name: '20:00', online: 3, offline: 1 },
-  { name: '24:00', online: 4, offline: 0 },
+  { name: '00:00', alarms: 0, workflows: 0 },
+  { name: '04:00', alarms: 0, workflows: 0 },
+  { name: '08:00', alarms: 0, workflows: 0 },
+  { name: '12:00', alarms: 0, workflows: 0 },
+  { name: '16:00', alarms: 0, workflows: 0 },
+  { name: '20:00', alarms: 0, workflows: 0 },
 ];

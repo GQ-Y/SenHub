@@ -761,8 +761,45 @@ public class HikvisionSDK implements DeviceSDK {
                         if (deviceId != null) {
                             String alarmType = getAlarmTypeName(lCommand);
                             String alarmMessage = "海康报警: " + alarmType;
+                            
+                            // 特殊处理GIS信息上传
+                            java.util.Map<String, Object> alarmData = null;
+                            if (lCommand == HCNetSDK.COMM_GISINFO_UPLOAD && pAlarmInfo != null && dwBufLen > 0) {
+                                try {
+                                    alarmData = parseGisInfo(pAlarmInfo, dwBufLen);
+                                    if (alarmData != null) {
+                                        alarmMessage = buildGisAlarmMessage(alarmData);
+                                        // 打印详细的GIS信息到日志
+                                        logger.info("========== GIS信息解析成功 ==========");
+                                        logger.info("设备ID: {}", deviceId);
+                                        logger.info("经纬度: {} ({}, {})", 
+                                            alarmData.get("latitude") + ", " + alarmData.get("longitude"),
+                                            alarmData.get("latitudeDecimal"), alarmData.get("longitudeDecimal"));
+                                        logger.info("方位角: {}° ({})", 
+                                            alarmData.get("azimuth"), alarmData.get("azimuthDescription"));
+                                        if (alarmData.containsKey("ptz")) {
+                                            @SuppressWarnings("unchecked")
+                                            java.util.Map<String, Object> ptz = (java.util.Map<String, Object>) alarmData.get("ptz");
+                                            logger.info("PTZ坐标: 水平={}° 垂直={}° 变倍={}x", 
+                                                ptz.get("panPos"), ptz.get("tiltPos"), ptz.get("zoomPos"));
+                                        }
+                                        logger.info("视场角: 水平={}° 垂直={}° 可视半径={}m", 
+                                            alarmData.get("horizontalFov"), alarmData.get("verticalFov"), alarmData.get("visibleRadius"));
+                                        if (alarmData.containsKey("sensor")) {
+                                            @SuppressWarnings("unchecked")
+                                            java.util.Map<String, Object> sensor = (java.util.Map<String, Object>) alarmData.get("sensor");
+                                            logger.info("传感器: 类型={} 水平宽度={} 垂直宽度={} 焦距={}", 
+                                                sensor.get("sensorType"), sensor.get("horWidth"), sensor.get("verWidth"), sensor.get("focalLength"));
+                                        }
+                                        logger.info("=====================================");
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("解析GIS信息失败", e);
+                                }
+                            }
+                            
                             logger.info("处理报警: deviceId={}, channel={}, alarmType={}", deviceId, channel, alarmType);
-                            alarmService.handleAlarm(deviceId, channel, alarmType, alarmMessage);
+                            alarmService.handleAlarm(deviceId, channel, alarmType, alarmMessage, alarmData);
                         } else {
                             logger.warn("报警回调无法找到设备: IP={}, userId={}", deviceIP, userId);
                         }
@@ -788,9 +825,184 @@ public class HikvisionSDK implements DeviceSDK {
                     return "BEHAVIOR_ANALYSIS"; // 行为分析
                 case HCNetSDK.COMM_SWITCH_ALARM:
                     return "IO_ALARM"; // 开关量报警
+                case HCNetSDK.COMM_GISINFO_UPLOAD:
+                    return "GIS_INFO_UPLOAD"; // GIS信息上传
                 default:
                     return "ALARM_0x" + Integer.toHexString(lCommand);
             }
+        }
+        
+        /**
+         * 解析GIS信息结构体
+         */
+        private java.util.Map<String, Object> parseGisInfo(com.sun.jna.Pointer pAlarmInfo, int dwBufLen) {
+            try {
+                if (pAlarmInfo == null || dwBufLen < 4) {
+                    logger.warn("GIS信息指针为空或长度不足: dwBufLen={}", dwBufLen);
+                    return null;
+                }
+                
+                // 创建GIS信息结构体并读取数据
+                HCNetSDK.NET_DVR_GIS_UPLOADINFO gisInfo = new HCNetSDK.NET_DVR_GIS_UPLOADINFO();
+                // 使用Pointer直接读取数据到结构体
+                com.sun.jna.Pointer gisInfoPointer = gisInfo.getPointer();
+                if (gisInfoPointer != null) {
+                    byte[] data = pAlarmInfo.getByteArray(0, Math.min(dwBufLen, gisInfo.size()));
+                    gisInfoPointer.write(0, data, 0, data.length);
+                    gisInfo.read();
+                } else {
+                    logger.warn("无法获取GIS结构体指针");
+                    return null;
+                }
+                
+                java.util.Map<String, Object> gisData = new java.util.HashMap<>();
+                
+                // 1. 经纬度信息
+                String latitudeStr = formatLatitude(gisInfo.struLatitude, gisInfo.byLatitudeType);
+                String longitudeStr = formatLongitude(gisInfo.struLongitude, gisInfo.byLongitudeType);
+                gisData.put("latitude", latitudeStr);
+                gisData.put("longitude", longitudeStr);
+                gisData.put("latitudeType", gisInfo.byLatitudeType == 0 ? "北纬" : "南纬");
+                gisData.put("longitudeType", gisInfo.byLongitudeType == 0 ? "东经" : "西经");
+                
+                // 转换为十进制度数（用于地图显示）
+                double latitudeDecimal = convertToDecimal(gisInfo.struLatitude.byDegree, 
+                    gisInfo.struLatitude.byMinute, gisInfo.struLatitude.fSec);
+                if (gisInfo.byLatitudeType == 1) latitudeDecimal = -latitudeDecimal; // 南纬为负
+                
+                double longitudeDecimal = convertToDecimal(gisInfo.struLongitude.byDegree, 
+                    gisInfo.struLongitude.byMinute, gisInfo.struLongitude.fSec);
+                if (gisInfo.byLongitudeType == 1) longitudeDecimal = -longitudeDecimal; // 西经为负
+                
+                gisData.put("latitudeDecimal", latitudeDecimal);
+                gisData.put("longitudeDecimal", longitudeDecimal);
+                
+                // 2. 方位角（摄像头朝向）
+                gisData.put("azimuth", gisInfo.fAzimuth);
+                gisData.put("azimuthDescription", formatAzimuth(gisInfo.fAzimuth));
+                
+                // 3. PTZ坐标
+                if (gisInfo.struPtzPos != null) {
+                    java.util.Map<String, Object> ptzData = new java.util.HashMap<>();
+                    ptzData.put("panPos", gisInfo.struPtzPos.fPanPos);      // 水平角度
+                    ptzData.put("tiltPos", gisInfo.struPtzPos.fTiltPos);    // 垂直角度
+                    ptzData.put("zoomPos", gisInfo.struPtzPos.fZoomPos);    // 变倍倍数
+                    gisData.put("ptz", ptzData);
+                }
+                
+                // 4. 视场角信息
+                gisData.put("horizontalFov", gisInfo.fHorizontalValue);  // 水平视场角
+                gisData.put("verticalFov", gisInfo.fVerticalValue);      // 垂直视场角
+                gisData.put("visibleRadius", gisInfo.fVisibleRadius);   // 当前可视半径
+                gisData.put("maxViewRadius", gisInfo.fMaxViewRadius);  // 最大可视半径
+                
+                // 5. Sensor信息
+                if (gisInfo.struSensorParam != null) {
+                    java.util.Map<String, Object> sensorData = new java.util.HashMap<>();
+                    sensorData.put("sensorType", gisInfo.struSensorParam.bySensorType == 0 ? "CCD" : "CMOS");
+                    sensorData.put("horWidth", gisInfo.struSensorParam.fHorWidth);
+                    sensorData.put("verWidth", gisInfo.struSensorParam.fVerWidth);
+                    sensorData.put("focalLength", gisInfo.struSensorParam.fFold);
+                    gisData.put("sensor", sensorData);
+                }
+                
+                // 6. 设备信息
+                if (gisInfo.struDevInfo != null) {
+                    java.util.Map<String, Object> devData = new java.util.HashMap<>();
+                    devData.put("channel", gisInfo.struDevInfo.byChannel & 0xFF);
+                    gisData.put("device", devData);
+                }
+                
+                // 7. 时间信息
+                gisData.put("relativeTime", gisInfo.dwRelativeTime);
+                gisData.put("absTime", gisInfo.dwAbsTime);
+                
+                return gisData;
+            } catch (Exception e) {
+                logger.error("解析GIS信息结构体失败", e);
+                return null;
+            }
+        }
+        
+        /**
+         * 格式化纬度字符串
+         */
+        private String formatLatitude(HCNetSDK.NET_DVR_LLI_PARAM lat, byte latType) {
+            return String.format("%s %d°%d'%.2f\"", 
+                latType == 0 ? "N" : "S", 
+                lat.byDegree & 0xFF, 
+                lat.byMinute & 0xFF, 
+                lat.fSec);
+        }
+        
+        /**
+         * 格式化经度字符串
+         */
+        private String formatLongitude(HCNetSDK.NET_DVR_LLI_PARAM lon, byte lonType) {
+            return String.format("%s %d°%d'%.2f\"", 
+                lonType == 0 ? "E" : "W", 
+                lon.byDegree & 0xFF, 
+                lon.byMinute & 0xFF, 
+                lon.fSec);
+        }
+        
+        /**
+         * 将度分秒转换为十进制度数
+         */
+        private double convertToDecimal(byte degree, byte minute, float second) {
+            return (degree & 0xFF) + (minute & 0xFF) / 60.0 + second / 3600.0;
+        }
+        
+        /**
+         * 格式化方位角描述
+         */
+        private String formatAzimuth(float azimuth) {
+            if (azimuth >= 0 && azimuth < 22.5 || azimuth >= 337.5) {
+                return "正北";
+            } else if (azimuth >= 22.5 && azimuth < 67.5) {
+                return "东北";
+            } else if (azimuth >= 67.5 && azimuth < 112.5) {
+                return "正东";
+            } else if (azimuth >= 112.5 && azimuth < 157.5) {
+                return "东南";
+            } else if (azimuth >= 157.5 && azimuth < 202.5) {
+                return "正南";
+            } else if (azimuth >= 202.5 && azimuth < 247.5) {
+                return "西南";
+            } else if (azimuth >= 247.5 && azimuth < 292.5) {
+                return "正西";
+            } else {
+                return "西北";
+            }
+        }
+        
+        /**
+         * 构建GIS报警消息
+         */
+        private String buildGisAlarmMessage(java.util.Map<String, Object> gisData) {
+            StringBuilder msg = new StringBuilder("GIS信息上传: ");
+            
+            // 经纬度
+            if (gisData.containsKey("latitude") && gisData.containsKey("longitude")) {
+                msg.append(String.format("位置: %s, %s", 
+                    gisData.get("latitude"), gisData.get("longitude")));
+            }
+            
+            // 方位角
+            if (gisData.containsKey("azimuth")) {
+                msg.append(String.format(" | 朝向: %.2f°(%s)", 
+                    gisData.get("azimuth"), gisData.get("azimuthDescription")));
+            }
+            
+            // PTZ坐标
+            if (gisData.containsKey("ptz")) {
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> ptz = (java.util.Map<String, Object>) gisData.get("ptz");
+                msg.append(String.format(" | PTZ: 水平%.1f° 垂直%.1f° 变倍%.1fx", 
+                    ptz.get("panPos"), ptz.get("tiltPos"), ptz.get("zoomPos")));
+            }
+            
+            return msg.toString();
         }
     }
 

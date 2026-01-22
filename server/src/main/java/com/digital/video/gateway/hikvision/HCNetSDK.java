@@ -939,6 +939,12 @@ public interface HCNetSDK extends Library {
     public static final int COMM_FIREDETECTION_ALARM = 0x4991;  //火点报警上传
     public static final int COMM_THERMOMETRY_DIFF_ALARM = 0x5111; //温差报警
     public static final int COMM_ALARM_SHIPSDETECTION = 0x4521; //船只检测报警
+    public static final int COMM_ALARM_FACE_DETECTION = 0x4010; //人脸侦测报警
+    public static final int COMM_ALARM_TARGET_LEFT_REGION = 0x4011; //检测目标离开检测区域报警
+    public static final int COMM_GISINFO_UPLOAD = 0x4012; //GIS信息上传
+    public static final int COMM_VANDALPROOF_ALARM = 0x4013; //上传防破坏报警信息
+    public static final int COMM_PEOPLE_DETECTION_UPLOAD = 0x4014; //人员侦测信息上传
+    public static final int COMM_ALARM_STORAGE_DETECTION = 0x4015; //存储智能检测报警上传
     public static final int COMM_UPLOAD_AIOP_VIDEO = 0x4021; //设备支持AI开放平台接入，上传视频检测数据
     public static final int COMM_UPLOAD_AIOP_PICTURE = 0x4022; //设备支持AI开放平台接入，上传图片检测数据
     public static final int COMM_UPLOAD_AIOP_POLLING_SNAP = 0x4023; //设备支持AI开放平台接入，上传轮巡抓图图片检测数据 对应的结构体(NET_AIOP_POLLING_PICTURE_HEAD)

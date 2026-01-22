@@ -241,9 +241,18 @@ export const DeviceList: React.FC = () => {
       const deviceIps = Array.from(selectedScanDevices);
       const response = await scannerService.addDevices(scanSession.sessionId, deviceIps);
       
+      const { addedCount, skippedCount, failedCount } = response.data;
+      let message = `成功添加 ${addedCount} 个设备`;
+      if (skippedCount > 0) {
+        message += `，跳过 ${skippedCount} 个（已存在）`;
+      }
+      if (failedCount > 0) {
+        message += `，失败 ${failedCount} 个`;
+      }
+      
       modal.showModal({
-        message: `成功添加 ${response.data.addedCount} 个设备，失败 ${response.data.failedCount} 个`,
-        type: response.data.failedCount === 0 ? 'success' : 'warning',
+        message,
+        type: addedCount > 0 ? 'success' : (skippedCount > 0 ? 'info' : 'warning'),
       });
       
       // 关闭扫描弹窗并刷新设备列表
@@ -597,7 +606,7 @@ export const DeviceList: React.FC = () => {
               <input
                 type="text"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.name}
+                value={formData.name || ''}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
@@ -606,7 +615,7 @@ export const DeviceList: React.FC = () => {
               <input
                 type="text"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.ip}
+                value={formData.ip || ''}
                 onChange={e => setFormData({ ...formData, ip: e.target.value })}
               />
             </div>
@@ -615,7 +624,7 @@ export const DeviceList: React.FC = () => {
               <input
                 type="number"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.port}
+                value={formData.port ?? 8000}
                 onChange={e => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
               />
             </div>
@@ -658,7 +667,7 @@ export const DeviceList: React.FC = () => {
               <input
                 type="text"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.model}
+                value={formData.model || ''}
                 onChange={e => setFormData({ ...formData, model: e.target.value })}
               />
             </div>

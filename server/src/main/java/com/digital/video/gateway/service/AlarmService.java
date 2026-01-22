@@ -436,6 +436,12 @@ public class AlarmService {
             }
             
             flowExecutor.execute(definition, context);
+            
+            // 记录工作流执行历史
+            if (database != null) {
+                database.recordWorkflowExecution(rule.getFlowId(), rule.getRuleId(), context.getDeviceId());
+            }
+            
             return true;
         } catch (Exception e) {
             logger.error("执行流程失败: flowId={}", rule.getFlowId(), e);

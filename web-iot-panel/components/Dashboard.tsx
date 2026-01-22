@@ -160,16 +160,32 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-gray-800">{t('device_connectivity')}</h3>
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">{t('event_statistics')}</h3>
+              <div className="flex items-center gap-4 mt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                  <span className="text-xs text-gray-500">{t('alarm_events')}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                  <span className="text-xs text-gray-500">{t('workflow_executions')}</span>
+                </div>
+              </div>
+            </div>
             <span className="text-sm text-gray-500 font-medium">{t('last_24_hours')}</span>
           </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
-                  <linearGradient id="colorOnline" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  <linearGradient id="colorAlarms" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorWorkflows" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -177,14 +193,28 @@ export const Dashboard: React.FC = () => {
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
                 <Tooltip 
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
+                  formatter={(value: number, name: string) => {
+                    const label = name === 'alarms' ? t('alarm_events') : t('workflow_executions');
+                    return [value, label];
+                  }}
                 />
                 <Area 
                   type="monotone" 
-                  dataKey="online" 
-                  stroke="#10b981" 
-                  strokeWidth={3}
+                  dataKey="alarms" 
+                  stroke="#ef4444" 
+                  strokeWidth={2}
                   fillOpacity={1} 
-                  fill="url(#colorOnline)" 
+                  fill="url(#colorAlarms)" 
+                  name="alarms"
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="workflows" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  fillOpacity={1} 
+                  fill="url(#colorWorkflows)" 
+                  name="workflows"
                 />
               </AreaChart>
             </ResponsiveContainer>

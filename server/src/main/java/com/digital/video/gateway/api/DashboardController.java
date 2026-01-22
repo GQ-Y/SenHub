@@ -137,32 +137,42 @@ public class DashboardController {
     /**
      * 获取图表数据
      * GET /api/dashboard/chart
+     * 返回报警事件统计和工作流执行次数统计的两条曲线数据
      */
     public String getChart(Request request, Response response) {
         try {
-            // 从数据库获取24小时连接趋势数据（已包含智能补充逻辑）
-            List<Map<String, Object>> chartData = database.getDeviceConnectivityTrend24h();
-
-            // 确保返回的数据格式正确
-            if (chartData.isEmpty()) {
-                // 如果仍然为空，使用当前设备状态生成默认数据
-                List<DeviceInfo> devices = deviceManager.getAllDevices();
-                int onlineDevices = 0;
-                for (DeviceInfo device : devices) {
-                    if (device.getStatus() == 1) {
-                        onlineDevices++;
-                    }
-                }
-
-                // 生成默认数据（所有时间点都使用当前在线数量）
-                String[] timePoints = { "00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00" };
-                chartData = new ArrayList<>();
-                for (String time : timePoints) {
-                    Map<String, Object> dataPoint = new HashMap<>();
-                    dataPoint.put("name", time);
-                    dataPoint.put("online", onlineDevices);
-                    chartData.add(dataPoint);
-                }
+            // 获取报警事件趋势数据
+            List<Map<String, Object>> alarmTrendData = database.getAlarmEventTrend24h();
+            
+            // 获取工作流执行趋势数据
+            List<Map<String, Object>> workflowTrendData = database.getWorkflowExecutionTrend24h();
+            
+            // 合并两个趋势数据（使用相同的时间点）
+            List<Map<String, Object>> chartData = new ArrayList<>();
+            String[] timePoints = { "00:00", "04:00", "08:00", "12:00", "16:00", "20:00" };
+            
+            // 创建快速查找的Map
+            Map<String, Integer> alarmMap = new HashMap<>();
+            for (Map<String, Object> data : alarmTrendData) {
+                String name = (String) data.get("name");
+                Integer alarms = (Integer) data.get("alarms");
+                alarmMap.put(name, alarms != null ? alarms : 0);
+            }
+            
+            Map<String, Integer> workflowMap = new HashMap<>();
+            for (Map<String, Object> data : workflowTrendData) {
+                String name = (String) data.get("name");
+                Integer workflows = (Integer) data.get("workflows");
+                workflowMap.put(name, workflows != null ? workflows : 0);
+            }
+            
+            // 合并数据
+            for (String time : timePoints) {
+                Map<String, Object> dataPoint = new HashMap<>();
+                dataPoint.put("name", time);
+                dataPoint.put("alarms", alarmMap.getOrDefault(time, 0));
+                dataPoint.put("workflows", workflowMap.getOrDefault(time, 0));
+                chartData.add(dataPoint);
             }
 
             response.status(200);

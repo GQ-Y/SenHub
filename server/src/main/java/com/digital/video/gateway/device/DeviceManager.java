@@ -42,6 +42,23 @@ public class DeviceManager {
      * 登录设备（线程安全，防止同一设备并发登录）
      */
     public boolean loginDevice(DeviceInfo device) {
+        return loginDevice(device, true);
+    }
+
+    /**
+     * 登录设备（仅验证，不保存到数据库）
+     * 用于手动扫描时验证设备是否可登录
+     */
+    public boolean loginDeviceWithoutSave(DeviceInfo device) {
+        return loginDevice(device, false);
+    }
+
+    /**
+     * 登录设备（线程安全，防止同一设备并发登录）
+     * @param device 设备信息
+     * @param saveToDatabase 是否保存到数据库
+     */
+    private boolean loginDevice(DeviceInfo device, boolean saveToDatabase) {
         String deviceId = device.getDeviceId();
 
         // 获取或创建该设备的登录锁
@@ -81,7 +98,9 @@ public class DeviceManager {
                 if (sdk == null) {
                     logger.error("无法获取品牌SDK: {} (设备: {})，SDK可能未初始化", brand, deviceId);
                     device.setStatus(0);
-                    database.updateDeviceStatus(deviceId, 0, -1);
+                    if (saveToDatabase) {
+                        database.updateDeviceStatus(deviceId, 0, -1);
+                    }
                     return false;
                 }
                 logger.debug("使用指定品牌SDK登录: {} (品牌: {})", deviceId, brand);
@@ -152,7 +171,9 @@ public class DeviceManager {
                     if (userId == -1) {
                         device.setBrand(DeviceInfo.BRAND_UNKNOWN);
                         device.setStatus(0);
-                        database.updateDeviceStatus(deviceId, 0, -1);
+                        if (saveToDatabase) {
+                            database.updateDeviceStatus(deviceId, 0, -1);
+                        }
                         logger.warn("设备登录失败: {} (所有SDK都失败)", deviceId);
                         logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);
                         return false;
@@ -173,14 +194,18 @@ public class DeviceManager {
                     device.setChannel(1); // 默认通道1
                 }
 
-                database.updateDeviceStatus(deviceId, 1, userId);
-                database.saveOrUpdateDevice(device); // 保存设备信息包括品牌和通道号
-                logger.info("设备登录成功: {} (品牌: {}, userId: {}, channel: {})",
-                        deviceId, detectedBrand, userId, device.getChannel());
+                if (saveToDatabase) {
+                    database.updateDeviceStatus(deviceId, 1, userId);
+                    database.saveOrUpdateDevice(device); // 保存设备信息包括品牌和通道号
+                }
+                logger.info("设备登录成功: {} (品牌: {}, userId: {}, channel: {}{})",
+                        deviceId, detectedBrand, userId, device.getChannel(), saveToDatabase ? "" : ", 未保存到数据库");
                 return true;
             } else {
                 device.setStatus(0);
-                database.updateDeviceStatus(deviceId, 0, -1);
+                if (saveToDatabase) {
+                    database.updateDeviceStatus(deviceId, 0, -1);
+                }
                 String errorMsg = sdk != null ? sdk.getLastErrorString() : "SDK未初始化";
                 logger.warn("设备登录失败: {} (品牌: {}, 错误: {})", deviceId, brand, errorMsg);
                 logger.warn("登录参数: IP={}, Port={}, Username={}", device.getIp(), port, username);

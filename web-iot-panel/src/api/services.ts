@@ -964,7 +964,7 @@ export const scannerService = {
    * 添加扫描到的设备到数据库
    */
   async addDevices(sessionId: string, deviceIps: string[]) {
-    const response = await post<{ addedCount: number; failedCount: number; errors: string[] }>(
+    const response = await post<{ addedCount: number; skippedCount: number; failedCount: number; addedDevices: string[]; errors: string[] }>(
       '/scanner/add-devices',
       { sessionId, deviceIps }
     );
