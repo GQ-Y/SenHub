@@ -1305,6 +1305,61 @@ public class HikvisionSDK implements DeviceSDK {
         return bcd;
     }
 
+    /**
+     * 将BCD码转换为十进制数
+     * 例如：0x0481 -> 481, 0x1205 -> 1205
+     * @param bcd BCD码
+     * @return 十进制数
+     */
+    private int fromBCD(int bcd) {
+        int result = 0;
+        int multiplier = 1;
+        while (bcd > 0) {
+            result += (bcd & 0x0F) * multiplier;
+            bcd >>= 4;
+            multiplier *= 10;
+        }
+        return result;
+    }
+
+    @Override
+    public PtzPosition getPtzPosition(int userId, int channel) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return null;
+        }
+
+        try {
+            HCNetSDK.NET_DVR_PTZPOS struPos = new HCNetSDK.NET_DVR_PTZPOS();
+            struPos.write();
+
+            IntByReference bytesReturned = new IntByReference(0);
+            boolean result = hCNetSDK.NET_DVR_GetDVRConfig(userId, HCNetSDK.NET_DVR_GET_PTZPOS, channel,
+                    struPos.getPointer(), struPos.size(), bytesReturned);
+
+            if (!result) {
+                int errorCode = getLastError();
+                logger.error("海康获取PTZ位置失败: userId={}, channel={}, 错误码={}", userId, channel, errorCode);
+                return null;
+            }
+
+            struPos.read();
+
+            // BCD码解码
+            float pan = fromBCD(struPos.wPanPos & 0xFFFF) / 10.0f;
+            float tilt = fromBCD(struPos.wTiltPos & 0xFFFF) / 10.0f;
+            float zoom = fromBCD(struPos.wZoomPos & 0xFFFF) / 10.0f;
+
+            logger.debug("海康获取PTZ位置成功: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
+                    userId, channel, pan, tilt, zoom);
+
+            return new PtzPosition(pan, tilt, zoom);
+        } catch (Exception e) {
+            logger.error("海康获取PTZ位置异常: userId={}, channel={}", userId, channel, e);
+            return null;
+        }
+    }
+
     @Override
     public int downloadPlaybackByTimeRange(int userId, int channel, Date startTime, Date endTime,
             String localFilePath, int streamType) {

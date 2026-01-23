@@ -66,6 +66,16 @@ public interface NvssdkLibrary extends Library {
     int ZOOM_BIG_STOP = 32; // 放大停止
     int ZOOM_SMALL = 33; // 缩小
     int ZOOM_SMALL_STOP = 34; // 缩小停止
+    
+    // 3D定位控制码（用于视频画面框选定位，不是角度绝对定位）
+    int PROTOCOL_3D_POSITION = 31; // 3D视频画面框选定位
+    int PROTOCOL_PRESET = 25; // 调用预置位
+
+    // 同步命令ID（用于PTZ绝对坐标）
+    int COMMAND_ID_MIN = 0;
+    int COMMAND_ID_3D_POSITION = 57;       // 3D定位（视频画面框选）
+    int COMMAND_ID_SYNC_SETPTZ = 106;      // 同步阻塞接口设置球机绝对坐标
+    int COMMAND_ID_SYNC_GETPTZ = 107;      // 同步阻塞接口获取球机绝对坐标
 
     // 查询命令
     int CMD_NETFILE_QUERY_FILE = 0; // 查询回放文件
@@ -133,7 +143,7 @@ public interface NvssdkLibrary extends Library {
 
     // 云台控制
     // 方式1：透明通道模式（复杂，不推荐）
-    int NetClient_SendCommand(int iLogonID, int iCommand, int iChannel, Pointer pvBuffer, int iBufSize);
+    // 注意：NetClient_SendCommand方法定义在下方，用于绝对定位等高级功能
 
     // 方式2：协议模式（推荐，官方示例使用）
     // 参考官方示例：JavaVideoCtrlDemo/src/src/NVSSDK.java:692
@@ -146,6 +156,19 @@ public interface NvssdkLibrary extends Library {
     // - _iControlType: 控制类型（通常为0）
     int NetClient_DeviceCtrlEx(int _iLogonID, int _iChannelNo, int _iActionType,
             int _iParam1, int _iParam2, int _iControlType);
+
+    // 方式3：PTZ专用控制接口
+    // 参考官方头文件：NetSdkClient.h:398
+    // 参数说明：
+    // - _iLogonID: 登录句柄
+    // - _iProtocolType: 协议类型 (0: normal, 1: electron ptz)
+    // - _iActionType: 动作类型（PROTOCOL_3D_POSITION等）
+    // - _iComNo: 串口号
+    // - _iAddress: 设备地址
+    // - _iSpeed: 速度
+    // - _iPresetNO: 预置位号
+    int NetClient_DevicePTZCtrl(int _iLogonID, int _iProtocolType, int _iActionType,
+            int _iComNo, int _iAddress, int _iSpeed, int _iPresetNO);
 
     // 下载相关
     int NetClient_NetFileDownload(IntByReference uiConID, int iLogonID, int iCmd, Pointer pvBuf, int iBufSize);
@@ -171,6 +194,18 @@ public interface NvssdkLibrary extends Library {
 
     // 设备控制相关
     int NetClient_Reboot(int iLogonID); // 重启设备
+
+    // 发送命令接口（用于绝对定位等高级功能）
+    // 参数说明：
+    // - _iLogonID: 登录句柄
+    // - _iCommand: 命令ID（如COMMAND_ID_SYNC_SETPTZ）
+    // - _iChannel: 通道号
+    // - _pBuffer: 数据缓冲区
+    // - _iBufferSize: 缓冲区大小
+    int NetClient_SendCommand(int _iLogonID, int _iCommand, int _iChannel, Pointer _pBuffer, int _iBufferSize);
+    
+    // 接收命令结果接口
+    int NetClient_RecvCommand(int _iLogonID, int _iCommand, int _iChannel, Pointer _pBuffer, int _iBufferSize);
 
     // 回调函数接口（简化版本，可以传null）
     int NetClient_SetNotifyFunction_V4(MAIN_NOTIFY_V4 mainNotify,

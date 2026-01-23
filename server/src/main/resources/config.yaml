@@ -101,6 +101,12 @@ recorder:
   record_path: "./storage/records"  # 录制文件存储路径
   retention_minutes: 10  # 录制文件保留时长（分钟），超过此时间的文件将被自动删除
 
+# PTZ监控配置
+# 定时获取球机PTZ位置信息，用于实时监控和联动
+ptz_monitor:
+  enabled: true  # 是否启用PTZ监控服务
+  interval: 5000  # 轮询间隔（毫秒），建议5000-10000
+
 # 消息通知配置 - 注意：实际配置从数据库读取，此处仅为默认值
 # 请通过系统设置界面或API配置通知参数
 notification:

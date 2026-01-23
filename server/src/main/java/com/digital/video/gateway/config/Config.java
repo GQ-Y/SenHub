@@ -36,6 +36,9 @@ public class Config {
     @JsonProperty("notification")
     private NotificationConfig notification;
 
+    @JsonProperty("ptz_monitor")
+    private PtzMonitorConfig ptzMonitor;
+
     // Getters and Setters
     public NotificationConfig getNotification() {
         return notification;
@@ -114,6 +117,28 @@ public class Config {
 
     public void setRecorder(RecorderConfig recorder) {
         this.recorder = recorder;
+    }
+
+    public PtzMonitorConfig getPtzMonitor() {
+        return ptzMonitor;
+    }
+
+    public void setPtzMonitor(PtzMonitorConfig ptzMonitor) {
+        this.ptzMonitor = ptzMonitor;
+    }
+
+    /**
+     * 获取PTZ监控是否启用
+     */
+    public boolean getPtzMonitorEnabled() {
+        return ptzMonitor != null && ptzMonitor.isEnabled();
+    }
+
+    /**
+     * 获取PTZ监控间隔（毫秒）
+     */
+    public int getPtzMonitorInterval() {
+        return ptzMonitor != null ? ptzMonitor.getInterval() : 5000;
     }
 
     public static class MqttConfig {
@@ -707,5 +732,30 @@ public class Config {
         public void setDingtalk(NotificationChannel dingtalk) { this.dingtalk = dingtalk; }
         public NotificationChannel getFeishu() { return feishu; }
         public void setFeishu(NotificationChannel feishu) { this.feishu = feishu; }
+    }
+
+    /**
+     * PTZ监控配置
+     * 用于定时获取球机PTZ位置信息
+     */
+    public static class PtzMonitorConfig {
+        private boolean enabled = true;
+        private int interval = 5000; // 毫秒
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getInterval() {
+            return interval;
+        }
+
+        public void setInterval(int interval) {
+            this.interval = interval;
+        }
     }
 }

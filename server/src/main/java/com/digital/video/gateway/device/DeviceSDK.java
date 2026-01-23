@@ -158,6 +158,17 @@ public interface DeviceSDK {
     }
 
     /**
+     * 获取云台PTZ位置信息
+     * 
+     * @param userId  登录句柄
+     * @param channel 通道号
+     * @return PTZ位置信息，不支持或获取失败返回null
+     */
+    default PtzPosition getPtzPosition(int userId, int channel) {
+        return null; // 默认不支持，子类可重写
+    }
+
+    /**
      * 查询回放文件
      * 
      * @param userId    登录句柄
@@ -252,6 +263,52 @@ public interface DeviceSDK {
 
         public int getChannel() {
             return channel;
+        }
+    }
+
+    /**
+     * PTZ位置信息类
+     */
+    class PtzPosition {
+        private float pan;      // 水平角度
+        private float tilt;     // 垂直角度
+        private float zoom;     // 变倍
+
+        public PtzPosition() {}
+
+        public PtzPosition(float pan, float tilt, float zoom) {
+            this.pan = pan;
+            this.tilt = tilt;
+            this.zoom = zoom;
+        }
+
+        public float getPan() {
+            return pan;
+        }
+
+        public void setPan(float pan) {
+            this.pan = pan;
+        }
+
+        public float getTilt() {
+            return tilt;
+        }
+
+        public void setTilt(float tilt) {
+            this.tilt = tilt;
+        }
+
+        public float getZoom() {
+            return zoom;
+        }
+
+        public void setZoom(float zoom) {
+            this.zoom = zoom;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("PtzPosition{pan=%.1f, tilt=%.1f, zoom=%.1f}", pan, tilt, zoom);
         }
     }
 }

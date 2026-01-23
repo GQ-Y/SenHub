@@ -925,9 +925,100 @@ public class TiandySDK implements DeviceSDK {
 
     @Override
     public boolean gotoAngle(int userId, int channel, float pan, float tilt, float zoom) {
-        // 目前天地伟业 SDK 暂未实现该接口，仅作存根
-        logger.warn("天地伟业 SDK 暂不支持绝对定位接口: userId={}, channel={}, pan={}, tilt={}", userId, channel, pan, tilt);
-        return false;
+        if (!initialized || nvssdkLibrary == null) {
+            logger.error("天地伟业SDK未初始化");
+            return false;
+        }
+
+        try {
+            // 通道号转换为0-based
+            int channelNo = channel > 0 ? channel - 1 : 0;
+            
+            // 将角度转换为SDK参数（角度*100，保留两位小数精度）
+            int panValue = (int) (pan * 100);
+            int tiltValue = (int) (tilt * 100);
+            int zoomValue = (int) (zoom * 100);
+
+            logger.info("天地伟业云台绝对定位: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
+                    userId, channel, pan, tilt, zoom);
+
+            // 方法1：尝试使用COMMAND_ID_SYNC_SETPTZ同步接口设置绝对坐标
+            // 构造PTZ绝对坐标数据（格式：pan*100, tilt*100, zoom*100）
+            TiandySDKStructure.PTZ_ABSOLUTE_POS ptzPos = new TiandySDKStructure.PTZ_ABSOLUTE_POS();
+            ptzPos.iSize = ptzPos.size();
+            ptzPos.iChannelNo = channelNo;
+            ptzPos.iPan = panValue;      // 水平角度 * 100
+            ptzPos.iTilt = tiltValue;    // 垂直角度 * 100
+            ptzPos.iZoom = zoomValue;    // 变倍 * 100
+            ptzPos.write();
+
+            int iRet = nvssdkLibrary.NetClient_SendCommand(userId, 
+                    NvssdkLibrary.COMMAND_ID_SYNC_SETPTZ, 
+                    channelNo, ptzPos.getPointer(), ptzPos.size());
+
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                logger.info("天地伟业云台绝对定位成功(SYNC_SETPTZ): userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
+                        userId, channel, pan, tilt, zoom);
+                return true;
+            }
+            
+            logger.warn("天地伟业SYNC_SETPTZ失败(错误码={}), 尝试备用方法...", iRet);
+
+            // 方法2：尝试使用预置位方式（如果设备不支持直接绝对定位）
+            // 某些天地伟业设备可能需要先设置预置位然后调用
+            // 这里暂时返回失败，等待后续扩展
+            logger.warn("天地伟业SDK绝对定位功能可能需要设备支持，当前设备可能不支持此功能");
+            logger.info("建议：1.检查设备是否为球机 2.检查设备固件版本 3.使用预置位功能替代");
+            
+            return false;
+        } catch (Exception e) {
+            logger.error("天地伟业云台绝对定位异常: userId={}, channel={}, pan={}, tilt={}", userId, channel, pan, tilt, e);
+            return false;
+        }
+    }
+
+    @Override
+    public PtzPosition getPtzPosition(int userId, int channel) {
+        if (!initialized || nvssdkLibrary == null) {
+            logger.error("天地伟业SDK未初始化");
+            return null;
+        }
+
+        try {
+            // 通道号转换为0-based
+            int channelNo = channel > 0 ? channel - 1 : 0;
+
+            // 尝试使用COMMAND_ID_SYNC_GETPTZ同步接口获取绝对坐标
+            TiandySDKStructure.PTZ_ABSOLUTE_POS ptzPos = new TiandySDKStructure.PTZ_ABSOLUTE_POS();
+            ptzPos.iSize = ptzPos.size();
+            ptzPos.iChannelNo = channelNo;
+            ptzPos.write();
+
+            int iRet = nvssdkLibrary.NetClient_RecvCommand(userId, 
+                    NvssdkLibrary.COMMAND_ID_SYNC_GETPTZ, 
+                    channelNo, ptzPos.getPointer(), ptzPos.size());
+
+            if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                ptzPos.read();
+                
+                // 将SDK返回值转换为实际角度（除以100）
+                float pan = ptzPos.iPan / 100.0f;
+                float tilt = ptzPos.iTilt / 100.0f;
+                float zoom = ptzPos.iZoom / 100.0f;
+                
+                logger.debug("天地伟业获取PTZ位置成功: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
+                        userId, channel, pan, tilt, zoom);
+                
+                return new PtzPosition(pan, tilt, zoom);
+            } else {
+                logger.debug("天地伟业获取PTZ位置失败(错误码={}): userId={}, channel={}", iRet, userId, channel);
+                logger.debug("天地伟业SDK可能不支持SYNC_GETPTZ，需要通过PARA_GET_PTZ回调获取");
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("天地伟业获取PTZ位置异常: userId={}, channel={}", userId, channel, e);
+            return null;
+        }
     }
 
     /**

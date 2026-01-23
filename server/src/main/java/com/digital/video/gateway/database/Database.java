@@ -216,6 +216,9 @@ public class Database {
             
             // 创建标准事件表和品牌映射表
             CanonicalEventTable.createTables(connection);
+            
+            // 创建设备PTZ扩展表
+            DevicePtzExtensionTable.createTables(connection);
 
             logger.info("数据库表创建成功");
         }
@@ -1236,6 +1239,59 @@ public class Database {
                         }
                     }
                 });
+    }
+
+    // ========== PTZ扩展表操作方法 ==========
+
+    /**
+     * 获取设备PTZ扩展信息
+     */
+    public DevicePtzExtensionTable.PtzExtension getPtzExtension(String deviceId) {
+        return DevicePtzExtensionTable.getByDeviceId(connection, deviceId);
+    }
+
+    /**
+     * 保存或更新PTZ扩展信息
+     */
+    public boolean savePtzExtension(DevicePtzExtensionTable.PtzExtension ext) {
+        return DevicePtzExtensionTable.saveOrUpdate(connection, ext);
+    }
+
+    /**
+     * 获取所有启用PTZ监控的设备
+     */
+    public java.util.List<DevicePtzExtensionTable.PtzExtension> getAllEnabledPtzDevices() {
+        return DevicePtzExtensionTable.getAllEnabled(connection);
+    }
+
+    /**
+     * 获取所有PTZ扩展记录
+     */
+    public java.util.List<DevicePtzExtensionTable.PtzExtension> getAllPtzExtensions() {
+        return DevicePtzExtensionTable.getAll(connection);
+    }
+
+    /**
+     * 更新PTZ位置信息
+     */
+    public boolean updatePtzPosition(String deviceId, float pan, float tilt, float zoom,
+            float azimuth, float horizontalFov, float verticalFov, float visibleRadius) {
+        return DevicePtzExtensionTable.updatePtzPosition(connection, deviceId, 
+            pan, tilt, zoom, azimuth, horizontalFov, verticalFov, visibleRadius);
+    }
+
+    /**
+     * 设置PTZ监控开关
+     */
+    public boolean setPtzMonitorEnabled(String deviceId, boolean enabled) {
+        return DevicePtzExtensionTable.setPtzEnabled(connection, deviceId, enabled);
+    }
+
+    /**
+     * 删除PTZ扩展记录
+     */
+    public boolean deletePtzExtension(String deviceId) {
+        return DevicePtzExtensionTable.delete(connection, deviceId);
     }
 
     /**

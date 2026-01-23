@@ -21,6 +21,7 @@ import com.digital.video.gateway.service.ConfigService;
 import com.digital.video.gateway.service.RecorderService;
 import com.digital.video.gateway.service.CaptureService;
 import com.digital.video.gateway.service.PTZService;
+import com.digital.video.gateway.service.PtzMonitorService;
 import com.digital.video.gateway.service.PlaybackService;
 import com.digital.video.gateway.service.AlarmService;
 import com.digital.video.gateway.service.OssService;
@@ -68,6 +69,7 @@ public class Main {
     private RecorderService recorderService;
     private CaptureService captureService;
     private PTZService ptzService;
+    private PtzMonitorService ptzMonitorService;
     private PlaybackService playbackService;
     private OssService ossService;
     private AlarmService alarmService;
@@ -202,6 +204,7 @@ public class Main {
             recorderService = new RecorderService(deviceManager, config.getRecorder());
             captureService = new CaptureService(deviceManager, "./storage/captures");
             ptzService = new PTZService(deviceManager);
+            ptzMonitorService = new PtzMonitorService(database, deviceManager, config);
             playbackService = new PlaybackService(deviceManager);
 
             // 5.5. 初始化OSS服务
@@ -224,19 +227,32 @@ public class Main {
             flowService.ensureDefaultAlarmFlow();
 
             // 始终初始化雷达服务（即使数据库中暂时没有设备，后续可通过API添加）
-            radarService = new RadarService(ptzService, database);
-            if (config.getLog() != null) {
-                radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
+            try {
+                radarService = new RadarService(ptzService, database);
+                if (config.getLog() != null) {
+                    radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
+                }
+                radarService.start();
+                RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+                List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
+                logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
+
+                radarTestService = new RadarTestService(radarService);
+                logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
+            } catch (Throwable e) {
+                // 捕获所有异常和错误（包括NoClassDefFoundError等Error类型）
+                logger.error("雷达服务启动失败，将继续启动其他服务", e);
+                logger.warn("雷达服务不可用，可能是Livox SDK依赖问题，但不影响其他功能");
+                // 设置为null，避免后续调用时出现NPE
+                radarService = null;
+                radarTestService = null;
             }
-            radarService.start();
-            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
-            List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
-            logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
 
-            radarTestService = new RadarTestService(radarService);
-            logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
+            // 5.8. 启动PTZ监控服务
+            ptzMonitorService.start();
+            logger.info("PTZ监控服务{}启动", ptzMonitorService.isRunning() ? "已" : "未");
 
-            // 5.8. 注入依赖到AlarmService
+            // 5.9. 注入依赖到AlarmService
             alarmService.setAlarmRuleService(alarmRuleService);
             alarmService.setAlarmRecordService(alarmRecordService);
             alarmService.setRecordingTaskService(recordingTaskService);
@@ -646,7 +662,7 @@ public class Main {
         AuthController authController = new AuthController(database);
         HikvisionSDK hikvisionSDKForController = (HikvisionSDK) SDKFactory.getSDK("hikvision");
         DeviceController deviceController = new DeviceController(deviceManager, database, recorder,
-                captureService, ptzService, playbackService, hikvisionSDKForController,
+                captureService, ptzService, ptzMonitorService, playbackService, hikvisionSDKForController,
                 assemblyService, alarmRuleService);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
@@ -693,6 +709,9 @@ public class Main {
         Spark.get("/api/devices/:id/snapshot/file", deviceController::getSnapshotFile);
         Spark.post("/api/devices/:id/ptz", deviceController::ptzControl);
         Spark.post("/api/devices/:id/ptz/goto", deviceController::ptzGoto);
+        Spark.get("/api/devices/:id/ptz/position", deviceController::getPtzPosition);
+        Spark.post("/api/devices/:id/ptz/refresh", deviceController::refreshPtzPosition);
+        Spark.put("/api/devices/:id/ptz/monitor", deviceController::setPtzMonitor);
         Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
         Spark.get("/api/devices/:id/record-video", deviceController::getRecordVideo);
         Spark.get("/api/devices/:id/video", deviceController::getVideoFile);

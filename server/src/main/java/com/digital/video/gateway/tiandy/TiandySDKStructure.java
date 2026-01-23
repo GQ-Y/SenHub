@@ -424,4 +424,45 @@ public class TiandySDKStructure {
             return Arrays.asList("iSize", "iType", "cPath");
         }
     }
+
+    /**
+     * PTZ绝对坐标结构体
+     * 用于COMMAND_ID_SYNC_SETPTZ/GETPTZ设置或获取球机绝对坐标
+     */
+    public static class PTZ_ABSOLUTE_POS extends Structure {
+        public int iSize;       // 结构体大小
+        public int iChannelNo;  // 通道号（0-based）
+        public int iPan;        // 水平角度 * 100（0-36000，表示0-360°）
+        public int iTilt;       // 垂直角度 * 100（-9000到9000，表示-90°到90°）
+        public int iZoom;       // 变倍 * 100（100-4000，表示1x-40x）
+        public int iReserved1;  // 保留字段
+        public int iReserved2;  // 保留字段
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("iSize", "iChannelNo", "iPan", "iTilt", "iZoom", "iReserved1", "iReserved2");
+        }
+    }
+
+    /**
+     * PTZ位置信息结构体（用于获取）
+     * 对应PARA_GET_PTZ (473)参数变化回调
+     */
+    public static class PTZ_POSITION_INFO extends Structure {
+        public int iSize;           // 结构体大小
+        public int iChannelNo;      // 通道号
+        public int iPan;            // 水平角度 * 100
+        public int iTilt;           // 垂直角度 * 100
+        public int iZoom;           // 变倍 * 100
+        public int iNorthAngle;     // 北偏角 * 100
+        public int iFov;            // 视场角 * 100
+        public int iReserved1;
+        public int iReserved2;
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("iSize", "iChannelNo", "iPan", "iTilt", "iZoom", 
+                    "iNorthAngle", "iFov", "iReserved1", "iReserved2");
+        }
+    }
 }

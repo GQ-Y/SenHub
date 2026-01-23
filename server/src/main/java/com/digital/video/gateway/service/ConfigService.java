@@ -148,6 +148,12 @@ public class ConfigService {
                 }
             }
 
+            // PTZ监控配置
+            if (config.getPtzMonitor() != null) {
+                saveConfig("ptz_monitor.enabled", String.valueOf(config.getPtzMonitor().isEnabled()));
+                saveConfig("ptz_monitor.interval", String.valueOf(config.getPtzMonitor().getInterval()));
+            }
+
             logger.info("配置已保存到数据库");
         } catch (Exception e) {
             logger.error("保存配置到数据库失败", e);
@@ -285,6 +291,14 @@ public class ConfigService {
             notif.setFeishu(feishu);
             
             config.setNotification(notif);
+
+            // PTZ监控配置
+            if (defaultConfig.getPtzMonitor() != null) {
+                Config.PtzMonitorConfig ptzMonitor = new Config.PtzMonitorConfig();
+                ptzMonitor.setEnabled(getBoolConfig(dbConfigs, "ptz_monitor.enabled", defaultConfig.getPtzMonitor().isEnabled()));
+                ptzMonitor.setInterval(getIntConfig(dbConfigs, "ptz_monitor.interval", defaultConfig.getPtzMonitor().getInterval()));
+                config.setPtzMonitor(ptzMonitor);
+            }
 
             return config;
         } catch (Exception e) {

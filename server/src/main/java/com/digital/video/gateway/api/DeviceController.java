@@ -9,9 +9,11 @@ import com.digital.video.gateway.hikvision.HikvisionSDK;
 import com.digital.video.gateway.recorder.Recorder;
 import com.digital.video.gateway.service.CaptureService;
 import com.digital.video.gateway.service.PTZService;
+import com.digital.video.gateway.service.PtzMonitorService;
 import com.digital.video.gateway.service.PlaybackService;
 import com.digital.video.gateway.service.AssemblyService;
 import com.digital.video.gateway.service.AlarmRuleService;
+import com.digital.video.gateway.database.DevicePtzExtensionTable;
 import com.digital.video.gateway.database.Assembly;
 import com.digital.video.gateway.database.AlarmRule;
 import com.digital.video.gateway.database.AssemblyDevice;
@@ -37,6 +39,7 @@ public class DeviceController {
     private final Recorder recorder;
     private final CaptureService captureService;
     private final PTZService ptzService;
+    private final PtzMonitorService ptzMonitorService;
     private final PlaybackService playbackService;
     private final HikvisionSDK sdk; // 保留用于重启等特殊功能（仅海康设备）
     private final AssemblyService assemblyService;
@@ -45,6 +48,7 @@ public class DeviceController {
 
     public DeviceController(DeviceManager deviceManager, com.digital.video.gateway.database.Database database,
             Recorder recorder, CaptureService captureService, PTZService ptzService,
+            PtzMonitorService ptzMonitorService,
             PlaybackService playbackService, HikvisionSDK sdk,
             AssemblyService assemblyService, AlarmRuleService alarmRuleService) {
         this.deviceManager = deviceManager;
@@ -52,6 +56,7 @@ public class DeviceController {
         this.recorder = recorder;
         this.captureService = captureService;
         this.ptzService = ptzService;
+        this.ptzMonitorService = ptzMonitorService;
         this.playbackService = playbackService;
         this.sdk = sdk; // 保留用于重启等特殊功能
         this.assemblyService = assemblyService;
@@ -1633,6 +1638,144 @@ public class DeviceController {
             logger.error("更新设备配置失败", e);
             response.status(500);
             return createErrorResponse(500, "更新设备配置失败: " + e.getMessage());
+        }
+    }
+
+    // ========== PTZ位置监控API ==========
+
+    /**
+     * 获取设备PTZ位置
+     * GET /api/devices/:id/ptz/position
+     */
+    public String getPtzPosition(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+
+            DevicePtzExtensionTable.PtzExtension ptzExt = ptzMonitorService.getPtzPosition(deviceId);
+            
+            Map<String, Object> data = new HashMap<>();
+            if (ptzExt != null) {
+                data.put("deviceId", ptzExt.getDeviceId());
+                data.put("ptzEnabled", ptzExt.isPtzEnabled());
+                data.put("pan", ptzExt.getPan());
+                data.put("tilt", ptzExt.getTilt());
+                data.put("zoom", ptzExt.getZoom());
+                data.put("azimuth", ptzExt.getAzimuth());
+                data.put("horizontalFov", ptzExt.getHorizontalFov());
+                data.put("verticalFov", ptzExt.getVerticalFov());
+                data.put("visibleRadius", ptzExt.getVisibleRadius());
+                data.put("lastUpdated", ptzExt.getLastUpdated() != null ? 
+                    ptzExt.getLastUpdated().toString() : null);
+            } else {
+                data.put("deviceId", deviceId);
+                data.put("ptzEnabled", false);
+                data.put("message", "设备无PTZ位置信息");
+            }
+
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("获取PTZ位置失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取PTZ位置失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 主动刷新设备PTZ位置
+     * POST /api/devices/:id/ptz/refresh
+     */
+    public String refreshPtzPosition(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+
+            // 刷新PTZ位置
+            boolean success = ptzMonitorService.refreshPtzPosition(deviceId);
+            
+            if (!success) {
+                response.status(500);
+                return createErrorResponse(500, "刷新PTZ位置失败，设备可能不支持或未登录");
+            }
+
+            // 返回更新后的位置
+            DevicePtzExtensionTable.PtzExtension ptzExt = ptzMonitorService.getPtzPosition(deviceId);
+            
+            Map<String, Object> data = new HashMap<>();
+            data.put("message", "PTZ位置已刷新");
+            if (ptzExt != null) {
+                data.put("pan", ptzExt.getPan());
+                data.put("tilt", ptzExt.getTilt());
+                data.put("zoom", ptzExt.getZoom());
+            }
+
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("刷新PTZ位置失败", e);
+            response.status(500);
+            return createErrorResponse(500, "刷新PTZ位置失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 设置设备PTZ监控开关
+     * PUT /api/devices/:id/ptz/monitor
+     * Body: { "enabled": true }
+     */
+    public String setPtzMonitor(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            
+            if (body.get("enabled") == null) {
+                response.status(400);
+                return createErrorResponse(400, "enabled参数不能为空");
+            }
+            
+            boolean enabled = (Boolean) body.get("enabled");
+
+            // 设置PTZ监控开关
+            boolean success = ptzMonitorService.setPtzMonitorEnabled(deviceId, enabled);
+            
+            if (!success) {
+                response.status(500);
+                return createErrorResponse(500, "设置PTZ监控状态失败");
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("deviceId", deviceId);
+            data.put("ptzEnabled", enabled);
+            data.put("message", enabled ? "PTZ监控已启用" : "PTZ监控已禁用");
+
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("设置PTZ监控状态失败", e);
+            response.status(500);
+            return createErrorResponse(500, "设置PTZ监控状态失败: " + e.getMessage());
         }
     }
 
