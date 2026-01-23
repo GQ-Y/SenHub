@@ -16,7 +16,8 @@ import {
   Play,
   Video as VideoIcon,
   Code,
-  X
+  X,
+  Eye
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
@@ -25,6 +26,7 @@ import { Modal, ConfirmModal } from './Modal';
 import { useModal } from '../hooks/useModal';
 import { API_CONFIG } from '../src/api/config';
 import { DeviceConfig } from './DeviceConfig';
+import { PtzViewPage } from './PtzViewPage';
 
 export const DeviceDetail: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -48,7 +50,7 @@ export const DeviceDetail: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [activeTab, setActiveTab] = useState<'preview' | 'config'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'config' | 'ptz'>('preview');
 
   // 云台控制速率 (1-100)
   const [ptzRate, setPtzRate] = useState<number>(50);
@@ -653,6 +655,16 @@ export const DeviceDetail: React.FC = () => {
                 <Settings size={18} className="inline mr-2" />
                 {t('device_config')}
               </button>
+              <button
+                onClick={() => setActiveTab('ptz')}
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'ptz'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+              >
+                <Eye size={18} className="inline mr-2" />
+                3D仿真
+              </button>
             </div>
           </div>
 
@@ -988,6 +1000,8 @@ export const DeviceDetail: React.FC = () => {
             )}
 
             {activeTab === 'config' && deviceId && <DeviceConfig deviceId={deviceId} />}
+
+            {activeTab === 'ptz' && deviceId && <PtzViewPage deviceId={deviceId} />}
           </div>
         </div>
       </div >

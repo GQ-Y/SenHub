@@ -141,6 +141,55 @@ export const deviceService = {
   },
 
   /**
+   * 获取设备PTZ位置
+   * @param deviceId 设备ID
+   */
+  async getPtzPosition(deviceId: string) {
+    const response = await get<{
+      deviceId: string;
+      ptzEnabled: boolean;
+      pan: number;
+      tilt: number;
+      zoom: number;
+      azimuth: number;
+      horizontalFov: number;
+      verticalFov: number;
+      visibleRadius: number;
+      lastUpdated: string | null;
+      message?: string;
+    }>(`/devices/${encodeURIComponent(deviceId)}/ptz/position`);
+    return response;
+  },
+
+  /**
+   * 刷新设备PTZ位置
+   * @param deviceId 设备ID
+   */
+  async refreshPtzPosition(deviceId: string) {
+    const response = await post<{
+      message: string;
+      pan: number;
+      tilt: number;
+      zoom: number;
+    }>(`/devices/${encodeURIComponent(deviceId)}/ptz/refresh`);
+    return response;
+  },
+
+  /**
+   * 设置PTZ监控开关
+   * @param deviceId 设备ID
+   * @param enabled 是否启用
+   */
+  async setPtzMonitor(deviceId: string, enabled: boolean) {
+    const response = await put<{
+      deviceId: string;
+      ptzEnabled: boolean;
+      message: string;
+    }>(`/devices/${encodeURIComponent(deviceId)}/ptz/monitor`, { enabled });
+    return response;
+  },
+
+  /**
    * 获取视频流地址（返回最新录制的视频）
    */
   async getStreamUrl(deviceId: string) {
