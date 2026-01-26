@@ -14,6 +14,19 @@ interface RequestOptions extends RequestInit {
   skipAuth?: boolean;
 }
 
+// 认证状态变化回调类型
+type AuthStateChangeCallback = (isAuthenticated: boolean) => void;
+
+// 全局认证状态变化回调
+let authStateChangeCallback: AuthStateChangeCallback | null = null;
+
+/**
+ * 设置认证状态变化回调
+ */
+export function setAuthStateChangeCallback(callback: AuthStateChangeCallback | null) {
+  authStateChangeCallback = callback;
+}
+
 /**
  * 获取存储的token
  */
@@ -89,18 +102,61 @@ async function request<T = any>(
 
     clearTimeout(timeoutId);
 
-    // 处理401未授权错误
-    if (response.status === 401) {
-      clearToken();
-      // 如果不在登录页，跳转到登录页
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+    // 处理HTTP错误状态码
+    if (!response.ok) {
+      // 处理401未授权错误
+      if (response.status === 401) {
+        clearToken();
+        // 通知认证状态变化
+        if (authStateChangeCallback) {
+          authStateChangeCallback(false);
+        }
+        // 如果不在登录页，触发导航事件（由AppContext处理）
+        if (!window.location.pathname.includes('/login')) {
+          // 使用自定义事件通知需要导航到登录页
+          window.dispatchEvent(new CustomEvent('auth:unauthorized', { 
+            detail: { path: window.location.pathname } 
+          }));
+        }
+        throw new Error('未授权，请重新登录');
       }
-      throw new Error('未授权，请重新登录');
+
+      // 处理其他HTTP错误状态码
+      let errorMessage = '请求失败';
+      try {
+        // 尝试解析错误响应
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData: ApiResponse = await response.json();
+          errorMessage = errorData.message || getHttpErrorMessage(response.status);
+        } else {
+          errorMessage = getHttpErrorMessage(response.status);
+        }
+      } catch (parseError) {
+        // 如果解析失败，使用默认错误消息
+        errorMessage = getHttpErrorMessage(response.status);
+      }
+
+      throw new Error(errorMessage);
     }
 
     // 解析响应
-    const data: ApiResponse<T> = await response.json();
+    let data: ApiResponse<T>;
+    try {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        // 如果不是JSON响应，可能是文件下载等，返回空数据
+        throw new Error('响应格式不是JSON');
+      }
+    } catch (parseError: any) {
+      // JSON解析失败
+      if (parseError.message === '响应格式不是JSON') {
+        throw parseError;
+      }
+      throw new Error('服务器响应格式错误，无法解析数据');
+    }
 
     // 检查业务状态码（后端成功码：0或200）
     if (data.code !== 0 && data.code !== 200) {
@@ -110,9 +166,18 @@ async function request<T = any>(
     return data;
   } catch (error: any) {
     clearTimeout(timeoutId);
+    
+    // 处理超时错误
     if (error.name === 'AbortError') {
-      throw new Error('请求超时');
+      throw new Error('请求超时，请检查网络连接');
     }
+    
+    // 处理网络错误
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('网络连接失败，请检查网络设置');
+    }
+    
+    // 其他错误直接抛出
     throw error;
   }
 }
@@ -173,4 +238,22 @@ export async function del<T = any>(
     ...options,
     method: 'DELETE',
   });
+}
+
+/**
+ * 根据HTTP状态码获取错误消息
+ */
+function getHttpErrorMessage(status: number): string {
+  const errorMessages: Record<number, string> = {
+    400: '请求参数错误',
+    401: '未授权，请重新登录',
+    403: '没有权限访问此资源',
+    404: '请求的资源不存在',
+    500: '服务器内部错误，请稍后重试',
+    502: '网关错误，服务器暂时不可用',
+    503: '服务暂时不可用，请稍后重试',
+    504: '网关超时，请稍后重试',
+  };
+
+  return errorMessages[status] || `请求失败 (${status})`;
 }

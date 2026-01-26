@@ -59,6 +59,23 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/driver/livox/LivoxJNI.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/driver/livox/LivoxDriver.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/driver/livox/LivoxDiagnostics.java" \
+    "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/driver/livox/"
+
+sshpass -p "$SERVER_PASS" rsync -avz --progress \
+    -e "ssh -o StrictHostKeyChecking=no" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/RadarService.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/"
+
+sshpass -p "$SERVER_PASS" rsync -avz --progress \
+    -e "ssh -o StrictHostKeyChecking=no" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/api/RadarController.java" \
+    "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/api/"
+
+sshpass -p "$SERVER_PASS" rsync -avz --progress \
+    -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/resources/config.yaml" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/resources/"
 
@@ -110,9 +127,84 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 步骤4: 启动服务
+# 步骤4: 检查 Livox SDK 官方包和库文件
 echo ""
-echo "[步骤4] 启动服务..."
+echo "[步骤4] 检查 Livox SDK 官方包和库文件..."
+sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
+cd /home/zyc/data/xwq/demo
+
+echo "检查 Livox SDK 官方包..."
+SDK_PATHS=(
+    "/home/zyc/data/xwq/demo/livox-sdk2-official"
+    "/home/zyc/data/xwq/livox-demo/livox-sdk2-official"
+    "/home/zyc/data/xwq/demo/server/../livox-sdk2-official"
+    "$(find /home/zyc/data/xwq -type d -name "livox-sdk2-official" 2>/dev/null | head -1)"
+)
+
+FOUND_SDK=""
+for SDK_PATH in "${SDK_PATHS[@]}"; do
+    if [ -d "$SDK_PATH" ]; then
+        echo "✓ 找到 SDK 包: $SDK_PATH"
+        FOUND_SDK="$SDK_PATH"
+        break
+    fi
+done
+
+if [ -z "$FOUND_SDK" ]; then
+    echo "⚠️  未找到 Livox SDK 官方包"
+else
+    echo "检查 SDK 中的库文件..."
+    # 查找 liblivox_lidar_sdk_shared.so
+    SHARED_LIB=$(find "$FOUND_SDK" -name "liblivox_lidar_sdk_shared.so" 2>/dev/null | head -1)
+    if [ -n "$SHARED_LIB" ]; then
+        echo "✓ 找到依赖库: $SHARED_LIB"
+        ls -lh "$SHARED_LIB"
+        
+        # 检查是否需要复制到 server/lib/linux
+        if [ ! -f "server/lib/linux/liblivox_lidar_sdk_shared.so" ]; then
+            echo "⚠️  server/lib/linux/ 目录中缺少依赖库"
+            echo "   建议复制: cp $SHARED_LIB server/lib/linux/"
+        fi
+    else
+        echo "⚠️  在 SDK 包中未找到 liblivox_lidar_sdk_shared.so"
+        echo "   搜索位置: $FOUND_SDK"
+    fi
+fi
+
+echo ""
+echo "检查 server/lib/linux/ 目录..."
+cd server
+if [ ! -d "lib/linux" ]; then
+    echo "⚠️  lib/linux 目录不存在，创建中..."
+    mkdir -p lib/linux
+fi
+
+echo "当前库文件状态:"
+ls -lah lib/linux/ 2>/dev/null || echo "目录为空"
+
+if [ -f "lib/linux/liblivoxjni.so" ]; then
+    echo "✓ liblivoxjni.so 存在"
+    file lib/linux/liblivoxjni.so
+    ldd lib/linux/liblivoxjni.so 2>/dev/null | head -10 || echo "无法检查依赖（可能需要系统库）"
+else
+    echo "✗ liblivoxjni.so 不存在"
+fi
+
+if [ -f "lib/linux/liblivox_lidar_sdk_shared.so" ]; then
+    echo "✓ liblivox_lidar_sdk_shared.so 存在"
+    file lib/linux/liblivox_lidar_sdk_shared.so
+else
+    echo "✗ liblivox_lidar_sdk_shared.so 不存在（这是导致加载失败的主要原因）"
+    if [ -n "$SHARED_LIB" ]; then
+        echo "   发现 SDK 包中有此文件，建议复制:"
+        echo "   cp $SHARED_LIB lib/linux/"
+    fi
+fi
+EOF
+
+# 步骤5: 启动服务
+echo ""
+echo "[步骤5] 启动服务..."
 sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
 cd /home/zyc/data/xwq/demo/server
 # 优先使用主jar文件（shaded版本），排除original、sources、javadoc
@@ -129,8 +221,20 @@ if [ -z "$JAR_FILE" ] || [ ! -f "$JAR_FILE" ]; then
     exit 1
 fi
 
+# 检查依赖库
+echo "检查 Livox SDK 依赖库..."
+if [ ! -f "lib/linux/liblivoxjni.so" ]; then
+    echo "⚠️  警告: liblivoxjni.so 不存在"
+fi
+if [ ! -f "lib/linux/liblivox_lidar_sdk_shared.so" ]; then
+    echo "⚠️  警告: liblivox_lidar_sdk_shared.so 不存在，这会导致加载失败"
+    echo "   请确保依赖库文件在 lib/linux/ 目录中"
+fi
+
+# 设置库路径并启动服务
 echo "启动服务: $JAR_FILE"
-nohup java -jar "$JAR_FILE" > server.log 2>&1 &
+export LD_LIBRARY_PATH="$(pwd)/lib/linux:${LD_LIBRARY_PATH}"
+nohup java -Djava.library.path="$(pwd)/lib/linux" -jar "$JAR_FILE" > server.log 2>&1 &
 sleep 3
 
 # 检查进程是否启动

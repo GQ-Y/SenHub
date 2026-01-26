@@ -61,6 +61,21 @@ public class LivoxDriver {
 
         log.info("启动 Livox Driver (JNI)...");
 
+        // 检查 JNI 库是否已加载
+        if (!LivoxJNI.isLibraryLoaded()) {
+            String error = LivoxJNI.getLoadError();
+            log.error("Livox JNI 库未加载，无法启动驱动");
+            if (error != null) {
+                log.error("加载错误: {}", error);
+            }
+            log.error("请检查:");
+            log.error("  1. lib/linux/liblivoxjni.so 文件是否存在");
+            log.error("  2. lib/linux/liblivox_lidar_sdk_shared.so 依赖库是否存在");
+            log.error("  3. 库文件架构是否与系统架构匹配");
+            log.error("  4. 是否设置了正确的 LD_LIBRARY_PATH");
+            return;
+        }
+
         try {
             // 1. 生成配置文件
             configFilePath = generateLivoxConfig();
@@ -80,6 +95,8 @@ public class LivoxDriver {
                 log.info("Livox SDK 初始化成功");
             } catch (UnsatisfiedLinkError e) {
                 log.error("Livox SDK 初始化时发生链接错误: {}", e.getMessage(), e);
+                log.error("这通常表示 JNI 库已加载但 native 方法调用失败");
+                log.error("可能原因: 依赖库缺失或版本不匹配");
                 return;
             } catch (Exception e) {
                 log.error("Livox SDK 初始化时发生异常", e);

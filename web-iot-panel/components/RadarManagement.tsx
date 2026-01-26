@@ -167,31 +167,33 @@ export const RadarManagement: React.FC = () => {
       return;
     }
 
-    // 新增时必须有序列号和检测结果；编辑时序列号已存在，可以只修改其他字段
+    // 新增时建议先检测连通性，但不强制要求 SN
+    // 雷达上线后系统会自动填充 SN
     if (activeModal === 'CREATE') {
-      if (!formData.radarSerial?.trim()) {
-        modal.showModal({
-          message: '请输入雷达序列号（SN）',
-          type: 'warning',
-        });
-        return;
-      }
-
-      if (!detectResult?.reachable) {
-        modal.showModal({
-          message: '请先成功检测雷达连通性后再添加',
-          type: 'warning',
-        });
-        return;
+      // 如果没有检测结果，提示用户（但不强制）
+      if (!detectResult?.reachable && !formData.radarSerial?.trim()) {
+        // 只是提示，不阻止添加
+        const confirmAdd = window.confirm(
+          '未检测到雷达或未获取到序列号（SN）。\n\n' +
+          '您仍可以添加设备，系统将在雷达上线后自动填充 SN。\n\n' +
+          '是否继续添加？'
+        );
+        if (!confirmAdd) {
+          return;
+        }
       }
     }
 
     setIsSaving(true);
     try {
       if (activeModal === 'CREATE') {
-        await radarService.addRadarDevice(formData);
+        const result = await radarService.addRadarDevice(formData);
+        const data = result.data || {};
+        const msg = data.snPending 
+          ? '设备已添加，SN将在雷达上线后自动填充' 
+          : '创建成功';
         modal.showModal({
-          message: '创建成功',
+          message: msg,
           type: 'success',
         });
       } else if (activeModal === 'EDIT' && selectedDevice) {
@@ -383,6 +385,15 @@ export const RadarManagement: React.FC = () => {
 
                 {/* 设备信息预览 */}
                 <div className="space-y-2 mb-4">
+                  {/* SN 状态 */}
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">序列号：</span>
+                    {device.radarSerial ? (
+                      <span className="text-xs font-mono">{device.radarSerial}</span>
+                    ) : (
+                      <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">待自动填充</span>
+                    )}
+                  </div>
                   {device.currentBackgroundId && (
                     <div className="text-sm text-gray-600">
                       <span className="font-medium">背景模型：</span>
@@ -504,7 +515,7 @@ export const RadarManagement: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    雷达序列号(SN) <span className="text-red-500">*</span>
+                    雷达序列号(SN) <span className="text-gray-400 text-xs font-normal">可选</span>
                   </label>
                   <input
                     type="text"
@@ -512,10 +523,14 @@ export const RadarManagement: React.FC = () => {
                     value={formData.radarSerial}
                     readOnly={!!detectResult?.radarSerial}
                     onChange={(e) => setFormData({ ...formData, radarSerial: e.target.value })}
-                    placeholder="请输入SN，例如 47MCN980033214"
+                    placeholder="可选，雷达上线后自动填充"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    将作为唯一设备ID存储{detectResult?.radarSerial ? '（已自动填充）' : '，请确保准确'}
+                    {detectResult?.radarSerial 
+                      ? '已通过检测自动获取' 
+                      : formData.radarSerial 
+                        ? '将作为唯一设备ID存储' 
+                        : '无需填写，雷达上线后系统将自动获取并填充'}
                   </p>
                 </div>
                 <div>

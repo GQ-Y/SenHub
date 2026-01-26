@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Shield, Wifi, AlertTriangle, HardDrive, Loader2, CheckCircle2, XCircle, Database, Server, FileCode, X } from 'lucide-react';
+import { Shield, Wifi, AlertTriangle, HardDrive, Loader2, CheckCircle2, XCircle, Database, Server, FileCode, X, RefreshCw } from 'lucide-react';
 import { CHART_DATA } from '../constants';
 import { useAppContext } from '../contexts/AppContext';
 import { dashboardService, systemService } from '../src/api/services';
+import { useModal } from '../hooks/useModal';
+import { Modal, ConfirmModal } from './Modal';
 
 const StatCard = ({ icon: Icon, label, value, trend, trendValue, colorClass, bgClass, subtitle }: any) => (
   <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300">
@@ -27,6 +29,7 @@ const StatCard = ({ icon: Icon, label, value, trend, trendValue, colorClass, bgC
 export const Dashboard: React.FC = () => {
   const { t } = useAppContext();
   const navigate = useNavigate();
+  const modal = useModal();
   const [stats, setStats] = useState({
     activeDevices: 0,
     onlineStatus: '0%',
@@ -37,31 +40,44 @@ export const Dashboard: React.FC = () => {
   });
   const [chartData, setChartData] = useState(CHART_DATA);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [logContent, setLogContent] = useState<string[]>([]);
   const [healthModalOpen, setHealthModalOpen] = useState(false);
   const [healthData, setHealthData] = useState<any>(null);
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [statsResponse, chartResponse] = await Promise.all([
-          dashboardService.getStats(),
-          dashboardService.getChartData(),
-        ]);
-        
-        setStats(statsResponse.data);
-        if (chartResponse.data && chartResponse.data.length > 0) {
-          setChartData(chartResponse.data);
-        }
-      } catch (err) {
-        console.error('加载仪表板数据失败:', err);
-      } finally {
-        setIsLoading(false);
+  const loadData = async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const [statsResponse, chartResponse] = await Promise.all([
+        dashboardService.getStats(),
+        dashboardService.getChartData(),
+      ]);
+      
+      setStats(statsResponse.data);
+      if (chartResponse.data && chartResponse.data.length > 0) {
+        setChartData(chartResponse.data);
       }
-    };
+    } catch (err: any) {
+      const errorMessage = err.message || '加载仪表板数据失败，请稍后重试';
+      setError(errorMessage);
+      console.error('加载仪表板数据失败:', err);
+      
+      // 显示错误提示
+      modal.showModal({
+        message: errorMessage,
+        type: 'error',
+        title: '加载失败',
+        confirmText: '确定',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadData();
     // 每30秒刷新一次
     const interval = setInterval(loadData, 30000);
@@ -76,30 +92,54 @@ export const Dashboard: React.FC = () => {
       setHealthData(health);
       setHealthModalOpen(true);
     } catch (err: any) {
-      alert('健康检查失败: ' + (err.message || '未知错误'));
+      modal.showModal({
+        message: err.message || '健康检查失败，请稍后重试',
+        type: 'error',
+        title: '健康检查失败',
+        confirmText: '确定',
+      });
     } finally {
       setIsActionLoading(null);
     }
   };
 
   const handleRestartMqtt = async () => {
-    if (!confirm('确定要重启MQTT连接吗？')) {
-      return;
-    }
-    
-    setIsActionLoading('mqtt');
-    try {
-      const response = await systemService.restartMqtt();
-      if (response.data.success) {
-        alert('MQTT重启成功');
-      } else {
-        alert('MQTT重启失败: ' + response.data.message);
-      }
-    } catch (err: any) {
-      alert('重启MQTT失败: ' + (err.message || '未知错误'));
-    } finally {
-      setIsActionLoading(null);
-    }
+    modal.showConfirm({
+      title: '确认重启',
+      message: '确定要重启MQTT连接吗？',
+      onConfirm: async () => {
+        setIsActionLoading('mqtt');
+        try {
+          const response = await systemService.restartMqtt();
+          if (response.data.success) {
+            modal.showModal({
+              message: 'MQTT重启成功',
+              type: 'success',
+              title: '操作成功',
+              confirmText: '确定',
+            });
+          } else {
+            modal.showModal({
+              message: response.data.message || 'MQTT重启失败',
+              type: 'error',
+              title: '操作失败',
+              confirmText: '确定',
+            });
+          }
+        } catch (err: any) {
+          modal.showModal({
+            message: err.message || '重启MQTT失败，请稍后重试',
+            type: 'error',
+            title: '操作失败',
+            confirmText: '确定',
+          });
+        } finally {
+          setIsActionLoading(null);
+        }
+      },
+      confirmText: '确定',
+      cancelText: '取消',
+    });
   };
 
   const handleViewLogs = async () => {
@@ -109,22 +149,74 @@ export const Dashboard: React.FC = () => {
       setLogContent(response.data.content);
       setLogModalOpen(true);
     } catch (err: any) {
-      alert('获取日志失败: ' + (err.message || '未知错误'));
+      modal.showModal({
+        message: err.message || '获取日志失败，请稍后重试',
+        type: 'error',
+        title: '获取失败',
+        confirmText: '确定',
+      });
     } finally {
       setIsActionLoading(null);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
+    <>
+      {/* 弹窗组件 */}
+      {modal.isConfirm ? (
+        <ConfirmModal
+          isOpen={modal.isOpen}
+          onClose={modal.closeModal}
+          title={modal.modalOptions?.title}
+          message={modal.modalOptions?.message || ''}
+          onConfirm={() => {
+            if (modal.modalOptions?.onConfirm) {
+              modal.modalOptions.onConfirm();
+            }
+            modal.closeModal();
+          }}
+          onCancel={() => {
+            if (modal.modalOptions?.onCancel) {
+              modal.modalOptions.onCancel();
+            }
+            modal.closeModal();
+          }}
+          confirmText={modal.modalOptions?.confirmText}
+          cancelText={modal.modalOptions?.cancelText}
+        />
+      ) : (
+        <Modal
+          isOpen={modal.isOpen}
+          onClose={modal.closeModal}
+          title={modal.modalOptions?.title}
+          message={modal.modalOptions?.message || ''}
+          type={modal.modalOptions?.type || 'info'}
+          confirmText={modal.modalOptions?.confirmText}
+          onConfirm={modal.modalOptions?.onConfirm}
+        />
+      )}
+
+      {isLoading && !error ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center h-64 space-y-4">
+          <AlertTriangle className="w-16 h-16 text-red-500" />
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">加载失败</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <button
+              onClick={loadData}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              重试
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           icon={Shield} 
@@ -468,6 +560,8 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+        </div>
+      )}
+    </>
   );
 };

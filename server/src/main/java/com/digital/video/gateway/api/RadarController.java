@@ -62,6 +62,11 @@ public class RadarController {
      */
     public Object testConnection(Request request, Response response) {
         try {
+            if (radarTestService == null) {
+                response.status(503);
+                return createErrorResponse(503, "雷达测试服务未启动，可能是Livox SDK依赖问题");
+            }
+
             String ip = request.queryParams("ip") != null ? request.queryParams("ip") : "192.168.1.115";
             RadarTestService.RadarDetectionResult result = radarTestService.testConnection(ip);
 
@@ -103,6 +108,10 @@ public class RadarController {
     /**
      * 添加雷达设备
      * POST /api/radar/devices
+     * 
+     * 支持两种模式：
+     * 1. 有 SN：按原逻辑，SN 作为设备唯一标识
+     * 2. 无 SN：使用 IP 作为临时标识，雷达上线后自动填充 SN
      */
     public Object addRadarDevice(Request request, Response response) {
         try {
@@ -129,51 +138,82 @@ public class RadarController {
                 return createErrorResponse(400, "无效的IP地址格式");
             }
 
-            // 序列号必须提供，作为唯一ID
-            if (radarSerial == null || radarSerial.trim().isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "雷达序列号不能为空");
-            }
-            radarSerial = radarSerial.trim();
+            radarIp = radarIp.trim();
+            radarSerial = (radarSerial != null && !radarSerial.trim().isEmpty()) ? radarSerial.trim() : null;
 
-            // 查询是否已有同序列号设备
-            RadarDevice existingBySerial = radarDeviceDAO.getBySerial(radarSerial);
-
-            // 检查IP是否被其他设备占用（不同序列号）
+            // 检查IP是否已存在
             List<RadarDevice> existingDevices = radarDeviceDAO.getAll();
+            RadarDevice existingByIp = null;
+            RadarDevice existingBySerial = null;
+            
             for (RadarDevice existing : existingDevices) {
-                if (radarIp.equals(existing.getRadarIp()) &&
-                        (existingBySerial == null || !existing.getDeviceId().equals(existingBySerial.getDeviceId()))) {
-                    response.status(400);
-                    return createErrorResponse(400, "该IP地址已存在: " + radarIp);
+                if (radarIp.equals(existing.getRadarIp())) {
+                    existingByIp = existing;
+                }
+                if (radarSerial != null && radarSerial.equals(existing.getRadarSerial())) {
+                    existingBySerial = existing;
                 }
             }
 
-            // 设备ID取序列号
-            String deviceId = radarSerial;
+            // 如果 IP 已存在且不是同一设备（通过 SN 判断），报错
+            if (existingByIp != null && existingBySerial != null && 
+                    !existingByIp.getDeviceId().equals(existingBySerial.getDeviceId())) {
+                response.status(400);
+                return createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp);
+            }
+
+            // 确定设备ID
+            String deviceId;
+            boolean isUpdate = false;
+            
+            if (radarSerial != null) {
+                // 有 SN：使用 SN 作为设备ID
+                deviceId = radarSerial;
+                if (existingBySerial != null) {
+                    isUpdate = true;
+                }
+            } else {
+                // 无 SN：检查是否有同 IP 设备
+                if (existingByIp != null) {
+                    // 更新已有设备
+                    deviceId = existingByIp.getDeviceId();
+                    isUpdate = true;
+                } else {
+                    // 创建新设备，使用 IP 作为临时标识
+                    deviceId = "radar_" + radarIp.replace(".", "_");
+                }
+            }
 
             RadarDevice device = new RadarDevice();
             device.setDeviceId(deviceId);
-            device.setRadarIp(radarIp.trim());
+            device.setRadarIp(radarIp);
             device.setRadarName(radarName.trim());
             device.setAssemblyId((String) body.get("assemblyId")); // 可选
-            device.setRadarSerial(radarSerial);
+            device.setRadarSerial(radarSerial); // 可能为 null
 
-            if (existingBySerial != null) {
-                // 已存在该序列号 -> 更新IP/名称/关联
-                device.setStatus(existingBySerial.getStatus());
+            if (isUpdate) {
+                RadarDevice existing = existingBySerial != null ? existingBySerial : existingByIp;
+                device.setStatus(existing.getStatus());
+                device.setCurrentBackgroundId(existing.getCurrentBackgroundId());
             } else {
                 device.setStatus(0);
             }
 
             if (radarDeviceDAO.saveOrUpdate(device)) {
-                logger.info("雷达设备已{}: deviceId={}, radarIp={}, radarName={}",
-                        existingBySerial != null ? "更新" : "添加",
-                        deviceId, radarIp, radarName);
-                return createSuccessResponse(device.toMap());
+                String snStatus = radarSerial != null ? "SN=" + radarSerial : "SN待自动填充";
+                logger.info("雷达设备已{}: deviceId={}, radarIp={}, radarName={}, {}",
+                        isUpdate ? "更新" : "添加",
+                        deviceId, radarIp, radarName, snStatus);
+                
+                Map<String, Object> result = device.toMap();
+                if (radarSerial == null) {
+                    result.put("snPending", true);
+                    result.put("message", "设备已添加，SN将在雷达上线后自动填充");
+                }
+                return createSuccessResponse(result);
             } else {
                 response.status(400);
-                return createErrorResponse(400, existingBySerial != null ? "更新雷达设备失败" : "添加雷达设备失败");
+                return createErrorResponse(400, isUpdate ? "更新雷达设备失败" : "添加雷达设备失败");
             }
         } catch (Exception e) {
             logger.error("添加雷达设备失败", e);

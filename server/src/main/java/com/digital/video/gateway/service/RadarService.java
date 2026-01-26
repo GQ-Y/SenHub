@@ -97,6 +97,9 @@ public class RadarService {
      */
     public synchronized void start() {
         try {
+            // 运行诊断检查
+            com.digital.video.gateway.driver.livox.LivoxDiagnostics.runDiagnostics();
+            
             livoxDriver.start();
             livoxDriver.setPointCloudCallback(this::handlePacket);
             
