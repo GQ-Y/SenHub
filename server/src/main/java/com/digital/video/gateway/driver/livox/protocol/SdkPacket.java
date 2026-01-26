@@ -8,6 +8,10 @@ import java.nio.ByteOrder;
  */
 public class SdkPacket {
 
+    // 设备句柄 - 用于多雷达场景区分不同设备
+    // 0 表示未知设备（兼容旧数据）
+    public int handle;
+
     // Header
     public byte sof;
     public byte version;

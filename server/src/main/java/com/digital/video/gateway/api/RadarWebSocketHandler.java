@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -36,9 +37,10 @@ public class RadarWebSocketHandler {
 
     /**
      * 添加WebSocket连接
+     * 使用 CopyOnWriteArrayList 保证线程安全
      */
     public void addConnection(String deviceId, Session session) {
-        connections.computeIfAbsent(deviceId, k -> new ArrayList<>()).add(session);
+        connections.computeIfAbsent(deviceId, k -> new CopyOnWriteArrayList<>()).add(session);
         logger.info("添加WebSocket连接: deviceId={}, 当前连接数={}", deviceId, 
                 connections.get(deviceId).size());
     }
@@ -120,6 +122,7 @@ public class RadarWebSocketHandler {
 
     /**
      * 发送消息给所有连接的客户端
+     * 使用线程安全的方式遍历和移除失效连接
      */
     private void sendToAll(String deviceId, Map<String, Object> message) {
         List<Session> conns = connections.get(deviceId);
@@ -129,19 +132,27 @@ public class RadarWebSocketHandler {
 
         try {
             String json = objectMapper.writeValueAsString(message);
-            conns.removeIf(session -> {
+            List<Session> toRemove = new ArrayList<>();
+            
+            // 遍历发送，收集需要移除的连接
+            for (Session session : conns) {
                 try {
                     if (session.isOpen()) {
                         session.getRemote().sendString(json);
-                        return false; // 连接正常，不移除
                     } else {
-                        return true; // 连接已关闭，移除
+                        toRemove.add(session);
                     }
                 } catch (IOException e) {
-                    logger.error("发送WebSocket消息失败: deviceId={}", deviceId, e);
-                    return true; // 发送失败，移除连接
+                    logger.debug("发送WebSocket消息失败，将移除连接: deviceId={}", deviceId);
+                    toRemove.add(session);
                 }
-            });
+            }
+            
+            // 移除失效的连接
+            if (!toRemove.isEmpty()) {
+                conns.removeAll(toRemove);
+                logger.debug("已移除 {} 个失效的WebSocket连接: deviceId={}", toRemove.size(), deviceId);
+            }
         } catch (Exception e) {
             logger.error("序列化WebSocket消息失败: deviceId={}", deviceId, e);
         }

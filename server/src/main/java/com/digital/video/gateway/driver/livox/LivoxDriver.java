@@ -364,6 +364,7 @@ public class LivoxDriver {
 
     /**
      * 创建旧接口适配器
+     * 重要：传递 handle 以支持多雷达场景
      */
     private PointCloudCallback createLegacyAdapter(
             LegacyPointCloudCallback legacyCallback) {
@@ -372,6 +373,7 @@ public class LivoxDriver {
             public void onPointCloud(int handle, int devType, int pointCount, int dataType, byte[] data) {
                 // 创建 SdkPacket 对象
                 SdkPacket packet = new SdkPacket();
+                packet.handle = handle; // 传递设备句柄，用于多雷达区分
                 packet.cmdType = 0x01; // MSG type
                 packet.cmdId = dataType;
                 packet.payload = data;

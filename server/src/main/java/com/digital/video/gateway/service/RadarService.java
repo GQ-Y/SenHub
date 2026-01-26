@@ -58,6 +58,11 @@ public class RadarService {
     // SDK 设备信息缓存：handle -> (serial, ip)
     private final Map<Integer, String[]> sdkDeviceInfoCache = new ConcurrentHashMap<>(); // handle -> [serial, ip]
     private final Map<String, Integer> ipToHandleMap = new ConcurrentHashMap<>(); // ip -> handle
+    
+    // 点云数据超时检测（多雷达状态监测增强）
+    private final Map<String, Long> lastPointCloudTime = new ConcurrentHashMap<>(); // deviceId -> 最后接收点云的时间戳
+    private static final long POINTCLOUD_TIMEOUT_MS = 30000; // 30秒未收到点云数据则标记为离线
+    private ScheduledExecutorService timeoutCheckExecutor;
 
     // 点云数据统计
     private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
@@ -116,6 +121,9 @@ public class RadarService {
             if (statusMonitor != null) {
                 statusMonitor.start();
             }
+            
+            // 启动点云数据超时检测任务（多雷达状态监测增强）
+            startPointCloudTimeoutChecker();
         } catch (Exception e) {
             logger.error("启动雷达监听服务失败", e);
         }
@@ -312,6 +320,55 @@ public class RadarService {
     }
 
     /**
+     * 启动点云数据超时检测任务
+     * 定期检查每个设备是否在指定时间内收到点云数据
+     * 如果超时则标记设备为离线
+     */
+    private void startPointCloudTimeoutChecker() {
+        timeoutCheckExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "RadarService-TimeoutChecker");
+            t.setDaemon(true);
+            return t;
+        });
+
+        // 每10秒检查一次超时
+        timeoutCheckExecutor.scheduleAtFixedRate(() -> {
+            try {
+                checkPointCloudTimeout();
+            } catch (Exception e) {
+                logger.error("点云超时检测任务异常", e);
+            }
+        }, 10, 10, TimeUnit.SECONDS);
+
+        logger.info("点云数据超时检测已启动（超时阈值={}ms）", POINTCLOUD_TIMEOUT_MS);
+    }
+
+    /**
+     * 检查点云数据超时
+     * 遍历所有在线设备，检查是否超时未收到点云数据
+     */
+    private void checkPointCloudTimeout() {
+        long now = System.currentTimeMillis();
+        
+        for (Map.Entry<String, Boolean> entry : deviceConnectionStatus.entrySet()) {
+            String deviceId = entry.getKey();
+            Boolean connected = entry.getValue();
+            
+            if (Boolean.TRUE.equals(connected)) {
+                Long lastTime = lastPointCloudTime.get(deviceId);
+                if (lastTime != null && (now - lastTime) > POINTCLOUD_TIMEOUT_MS) {
+                    // 超时，标记为离线
+                    logger.warn("设备 {} 点云数据超时（最后接收: {}ms前），标记为离线", 
+                            deviceId, (now - lastTime));
+                    syncDeviceStatus(deviceId, false);
+                    // 清除超时记录，避免重复触发
+                    lastPointCloudTime.remove(deviceId);
+                }
+            }
+        }
+    }
+
+    /**
      * 停止雷达监听
      */
     public synchronized void stop() {
@@ -327,6 +384,19 @@ public class RadarService {
                 Thread.currentThread().interrupt();
             }
         }
+        
+        // 停止点云超时检测任务
+        if (timeoutCheckExecutor != null) {
+            timeoutCheckExecutor.shutdown();
+            try {
+                if (!timeoutCheckExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    timeoutCheckExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                timeoutCheckExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
 
         livoxDriver.stop();
         logger.info("雷达监听服务已停止");
@@ -337,10 +407,30 @@ public class RadarService {
 
     /**
      * 解析 Livox 数据包
+     * 支持多雷达场景：通过 packet.handle 区分不同设备
      */
     private void handlePacket(SdkPacket packet) {
         if (packet.payload == null || packet.payload.length < 1)
             return;
+
+        // 根据 handle 获取设备ID（多雷达支持的核心）
+        String deviceId = null;
+        if (packet.handle > 0) {
+            deviceId = getDeviceIdByHandle(packet.handle);
+        }
+        
+        // 如果通过 handle 找不到，回退到旧逻辑（兼容单雷达场景）
+        if (deviceId == null) {
+            deviceId = getCurrentDeviceId();
+            if (deviceId != null && packet.handle > 0) {
+                logger.debug("通过 handle={} 无法找到设备，使用默认设备: {}", packet.handle, deviceId);
+            }
+        }
+        
+        if (deviceId == null) {
+            logger.debug("没有配置雷达设备，忽略点云数据");
+            return;
+        }
 
         // 重要修复：dataType 应从 packet.cmdId 获取，而不是从 payload 读取
         // JNI 回调中的 dataType 被存储在 packet.cmdId 中
@@ -359,12 +449,7 @@ public class RadarService {
                 totalPointCloudPoints.addAndGet(points.size());
 
                 // 根据设备状态路由点云数据
-                String deviceId = getCurrentDeviceId();
-                if (deviceId != null) {
-                    routePointCloud(deviceId, points);
-                } else {
-                    logger.debug("没有配置雷达设备，忽略点云数据");
-                }
+                routePointCloud(deviceId, points);
             }
         } else if (dataType == 0x02) {
             // 低精度笛卡尔坐标
@@ -374,10 +459,7 @@ public class RadarService {
                 totalPointCloudFrames.incrementAndGet();
                 totalPointCloudPoints.addAndGet(points.size());
 
-                String deviceId = getCurrentDeviceId();
-                if (deviceId != null) {
-                    routePointCloud(deviceId, points);
-                }
+                routePointCloud(deviceId, points);
             }
         } else {
             logger.debug("不支持的点云数据类型: 0x{}", String.format("%02X", dataType));
@@ -457,6 +539,9 @@ public class RadarService {
             // 没有配置雷达设备，忽略点云数据
             return;
         }
+
+        // 更新最后接收点云的时间（用于超时检测）
+        lastPointCloudTime.put(deviceId, System.currentTimeMillis());
 
         // 收到数据即视为在线，进行状态同步
         if (!Boolean.TRUE.equals(deviceConnectionStatus.get(deviceId))) {
@@ -691,14 +776,44 @@ public class RadarService {
     }
 
     /**
-     * 根据handle获取设备ID（简化实现：如果只有一个设备，直接返回）
-     * TODO: 未来可以通过JNI扩展获取handle对应的设备IP/SN进行精确匹配
+     * 根据 handle 获取设备ID
+     * 通过 SDK 设备信息缓存查找 handle 对应的设备 serial 和 ip，
+     * 然后从数据库中查找对应的 deviceId
+     * 
+     * @param handle SDK 设备句柄
+     * @return deviceId，如果找不到返回 null
      */
-    @SuppressWarnings("unused")
     private String getDeviceIdByHandle(int handle) {
-        // 简化实现：返回第一个设备的ID
-        // 实际应该通过handle查询设备信息进行匹配
-        return getCurrentDeviceId();
+        // 1. 从 SDK 设备信息缓存获取 serial 和 ip
+        String[] info = sdkDeviceInfoCache.get(handle);
+        if (info == null || info.length < 2) {
+            logger.debug("无法找到 handle={} 对应的设备信息，缓存中无此 handle", handle);
+            return null;
+        }
+        String serial = info[0];
+        String ip = info[1];
+        
+        // 2. 优先通过 serial 查找 deviceId
+        RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+        RadarDevice device = dao.getBySerial(serial);
+        if (device != null) {
+            logger.debug("通过 serial 找到设备: handle={}, serial={}, deviceId={}", 
+                    handle, serial, device.getDeviceId());
+            return device.getDeviceId();
+        }
+        
+        // 3. 如果 serial 找不到，通过 IP 查找
+        List<RadarDevice> devices = dao.getAll();
+        for (RadarDevice d : devices) {
+            if (ip.equals(d.getRadarIp())) {
+                logger.debug("通过 IP 找到设备: handle={}, ip={}, deviceId={}", 
+                        handle, ip, d.getDeviceId());
+                return d.getDeviceId();
+            }
+        }
+        
+        logger.warn("无法找到 handle={} (serial={}, ip={}) 对应的 deviceId", handle, serial, ip);
+        return null;
     }
 
     /**
@@ -712,11 +827,48 @@ public class RadarService {
 
     /**
      * 同步设备在线状态到数据库
+     * 增强：添加日志记录和状态变化检测
      */
     public void syncDeviceStatus(String deviceId, boolean connected) {
+        Boolean previousStatus = deviceConnectionStatus.get(deviceId);
+        boolean statusChanged = previousStatus == null || previousStatus != connected;
+        
         deviceConnectionStatus.put(deviceId, connected);
-        RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
-        dao.updateStatus(deviceId, connected ? 1 : 0);
+        
+        try {
+            RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+            dao.updateStatus(deviceId, connected ? 1 : 0);
+            
+            if (statusChanged) {
+                logger.info("设备状态变化: deviceId={}, {} -> {}", 
+                        deviceId, 
+                        previousStatus == null ? "未知" : (previousStatus ? "在线" : "离线"),
+                        connected ? "在线" : "离线");
+            }
+        } catch (Exception e) {
+            logger.error("同步设备状态到数据库失败: deviceId={}, connected={}", deviceId, connected, e);
+        }
+        
+        // 设备离线时清理超时记录
+        if (!connected) {
+            lastPointCloudTime.remove(deviceId);
+        }
+    }
+    
+    /**
+     * 获取所有设备的连接状态（供API使用）
+     * @return Map: deviceId -> connected
+     */
+    public Map<String, Boolean> getAllDeviceConnectionStatus() {
+        return new HashMap<>(deviceConnectionStatus);
+    }
+    
+    /**
+     * 获取所有设备的最后点云接收时间（供API使用）
+     * @return Map: deviceId -> lastPointCloudTime (timestamp)
+     */
+    public Map<String, Long> getLastPointCloudTimeMap() {
+        return new HashMap<>(lastPointCloudTime);
     }
 
     // ==================== 公共API方法 ====================
