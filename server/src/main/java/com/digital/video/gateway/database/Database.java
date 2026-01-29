@@ -159,6 +159,22 @@ public class Database {
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createDevicesTable);
+            try {
+                stmt.execute("ALTER TABLE devices ADD COLUMN camera_type TEXT");
+                logger.info("为 devices 表添加 camera_type 列");
+            } catch (SQLException e) {
+                if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("duplicate column")) {
+                    logger.debug("camera_type 列可能已存在: {}", e.getMessage());
+                }
+            }
+            try {
+                stmt.execute("ALTER TABLE devices ADD COLUMN serial_number TEXT");
+                logger.info("为 devices 表添加 serial_number 列");
+            } catch (SQLException e) {
+                if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("duplicate column")) {
+                    logger.debug("serial_number 列可能已存在: {}", e.getMessage());
+                }
+            }
             stmt.execute(createUsersTable);
             stmt.execute(createConfigsTable);
             stmt.execute(createDriversTable);
@@ -229,9 +245,9 @@ public class Database {
      */
     public boolean saveOrUpdateDevice(DeviceInfo device) {
         String sql = "INSERT OR REPLACE INTO devices " +
-                "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, brand, last_seen, updated_at) "
+                "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, brand, camera_type, serial_number, last_seen, updated_at) "
                 +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
@@ -245,6 +261,8 @@ public class Database {
             pstmt.setInt(9, device.getUserId());
             pstmt.setInt(10, device.getChannel() > 0 ? device.getChannel() : 1);
             pstmt.setString(11, device.getBrand() != null ? device.getBrand() : "auto");
+            pstmt.setString(12, device.getCameraType() != null ? device.getCameraType() : "other");
+            pstmt.setString(13, device.getSerialNumber());
 
             pstmt.executeUpdate();
             logger.debug("设备信息已保存: {}:{}", device.getIp(), device.getPort());
@@ -563,6 +581,84 @@ public class Database {
     }
 
     /**
+     * 用户在前端主动设置设备国标 ID 时调用：将 device_id 从当前值（虚拟 ID 或旧值）更新为 20 位国标 ID，并同步更新所有关联表。
+     */
+    public boolean setDeviceGbId(String currentDeviceId, String newGbId) {
+        if (currentDeviceId == null || newGbId == null || !Gb28181IdGenerator.isGb28181Format(newGbId)) {
+            return false;
+        }
+        if (currentDeviceId.equals(newGbId)) {
+            return true;
+        }
+        DeviceInfo existing = getDevice(newGbId);
+        if (existing != null) {
+            logger.warn("国标 ID 已存在，无法设置: {}", newGbId);
+            return false;
+        }
+        try {
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA foreign_keys = OFF");
+            }
+            try (PreparedStatement pstmt = connection.prepareStatement(
+                    "UPDATE devices SET device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?")) {
+                pstmt.setString(1, newGbId);
+                pstmt.setString(2, currentDeviceId);
+                if (pstmt.executeUpdate() == 0) {
+                    return false;
+                }
+            }
+            updateTableDeviceId("device_history", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("alarm_history", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("workflow_execution_history", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("assembly_devices", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("alarm_rules", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("device_ptz_extension", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("device_event_subscriptions", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("radar_devices", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("radar_backgrounds", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("radar_intrusion_records", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("recording_tasks", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("speakers", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("alarm_records", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("radar_defense_zones", "device_id", currentDeviceId, newGbId);
+            updateTableDeviceId("radar_defense_zones", "camera_device_id", currentDeviceId, newGbId);
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA foreign_keys = ON");
+            }
+            logger.info("设备国标 ID 已更新: {} -> {}", currentDeviceId, newGbId);
+            return true;
+        } catch (SQLException e) {
+            logger.error("设置设备国标 ID 失败: {} -> {}", currentDeviceId, newGbId, e);
+            return false;
+        }
+    }
+
+    private void updateTableDeviceId(String table, String column, String oldId, String newId) throws SQLException {
+        String sql = "UPDATE " + table + " SET " + column + " = ? WHERE " + column + " = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, newId);
+            pstmt.setString(2, oldId);
+            pstmt.executeUpdate();
+        }
+    }
+
+    /**
+     * 建议一个可用的设备国标 20 位 ID（仅供前端「自动生成」按钮使用，递增序号；不在后台自动赋值）
+     */
+    public String suggestDeviceGbId() {
+        String seqStr = getConfig("gb28181_device_sequence");
+        long sequence = 0;
+        if (seqStr != null && !seqStr.isEmpty()) {
+            try {
+                sequence = Long.parseLong(seqStr.trim());
+            } catch (NumberFormatException ignored) { }
+        }
+        String newId = new Gb28181IdGenerator().generate(sequence);
+        saveOrUpdateConfig("gb28181_device_sequence", String.valueOf(sequence + 1), "string");
+        return newId;
+    }
+
+    /**
      * 将ResultSet映射为DeviceInfo对象
      */
     private DeviceInfo mapResultSetToDevice(ResultSet rs) throws SQLException {
@@ -583,6 +679,16 @@ public class Database {
             device.setBrand(rs.getString("brand"));
         } catch (SQLException e) {
             device.setBrand("auto");
+        }
+        try {
+            device.setCameraType(rs.getString("camera_type"));
+        } catch (SQLException e) {
+            device.setCameraType("other");
+        }
+        try {
+            device.setSerialNumber(rs.getString("serial_number"));
+        } catch (SQLException e) {
+            device.setSerialNumber(null);
         }
         device.setLastSeen(rs.getTimestamp("last_seen"));
         device.setCreatedAt(rs.getTimestamp("created_at"));

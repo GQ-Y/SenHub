@@ -98,6 +98,22 @@ export const deviceService = {
   },
 
   /**
+   * 建议一个可用的设备国标 20 位 ID（供前端「自动生成」按钮使用）
+   */
+  async suggestGbId() {
+    const response = await get<{ suggested_gb_id: string }>('/devices/suggest-gb-id');
+    return response;
+  },
+
+  /**
+   * 用户主动设置设备国标 ID（将当前 device_id 更新为 20 位国标 ID）
+   */
+  async setDeviceGbId(deviceId: string, gbId: string) {
+    const response = await put<Device>(`/devices/${encodeURIComponent(deviceId)}/set-gb-id`, { gb_id: gbId });
+    return response;
+  },
+
+  /**
    * 重启设备
    */
   async rebootDevice(deviceId: string) {

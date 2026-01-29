@@ -17,6 +17,8 @@ public class Assembly {
     private String location;
     private int status; // 0: 禁用, 1: 启用
     private boolean ptzLinkageEnabled; // 装置是否开启 PTZ 联动（雷达侵入时联动球机）
+    private Double longitude; // 经度（WGS84）
+    private Double latitude;  // 纬度（WGS84）
     private Timestamp createdAt;
     private Timestamp updatedAt;
 
@@ -77,6 +79,22 @@ public class Assembly {
         this.ptzLinkageEnabled = ptzLinkageEnabled;
     }
 
+    public Double getLongitude() {
+        return longitude;
+    }
+
+    public void setLongitude(Double longitude) {
+        this.longitude = longitude;
+    }
+
+    public Double getLatitude() {
+        return latitude;
+    }
+
+    public void setLatitude(Double latitude) {
+        this.latitude = latitude;
+    }
+
     public Timestamp getCreatedAt() {
         return createdAt;
     }
@@ -109,6 +127,18 @@ public class Assembly {
         } catch (SQLException e) {
             assembly.setPtzLinkageEnabled(false);
         }
+        try {
+            double lon = rs.getDouble("longitude");
+            assembly.setLongitude(rs.wasNull() ? null : lon);
+        } catch (SQLException e) {
+            assembly.setLongitude(null);
+        }
+        try {
+            double lat = rs.getDouble("latitude");
+            assembly.setLatitude(rs.wasNull() ? null : lat);
+        } catch (SQLException e) {
+            assembly.setLatitude(null);
+        }
         assembly.setCreatedAt(rs.getTimestamp("created_at"));
         assembly.setUpdatedAt(rs.getTimestamp("updated_at"));
         return assembly;
@@ -126,6 +156,8 @@ public class Assembly {
         map.put("location", location);
         map.put("status", status);
         map.put("ptzLinkageEnabled", ptzLinkageEnabled);
+        if (longitude != null) map.put("longitude", longitude);
+        if (latitude != null) map.put("latitude", latitude);
         if (createdAt != null)
             map.put("createdAt", createdAt.toString());
         if (updatedAt != null)

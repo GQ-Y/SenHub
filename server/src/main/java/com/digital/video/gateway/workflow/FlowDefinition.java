@@ -56,15 +56,17 @@ public class FlowDefinition {
     }
 
     /**
-     * 获取起始节点
+     * 获取起始节点（mqtt_subscribe 为入口时返回该节点，否则 event_trigger，否则首节点）
      */
     public FlowNodeDefinition getStartNode() {
+        Optional<FlowNodeDefinition> mqttSub = nodes.stream()
+                .filter(n -> "mqtt_subscribe".equalsIgnoreCase(n.getNodeType()))
+                .findFirst();
+        if (mqttSub.isPresent()) return mqttSub.get();
         Optional<FlowNodeDefinition> event = nodes.stream()
                 .filter(n -> "event_trigger".equalsIgnoreCase(n.getNodeType()))
                 .findFirst();
-        if (event.isPresent()) {
-            return event.get();
-        }
+        if (event.isPresent()) return event.get();
         return nodes.isEmpty() ? null : nodes.get(0);
     }
 

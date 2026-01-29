@@ -1,6 +1,6 @@
 package com.digital.video.gateway.workflow.handlers;
 
-import com.digital.video.gateway.mqtt.MqttClient;
+import com.digital.video.gateway.mqtt.MqttPublisher;
 import com.digital.video.gateway.workflow.FlowContext;
 import com.digital.video.gateway.workflow.FlowNodeDefinition;
 import com.digital.video.gateway.workflow.FlowNodeHandler;
@@ -18,15 +18,15 @@ public class MqttPublishHandler implements FlowNodeHandler {
     private static final Logger logger = LoggerFactory.getLogger(MqttPublishHandler.class);
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private final MqttClient mqttClient;
+    private final MqttPublisher mqttPublisher;
 
-    public MqttPublishHandler(MqttClient mqttClient) {
-        this.mqttClient = mqttClient;
+    public MqttPublishHandler(MqttPublisher mqttPublisher) {
+        this.mqttPublisher = mqttPublisher;
     }
 
     @Override
     public boolean execute(FlowNodeDefinition node, FlowContext context) throws Exception {
-        if (mqttClient == null) {
+        if (mqttPublisher == null) {
             logger.info("MQTT未配置，跳过发布");
             return true;
         }
@@ -37,8 +37,8 @@ public class MqttPublishHandler implements FlowNodeHandler {
 
         topic = HandlerUtils.renderTemplate(topic, context, null);
         if (topic == null || topic.isBlank()) {
-            logger.info("MQTT主题未配置，跳过发布");
-            return true;
+            topic = "alarm/report/" + (context.getDeviceId() != null ? context.getDeviceId() : "unknown");
+            logger.info("MQTT主题未配置，使用默认主题: {}", topic);
         }
 
         Map<String, Object> payload = new HashMap<>();
@@ -47,6 +47,8 @@ public class MqttPublishHandler implements FlowNodeHandler {
         }
         payload.putIfAbsent("deviceId", context.getDeviceId());
         payload.putIfAbsent("assemblyId", context.getAssemblyId());
+        payload.putIfAbsent("device_id", context.getDeviceId());
+        payload.putIfAbsent("assembly_id", context.getAssemblyId());
         payload.putIfAbsent("alarmType", context.getAlarmType());
         payload.put("flowId", context.getFlowId());
 
@@ -58,7 +60,7 @@ public class MqttPublishHandler implements FlowNodeHandler {
         }
 
         String message = mapper.writeValueAsString(payload);
-        boolean result = mqttClient.publish(topic, message);
+        boolean result = mqttPublisher.publish(topic, message);
         logger.info("MQTT发布: topic={}, result={}", topic, result);
         return result;
     }

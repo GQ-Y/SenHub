@@ -21,6 +21,8 @@ export const AssemblyManagement: React.FC = () => {
     description: '',
     status: 'active',
     ptzLinkageEnabled: false,
+    longitude: undefined,
+    latitude: undefined,
   });
   const [isSaving, setIsSaving] = useState(false);
   const modal = useModal();
@@ -49,7 +51,7 @@ export const AssemblyManagement: React.FC = () => {
   }, [searchTerm]);
 
   const openCreateModal = () => {
-    setFormData({ name: '', location: '', description: '', status: 'active', ptzLinkageEnabled: false });
+    setFormData({ name: '', location: '', description: '', status: 'active', ptzLinkageEnabled: false, longitude: undefined, latitude: undefined });
     setActiveModal('CREATE');
   };
 
@@ -61,6 +63,8 @@ export const AssemblyManagement: React.FC = () => {
       description: assembly.description,
       status: assembly.status,
       ptzLinkageEnabled: assembly.ptzLinkageEnabled ?? false,
+      longitude: assembly.longitude,
+      latitude: assembly.latitude,
     });
     setActiveModal('EDIT');
   };
@@ -367,6 +371,30 @@ export const AssemblyManagement: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     placeholder="请输入位置信息"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">经度（WGS84）</label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={formData.longitude ?? ''}
+                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      placeholder="如 116.397"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">纬度（WGS84）</label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                      value={formData.latitude ?? ''}
+                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      placeholder="如 39.916"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('assembly_description')}</label>

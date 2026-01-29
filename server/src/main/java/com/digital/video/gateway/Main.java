@@ -15,6 +15,10 @@ import com.digital.video.gateway.hikvision.HikvisionSDK;
 import com.digital.video.gateway.service.*;
 import com.digital.video.gateway.keeper.Keeper;
 import com.digital.video.gateway.mqtt.MqttClient;
+import com.digital.video.gateway.mqtt.MqttClientAdapter;
+import com.digital.video.gateway.mqtt.MqttPublisher;
+import com.digital.video.gateway.mqtt.DelegatingMqttPublisher;
+import com.digital.video.gateway.mqtt.FallbackMqttPublisher;
 import com.digital.video.gateway.recorder.Recorder;
 import com.digital.video.gateway.scanner.DeviceScanner;
 import com.digital.video.gateway.service.ConfigService;
@@ -31,6 +35,11 @@ import com.digital.video.gateway.service.AlarmRecordService;
 import com.digital.video.gateway.service.SpeakerService;
 import com.digital.video.gateway.service.RecordingTaskService;
 import com.digital.video.gateway.database.RadarDeviceDAO;
+import com.digital.video.gateway.database.RadarDevice;
+import com.digital.video.gateway.database.Assembly;
+import com.digital.video.gateway.database.AssemblyDevice;
+import com.digital.video.gateway.workflow.FlowContext;
+import com.digital.video.gateway.workflow.FlowDefinition;
 import com.digital.video.gateway.workflow.FlowExecutor;
 import com.digital.video.gateway.workflow.handlers.CaptureHandler;
 import com.digital.video.gateway.workflow.handlers.MqttPublishHandler;
@@ -47,6 +56,7 @@ import spark.Spark;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -60,6 +70,7 @@ public class Main {
     private Config config;
     private Database database;
     private MqttClient mqttClient;
+    private MqttPublisher mqttPublisher;
     private DeviceManager deviceManager;
     private DeviceScanner scanner;
     private CommandHandler commandHandler;
@@ -266,7 +277,6 @@ public class Main {
             alarmService.setRecordingTaskService(recordingTaskService);
             alarmService.setSpeakerService(speakerService);
             alarmService.setPTZService(ptzService);
-            alarmService.setMqttClient(mqttClient);
             alarmService.setDatabase(database);
             logger.info("AlarmService依赖注入完成");
 
@@ -286,16 +296,18 @@ public class Main {
             } else {
                 logger.info("MQTT客户端连接成功");
             }
+            mqttPublisher = new DelegatingMqttPublisher(new MqttClientAdapter(mqttClient), new FallbackMqttPublisher());
 
             // 配置报警服务的MQTT与流程执行器
-            alarmService.setMqttClient(mqttClient);
+            alarmService.setMqttPublisher(mqttPublisher);
             flowExecutor = createFlowExecutor();
             alarmService.setFlowService(flowService);
             alarmService.setFlowExecutor(flowExecutor);
+            setupMqttTopicHandler();
 
-            // 7.5. 设置DeviceManager的MQTT客户端（用于状态通知）
-            deviceManager.setMqttClient(mqttClient);
-            logger.info("DeviceManager已设置MQTT客户端");
+            // 7.5. 设置DeviceManager的MQTT发布器（连接失败时自动降级）
+            deviceManager.setMqttPublisher(mqttPublisher);
+            logger.info("DeviceManager已设置MQTT发布器");
 
             // 7.6. 启动时自动连接已有设备，确保在线状态
             autoConnectExistingDevices();
@@ -382,22 +394,58 @@ public class Main {
     }
 
     /**
-     * 设置MQTT消息处理器
+     * 设置 MQTT 消息处理器（仅命令主题，工作流主题在 setupMqttTopicHandler 中按 topic 派发）
      */
     private void setupMqttMessageHandler() {
-        mqttClient.setMessageHandler(message -> {
-            try {
-                logger.info("收到MQTT命令: {}", message);
-                CommandResponse response = commandHandler.handleCommand(message);
+        // 占位，实际派发在 setupMqttTopicHandler 中按 (topic, payload) 处理
+    }
 
-                // 发布响应
-                String responseJson = objectMapper.writeValueAsString(response);
-                mqttClient.publishResponse(responseJson);
-                logger.info("命令响应已发送: {}", responseJson);
+    /**
+     * 设置按主题派发的 MQTT 处理器，并订阅工作流 mqtt_subscribe 节点配置的主题
+     */
+    private void setupMqttTopicHandler() {
+        if (mqttClient == null || flowExecutor == null || flowService == null) return;
+        mqttClient.setTopicMessageHandler((topic, payload) -> {
+            try {
+                if (config.getMqtt().getCommandTopic().equals(topic)) {
+                    logger.info("收到MQTT命令: {}", payload);
+                    CommandResponse response = commandHandler.handleCommand(payload);
+                    String responseJson = objectMapper.writeValueAsString(response);
+                    if (mqttPublisher != null) mqttPublisher.publishResponse(responseJson);
+                    else if (mqttClient != null) mqttClient.publishResponse(responseJson);
+                    logger.info("命令响应已发送: {}", responseJson);
+                } else {
+                    for (FlowDefinition def : flowService.getFlowDefinitionsByMqttTopic(topic)) {
+                        try {
+                            FlowContext ctx = new FlowContext();
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> payloadMap = payload != null && !payload.isEmpty()
+                                    ? objectMapper.readValue(payload, Map.class)
+                                    : new HashMap<>();
+                            ctx.setPayload(payloadMap);
+                            flowExecutor.execute(def, ctx);
+                        } catch (Exception e) {
+                            logger.error("MQTT 工作流执行失败 topic={} flowId={}", topic, def.getFlowId(), e);
+                        }
+                    }
+                }
             } catch (Exception e) {
-                logger.error("处理MQTT消息失败", e);
+                logger.error("处理MQTT消息失败 topic={}", topic, e);
             }
         });
+        subscribeMqttWorkflowTopics();
+        mqttClient.setOnConnectedCallback(this::subscribeMqttWorkflowTopics);
+    }
+
+    /**
+     * 订阅工作流 mqtt_subscribe 节点配置的主题（连接/重连后调用）
+     */
+    private void subscribeMqttWorkflowTopics() {
+        if (mqttClient == null || flowService == null) return;
+        for (String topic : flowService.getMqttSubscribeTopics()) {
+            mqttClient.subscribe(topic);
+            logger.info("已订阅工作流主题: {}", topic);
+        }
     }
 
     /**
@@ -408,7 +456,8 @@ public class Main {
         // 事件触发器：支持防抖间隔配置
         executor.registerHandler("event_trigger", new com.digital.video.gateway.workflow.handlers.EventTriggerHandler());
         executor.registerHandler("capture", new CaptureHandler(captureService));
-        executor.registerHandler("mqtt_publish", new MqttPublishHandler(mqttClient));
+        executor.registerHandler("mqtt_publish", new MqttPublishHandler(mqttPublisher != null ? mqttPublisher : new FallbackMqttPublisher()));
+        executor.registerHandler("mqtt_subscribe", new com.digital.video.gateway.workflow.handlers.MqttSubscribeHandler());
         
         // OssService 设置 ConfigService 以支持动态配置
         if (ossService != null) {
@@ -500,6 +549,17 @@ public class Main {
                     logger.warn("自动登录失败: {}", deviceId);
                 }
             }
+            // 发布所有雷达状态到 senhub/device/status（entity_type=radar）
+            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+            List<RadarDevice> radarDevices = radarDeviceDAO.getAll();
+            for (RadarDevice rd : radarDevices) {
+                publishRadarStatus(rd, rd.getStatus());
+            }
+            // 发布所有装置状态到 senhub/assembly/{assemblyId}/status（含经纬度、device_ids）
+            List<Assembly> assemblies = assemblyService.getAssemblies(null, null);
+            for (Assembly a : assemblies) {
+                publishAssemblyStatus(a, a.getStatus() == 1 ? "online" : "offline");
+            }
         } catch (Exception e) {
             logger.error("自动连接已有设备失败", e);
         }
@@ -531,13 +591,14 @@ public class Main {
     }
 
     /**
-     * 发布设备状态
+     * 发布设备状态到 senhub/device/status（entity_type=camera、device_id、type、device_info 含 camera_type）
      */
     private void publishDeviceStatus(DeviceInfo device, int status) {
         try {
             Map<String, Object> statusMessage = new HashMap<>();
+            statusMessage.put("entity_type", "camera");
             statusMessage.put("device_id", device.getDeviceId());
-            statusMessage.put("status", status);
+            statusMessage.put("type", status == 1 ? "online" : "offline");
             statusMessage.put("timestamp", System.currentTimeMillis() / 1000);
 
             Map<String, Object> deviceInfo = new HashMap<>();
@@ -545,13 +606,75 @@ public class Main {
             deviceInfo.put("ip", device.getIp());
             deviceInfo.put("port", device.getPort());
             deviceInfo.put("rtsp_url", device.getRtspUrl());
+            deviceInfo.put("brand", device.getBrand());
+            deviceInfo.put("camera_type", device.getCameraType() != null ? device.getCameraType() : "other");
+            if (device.getSerialNumber() != null && !device.getSerialNumber().isEmpty()) {
+                deviceInfo.put("serial_number", device.getSerialNumber());
+            }
             statusMessage.put("device_info", deviceInfo);
+            if (status != 1) statusMessage.put("reason", "disconnected");
 
             String messageJson = objectMapper.writeValueAsString(statusMessage);
-            mqttClient.publishStatus(messageJson);
+            if (mqttPublisher != null) mqttPublisher.publishStatus(messageJson);
             logger.debug("设备状态已发布: {}", messageJson);
         } catch (Exception e) {
             logger.error("发布设备状态失败", e);
+        }
+    }
+
+    /**
+     * 发布雷达状态到 senhub/device/status（entity_type=radar、device_id、radar_info）
+     */
+    private void publishRadarStatus(RadarDevice device, int status) {
+        if (mqttPublisher == null) return;
+        try {
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("entity_type", "radar");
+            msg.put("device_id", device.getDeviceId());
+            msg.put("type", status == 1 ? "online" : "offline");
+            msg.put("timestamp", System.currentTimeMillis() / 1000);
+            Map<String, Object> radarInfo = new HashMap<>();
+            radarInfo.put("radar_ip", device.getRadarIp());
+            radarInfo.put("radar_name", device.getRadarName());
+            radarInfo.put("assembly_id", device.getAssemblyId());
+            radarInfo.put("radar_serial", device.getRadarSerial());
+            radarInfo.put("status", status);
+            msg.put("radar_info", radarInfo);
+            if (status != 1) msg.put("reason", "disconnected");
+            String json = objectMapper.writeValueAsString(msg);
+            mqttPublisher.publish(config.getMqtt().getStatusTopic(), json);
+            logger.debug("雷达状态已发布: {}", device.getDeviceId());
+        } catch (Exception e) {
+            logger.error("发布雷达状态失败: {}", device.getDeviceId(), e);
+        }
+    }
+
+    /**
+     * 发布装置状态到 senhub/assembly/{assemblyId}/status（含 longitude、latitude、device_ids）
+     */
+    private void publishAssemblyStatus(Assembly assembly, String type) {
+        if (mqttPublisher == null) return;
+        try {
+            String topic = "senhub/assembly/" + assembly.getAssemblyId() + "/status";
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("assembly_id", assembly.getAssemblyId());
+            msg.put("type", type);
+            msg.put("timestamp", System.currentTimeMillis() / 1000);
+            Map<String, Object> info = new HashMap<>();
+            info.put("name", assembly.getName());
+            info.put("location", assembly.getLocation());
+            if (assembly.getLongitude() != null) info.put("longitude", assembly.getLongitude());
+            if (assembly.getLatitude() != null) info.put("latitude", assembly.getLatitude());
+            List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assembly.getAssemblyId());
+            List<String> deviceIds = devices.stream().map(AssemblyDevice::getDeviceId).collect(Collectors.toList());
+            info.put("device_count", deviceIds.size());
+            info.put("device_ids", deviceIds);
+            msg.put("assembly_info", info);
+            String json = objectMapper.writeValueAsString(msg);
+            mqttPublisher.publish(topic, json);
+            logger.debug("装置状态已发布: {}", assembly.getAssemblyId());
+        } catch (Exception e) {
+            logger.error("发布装置状态失败: {}", assembly.getAssemblyId(), e);
         }
     }
 
@@ -703,9 +826,11 @@ public class Main {
         // 认证路由
         Spark.post("/api/auth/login", authController::login);
 
-        // 设备路由
+        // 设备路由（具体路径须在 :id 之前注册）
         Spark.get("/api/devices", deviceController::getDevices);
         Spark.get("/api/devices/brands", deviceController::getBrands);
+        Spark.get("/api/devices/suggest-gb-id", deviceController::suggestGbId);
+        Spark.put("/api/devices/:id/set-gb-id", deviceController::setDeviceGbId);
         Spark.get("/api/devices/:id", deviceController::getDevice);
         Spark.get("/api/devices/:id/config", deviceController::getDeviceConfig);
         Spark.put("/api/devices/:id/config", deviceController::updateDeviceConfig);

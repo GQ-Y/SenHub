@@ -147,6 +147,14 @@ public class AssemblyController {
             } else if (existing != null) {
                 assembly.setPtzLinkageEnabled(existing.isPtzLinkageEnabled());
             }
+            if (body.containsKey("longitude")) {
+                Object v = body.get("longitude");
+                assembly.setLongitude(v == null ? null : ((Number) v).doubleValue());
+            } else if (existing != null) assembly.setLongitude(existing.getLongitude());
+            if (body.containsKey("latitude")) {
+                Object v = body.get("latitude");
+                assembly.setLatitude(v == null ? null : ((Number) v).doubleValue());
+            } else if (existing != null) assembly.setLatitude(existing.getLatitude());
 
             Assembly updated = assemblyService.updateAssembly(assemblyId, assembly);
             if (updated == null) {

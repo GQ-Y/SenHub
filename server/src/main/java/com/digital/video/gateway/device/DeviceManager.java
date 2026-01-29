@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.database.DeviceInfo;
-import com.digital.video.gateway.mqtt.MqttClient;
+import com.digital.video.gateway.mqtt.MqttPublisher;
 import com.digital.video.gateway.tiandy.TiandySDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +23,7 @@ public class DeviceManager {
     private static final Logger logger = LoggerFactory.getLogger(DeviceManager.class);
     private Database database;
     private Config.DeviceConfig config;
-    private MqttClient mqttClient;
+    private MqttPublisher mqttPublisher;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     // 设备登录状态映射：deviceId -> userId
@@ -379,11 +379,11 @@ public class DeviceManager {
     }
 
     /**
-     * 设置MQTT客户端（用于状态通知）
+     * 设置MQTT发布器（用于状态通知；连接失败时自动降级）
      */
-    public void setMqttClient(MqttClient mqttClient) {
-        this.mqttClient = mqttClient;
-        logger.debug("DeviceManager已设置MQTT客户端");
+    public void setMqttPublisher(MqttPublisher mqttPublisher) {
+        this.mqttPublisher = mqttPublisher;
+        logger.debug("DeviceManager已设置MQTT发布器");
     }
 
     /**
@@ -410,17 +410,18 @@ public class DeviceManager {
     }
 
     /**
-     * 发布设备状态到MQTT
+     * 发布设备状态到 MQTT（senhub/device/status，payload 含 entity_type=camera、device_id、type、device_info 含 camera_type）
      */
     private void publishDeviceStatus(DeviceInfo device, int status) {
-        if (mqttClient == null) {
-            logger.warn("MQTT客户端未设置，无法发布设备状态");
+        if (mqttPublisher == null) {
+            logger.warn("MQTT发布器未设置，无法发布设备状态");
             return;
         }
         try {
             Map<String, Object> statusMessage = new HashMap<>();
+            statusMessage.put("entity_type", "camera");
             statusMessage.put("device_id", device.getDeviceId());
-            statusMessage.put("status", status);
+            statusMessage.put("type", status == 1 ? "online" : "offline");
             statusMessage.put("timestamp", System.currentTimeMillis() / 1000);
 
             Map<String, Object> deviceInfoMap = new HashMap<>();
@@ -429,10 +430,15 @@ public class DeviceManager {
             deviceInfoMap.put("port", device.getPort());
             deviceInfoMap.put("rtsp_url", device.getRtspUrl());
             deviceInfoMap.put("brand", device.getBrand());
+            deviceInfoMap.put("camera_type", device.getCameraType() != null ? device.getCameraType() : "other");
+            if (device.getSerialNumber() != null && !device.getSerialNumber().isEmpty()) {
+                deviceInfoMap.put("serial_number", device.getSerialNumber());
+            }
             statusMessage.put("device_info", deviceInfoMap);
+            if (status != 1) statusMessage.put("reason", "disconnected");
 
             String messageJson = objectMapper.writeValueAsString(statusMessage);
-            mqttClient.publishStatus(messageJson);
+            mqttPublisher.publishStatus(messageJson);
             logger.debug("设备状态已发布到MQTT: {}", messageJson);
         } catch (Exception e) {
             logger.error("发布设备状态到MQTT失败: {}", device.getDeviceId(), e);

@@ -229,95 +229,13 @@ server/
 └── README.md
 ```
 
-### MQTT Message Format
+### MQTT Topics and Message Format (senhub)
 
-#### Status Report
+The gateway uses the **senhub/** topic prefix. Device/assembly IDs support **GB28181 20-digit** or **virtual ID** (`v_`+UUID); GB ID is set by the user in the frontend (with an optional “auto-generate” suggestion). Full payload spec: [docs/mqtt-message-body-spec.md](../docs/mqtt-message-body-spec.md).
 
-**Topic**: `hikvision/status` (configurable)
+**Default topics** (config.yaml): `senhub/device/status` (device/radar status, entity_type=camera/radar), `senhub/command`, `senhub/response`, `senhub/gateway/status` (gateway online/offline, LWT, gateway_id=MAC), `senhub/report/{deviceId}` (alarm/workflow), `senhub/assembly/{assemblyId}/status` (assembly with longitude, latitude, device_ids).
 
-```json
-{
-  "device_id": "192.168.1.100",
-  "status": "online|offline",
-  "timestamp": 1234567890,
-  "device_info": {
-    "name": "Camera Name",
-    "ip": "192.168.1.100",
-    "port": 8000,
-    "rtsp_url": "rtsp://192.168.1.100:554/Streaming/Channels/101",
-    "brand": "hikvision",
-    "model": "DS-2CD2xxx",
-    "channels": 1
-  }
-}
-```
-
-#### Alarm Event Report
-
-**Topic**: `hikvision/alarm` (configurable)
-
-```json
-{
-  "device_id": "192.168.1.100",
-  "alarm_type": "motion_detect|intrusion|device_abnormal",
-  "alarm_level": "info|warning|critical",
-  "timestamp": 1234567890,
-  "data": {
-    "channel": 1,
-    "description": "Motion detection alarm"
-  }
-}
-```
-
-#### Command Dispatch
-
-**Topic**: `hikvision/command` (configurable)
-
-**Capture Command**:
-
-```json
-{
-  "command": "capture",
-  "device_id": "192.168.1.100",
-  "request_id": "uuid-string",
-  "data": {
-    "channel": 1
-  }
-}
-```
-
-**PTZ Control Command**:
-
-```json
-{
-  "command": "ptz_control",
-  "device_id": "192.168.1.100",
-  "request_id": "uuid-string",
-  "data": {
-    "action": "up|down|left|right|zoom_in|zoom_out",
-    "speed": 5,
-    "channel": 1
-  }
-}
-```
-
-#### Command Response
-
-**Topic**: `hikvision/response` (configurable)
-
-```json
-{
-  "request_id": "uuid-string",
-  "device_id": "192.168.1.100",
-  "command": "capture",
-  "success": true,
-  "data": {
-    "image_base64": "base64-encoded-image"
-  },
-  "error": "",
-  "timestamp": 1234567890
-}
-```
+Alarm payloads include **event_id** (1000–2000) and **event_key**; the same event keeps the same event_id across the three phases (alarm-only, with capture, with playback). Commands use `device_id` as GB or virtual ID; responses are published to `senhub/response`. For full examples and verification steps, see the [Chinese README](README.md) MQTT section and “联调与验证建议”.
 
 ### RESTful API
 
@@ -329,6 +247,9 @@ Main interfaces include:
 
 - `GET /api/devices` - Get device list
 - `GET /api/devices/{deviceId}` - Get device details
+- `PUT /api/devices/{id}` - Update device (camera_type, serial_number)
+- `GET /api/devices/suggest-gb-id` - Get suggested GB 20-digit ID
+- `PUT /api/devices/:id/set-gb-id` - Set device GB ID (body: `{ "gb_id": "20-digit" }`)
 - `POST /api/devices/{deviceId}/capture` - Capture image
 - `POST /api/devices/{deviceId}/ptz` - PTZ control
 - `GET /api/alarms` - Get alarm history
@@ -340,7 +261,7 @@ For detailed API documentation, please refer to the API controller classes in th
 
 For detailed configuration, please refer to the comments in the `src/main/resources/config.yaml` file. Main configuration items include:
 
-- **MQTT Configuration**: Broker address, authentication information, topic configuration
+- **MQTT Configuration**: Broker address, authentication, topics (status_topic, command_topic, response_topic, gateway_status_topic, report_topic_prefix)
 - **Device Configuration**: Default username/password, port configuration, brand presets
 - **Scanner Configuration**: Auto-scan switch, scan range, scan interval
 - **Keep-Alive Configuration**: Check interval, offline threshold
@@ -353,11 +274,13 @@ SQLite is used to store device information, configuration, and alarm records. Th
 
 Main data tables:
 
-- `devices` - Device information table
+- `devices` - Device information (device_id GB/virtual ID, camera_type, serial_number)
 - `device_ptz_extension` - Device PTZ extension information
+- `assemblies` - Assembly table (longitude, latitude)
+- `canonical_events` - Canonical events (event_id 1000–2000, see mqtt-alarm-event-ids.csv)
 - `alarm_rules` - Alarm rules table
 - `alarm_records` - Alarm records table
-- `workflows` - Workflow configuration table
+- `workflows` - Workflow configuration (supports mqtt_subscribe start node)
 - `system_config` - System configuration table
 
 ## Important Notes

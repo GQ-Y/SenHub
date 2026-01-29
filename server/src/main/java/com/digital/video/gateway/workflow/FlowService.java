@@ -11,10 +11,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * 报警流程服务
@@ -109,6 +111,48 @@ public class FlowService {
             return null;
         }
         return FlowDefinition.fromJsonStrings(flow.getFlowId(), flow.getName(), flow.getNodes(), flow.getConnections());
+    }
+
+    /**
+     * 收集所有流程中 mqtt_subscribe 节点配置的主题（去重），供 MQTT 客户端订阅
+     */
+    public Set<String> getMqttSubscribeTopics() {
+        Set<String> topics = new HashSet<>();
+        List<AlarmFlow> flows = listFlows();
+        for (AlarmFlow flow : flows) {
+            if (!flow.isEnabled()) continue;
+            FlowDefinition def = toDefinition(flow);
+            if (def == null) continue;
+            FlowNodeDefinition start = def.getStartNode();
+            if (start == null || !"mqtt_subscribe".equalsIgnoreCase(start.getNodeType())) continue;
+            Map<String, Object> cfg = start.getConfig();
+            if (cfg != null && cfg.get("topic") instanceof String) {
+                String topic = ((String) cfg.get("topic")).trim();
+                if (!topic.isEmpty()) topics.add(topic);
+            }
+        }
+        return topics;
+    }
+
+    /**
+     * 根据 MQTT 主题查找以 mqtt_subscribe 为该主题为入口的流程定义列表
+     */
+    public List<FlowDefinition> getFlowDefinitionsByMqttTopic(String topic) {
+        List<FlowDefinition> result = new ArrayList<>();
+        List<AlarmFlow> flows = listFlows();
+        for (AlarmFlow flow : flows) {
+            if (!flow.isEnabled()) continue;
+            FlowDefinition def = toDefinition(flow);
+            if (def == null) continue;
+            FlowNodeDefinition start = def.getStartNode();
+            if (start == null || !"mqtt_subscribe".equalsIgnoreCase(start.getNodeType())) continue;
+            Map<String, Object> cfg = start.getConfig();
+            if (cfg != null && cfg.get("topic") instanceof String) {
+                String t = ((String) cfg.get("topic")).trim();
+                if (!t.isEmpty() && topic.equals(t)) result.add(def);
+            }
+        }
+        return result;
     }
 
     /**

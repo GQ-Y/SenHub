@@ -17,6 +17,10 @@ export interface Device {
   rtspUrl?: string;
   username?: string;
   password?: string;
+  /** 摄像头类型：ptz=球机, bullet=枪机, dome=半球, other=其他 */
+  cameraType?: string;
+  /** 设备序列号 */
+  serialNumber?: string;
 }
 
 export interface Driver {
@@ -161,6 +165,10 @@ export interface Assembly {
   status: 'active' | 'inactive';
   /** 是否开启 PTZ 联动（雷达侵入时联动球机） */
   ptzLinkageEnabled?: boolean;
+  /** 经度（WGS84） */
+  longitude?: number;
+  /** 纬度（WGS84） */
+  latitude?: number;
   deviceCount?: number;
   devices?: AssemblyDevice[];
   createdAt?: string;
@@ -260,10 +268,11 @@ export interface AlarmFlow {
 // 画布节点类型
 export type FlowNodeType = 
   | 'event_trigger'   // 事件触发器（起始节点）
+  | 'mqtt_subscribe'  // MQTT 订阅（起始节点，消息到达主题时触发）
   | 'condition'       // 条件判断 (if/else)
   | 'capture'         // 抓拍
   | 'record'          // 录像
-  | 'ptz_control'     // 云台控制
+  | 'ptz_control'    // 云台控制
   | 'mqtt_publish'    // MQTT上报
   | 'oss_upload'      // OSS上传
   | 'speaker_play'    // 音柱播报

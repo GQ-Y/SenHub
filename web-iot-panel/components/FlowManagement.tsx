@@ -11,6 +11,7 @@ import {
 // 内置组件定义
 const FLOW_COMPONENTS: FlowComponentDefinition[] = [
   { type: 'event_trigger', label: 'node_event_trigger', icon: 'Zap', category: 'trigger', defaultConfig: { debounceSeconds: 5 } },
+  { type: 'mqtt_subscribe', label: 'node_mqtt_subscribe', icon: 'Radio', category: 'trigger', defaultConfig: { topic: 'senhub/custom/command', qos: 1 } },
   { type: 'condition', label: 'node_condition', icon: 'GitBranch', category: 'logic', hasConditionPorts: true, defaultConfig: { expression: '' } },
   { type: 'capture', label: 'node_capture', icon: 'Camera', category: 'action', defaultConfig: { channel: 1 } },
   { type: 'record', label: 'node_record', icon: 'Video', category: 'action', defaultConfig: { channel: 1, beforeSeconds: 15, afterSeconds: 15 } },
@@ -39,7 +40,7 @@ const genConnId = () => `conn_${Date.now()}_${Math.random().toString(36).slice(2
 // 节点颜色
 const getNodeColor = (type: FlowNodeType) => {
   switch (type) {
-    case 'event_trigger': return { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-700' };
+    case 'event_trigger': case 'mqtt_subscribe': return { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-700' };
     case 'condition': return { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-700' };
     case 'capture': case 'record': case 'ptz_control': return { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700' };
     case 'mqtt_publish': case 'oss_upload': case 'speaker_play': case 'webhook': return { bg: 'bg-green-50', border: 'border-green-400', text: 'text-green-700' };
@@ -777,6 +778,32 @@ export const FlowManagement: React.FC = () => {
                 onChange={e => updateNodeConfig('topic', e.target.value)}
                 className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
               />
+            </div>
+          )}
+
+          {selectedNode.type === 'mqtt_subscribe' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_topic')}</label>
+                <input
+                  value={selectedNode.config?.topic || ''}
+                  onChange={e => updateNodeConfig('topic', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="senhub/custom/command"
+                />
+                <p className="text-xs text-gray-400 mt-1">消息到达该主题时触发本流程</p>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">QoS</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="2"
+                  value={selectedNode.config?.qos ?? 1}
+                  onChange={e => updateNodeConfig('qos', parseInt(e.target.value) || 0)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
             </div>
           )}
 

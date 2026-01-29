@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Package, Bell, User, X, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Settings, Package, Bell, User, X, Plus, Hash } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService, assemblyService, alarmRuleService } from '../src/api/services';
 import { Device, Assembly, AlarmRule, DeviceRole } from '../types';
@@ -7,12 +8,17 @@ import { Modal } from './Modal';
 import { useModal } from '../hooks/useModal';
 import { DeviceSelector } from './DeviceSelector';
 
+/** 国标 GB/T 28181 设备 ID 为 20 位数字 */
+const GB_ID_LEN = 20;
+const GB_ID_REG = /^\d{20}$/;
+
 interface DeviceConfigProps {
   deviceId: string;
 }
 
 export const DeviceConfig: React.FC<DeviceConfigProps> = ({ deviceId }) => {
   const { t } = useAppContext();
+  const navigate = useNavigate();
   const [device, setDevice] = useState<Device | null>(null);
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [rules, setRules] = useState<AlarmRule[]>([]);
@@ -22,6 +28,8 @@ export const DeviceConfig: React.FC<DeviceConfigProps> = ({ deviceId }) => {
   const [deviceRole, setDeviceRole] = useState<DeviceRole | ''>('');
   const [allAssemblies, setAllAssemblies] = useState<Assembly[]>([]);
   const [showAddAssemblyModal, setShowAddAssemblyModal] = useState(false);
+  const [gbIdInput, setGbIdInput] = useState('');
+  const [isGbIdLoading, setIsGbIdLoading] = useState(false);
   const modal = useModal();
 
   useEffect(() => {
@@ -130,6 +138,43 @@ export const DeviceConfig: React.FC<DeviceConfigProps> = ({ deviceId }) => {
     }
   };
 
+  const handleSuggestGbId = async () => {
+    setIsGbIdLoading(true);
+    try {
+      const res = await deviceService.suggestGbId();
+      const suggested = (res as any)?.data?.suggested_gb_id;
+      if (suggested) setGbIdInput(suggested);
+      else modal.showModal({ message: '获取建议国标 ID 失败', type: 'error' });
+    } catch (err: any) {
+      modal.showModal({ message: err.message || '获取建议国标 ID 失败', type: 'error' });
+    } finally {
+      setIsGbIdLoading(false);
+    }
+  };
+
+  const handleSetGbId = async () => {
+    const trimmed = gbIdInput.trim();
+    if (!GB_ID_REG.test(trimmed)) {
+      modal.showModal({ message: `国标 ID 须为 ${GB_ID_LEN} 位数字`, type: 'error' });
+      return;
+    }
+    if (trimmed === deviceId) {
+      modal.showModal({ message: '当前设备 ID 已是该国标 ID', type: 'info' });
+      return;
+    }
+    setIsGbIdLoading(true);
+    try {
+      await deviceService.setDeviceGbId(deviceId, trimmed);
+      modal.showModal({ message: '国标 ID 设置成功', type: 'success' });
+      setGbIdInput('');
+      navigate(`/devices/${encodeURIComponent(trimmed)}`, { replace: true });
+    } catch (err: any) {
+      modal.showModal({ message: err.message || '设置国标 ID 失败', type: 'error' });
+    } finally {
+      setIsGbIdLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-12 text-center">
@@ -152,6 +197,86 @@ export const DeviceConfig: React.FC<DeviceConfigProps> = ({ deviceId }) => {
       />
 
       <div className="space-y-6">
+        {/* 国标 ID（用户主动设置，可点击自动生成建议） */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <h3 className="font-bold text-gray-800 flex items-center mb-4">
+            <Hash size={20} className="mr-2 text-blue-500" />
+            国标 ID（GB/T 28181）
+          </h3>
+          <p className="text-sm text-gray-500 mb-3">
+            当前设备 ID：<code className="bg-gray-100 px-1.5 py-0.5 rounded">{device?.id ?? deviceId}</code>
+            {device?.id?.startsWith('v_') && (
+              <span className="ml-2 text-amber-600">（虚拟 ID，请设置 20 位国标 ID 后使用）</span>
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              maxLength={GB_ID_LEN}
+              placeholder={`${GB_ID_LEN} 位数字`}
+              className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 w-56 font-mono"
+              value={gbIdInput}
+              onChange={(e) => setGbIdInput(e.target.value.replace(/\D/g, '').slice(0, GB_ID_LEN))}
+            />
+            <button
+              type="button"
+              disabled={isGbIdLoading}
+              onClick={handleSuggestGbId}
+              className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50 text-sm"
+            >
+              {isGbIdLoading ? '...' : '自动生成'}
+            </button>
+            <button
+              type="button"
+              disabled={isGbIdLoading || !GB_ID_REG.test(gbIdInput.trim())}
+              onClick={handleSetGbId}
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm"
+            >
+              设置国标 ID
+            </button>
+          </div>
+        </div>
+
+        {/* 摄像头类型与序列号 */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <h3 className="font-bold text-gray-800 flex items-center mb-4">
+            <Settings size={20} className="mr-2 text-blue-500" />
+            设备属性
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">摄像头类型</label>
+              <select
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                value={device?.cameraType ?? 'other'}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDevice((d) => (d ? { ...d, cameraType: v } : null));
+                  deviceService.updateDevice(deviceId, { cameraType: v }).catch((err: any) => modal.showModal({ message: err.message || '保存失败', type: 'error' }));
+                }}
+              >
+                <option value="ptz">球机 (PTZ)</option>
+                <option value="bullet">枪机</option>
+                <option value="dome">半球</option>
+                <option value="other">其他</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">序列号</label>
+              <input
+                type="text"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                value={device?.serialNumber ?? ''}
+                onChange={(e) => setDevice((d) => (d ? { ...d, serialNumber: e.target.value } : null))}
+                onBlur={() => {
+                  if (device?.serialNumber !== undefined) deviceService.updateDevice(deviceId, { serialNumber: device.serialNumber ?? '' }).catch((err: any) => modal.showModal({ message: err.message || '保存失败', type: 'error' }));
+                }}
+                placeholder="可选"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* 装置关联 */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-4">

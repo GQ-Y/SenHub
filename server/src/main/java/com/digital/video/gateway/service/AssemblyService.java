@@ -91,7 +91,7 @@ public class AssemblyService {
         if (assembly.getAssemblyId() == null || assembly.getAssemblyId().isEmpty()) {
             assembly.setAssemblyId(UUID.randomUUID().toString());
         }
-        String sql = "INSERT INTO assemblies (assembly_id, name, description, location, status, ptz_linkage_enabled) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO assemblies (assembly_id, name, description, location, status, ptz_linkage_enabled, longitude, latitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         Connection conn = database.getConnection();
         try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -101,6 +101,8 @@ public class AssemblyService {
             pstmt.setString(4, assembly.getLocation());
             pstmt.setInt(5, assembly.getStatus());
             pstmt.setInt(6, assembly.isPtzLinkageEnabled() ? 1 : 0);
+            if (assembly.getLongitude() != null) pstmt.setDouble(7, assembly.getLongitude()); else pstmt.setNull(7, Types.DOUBLE);
+            if (assembly.getLatitude() != null) pstmt.setDouble(8, assembly.getLatitude()); else pstmt.setNull(8, Types.DOUBLE);
             pstmt.executeUpdate();
             return getAssembly(assembly.getAssemblyId());
         } catch (SQLException e) {
@@ -113,7 +115,7 @@ public class AssemblyService {
      * 更新装置
      */
     public Assembly updateAssembly(String assemblyId, Assembly assembly) {
-        String sql = "UPDATE assemblies SET name = ?, description = ?, location = ?, status = ?, ptz_linkage_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE assembly_id = ?";
+        String sql = "UPDATE assemblies SET name = ?, description = ?, location = ?, status = ?, ptz_linkage_enabled = ?, longitude = ?, latitude = ?, updated_at = CURRENT_TIMESTAMP WHERE assembly_id = ?";
         Connection conn = database.getConnection();
         try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -122,7 +124,9 @@ public class AssemblyService {
             pstmt.setString(3, assembly.getLocation());
             pstmt.setInt(4, assembly.getStatus());
             pstmt.setInt(5, assembly.isPtzLinkageEnabled() ? 1 : 0);
-            pstmt.setString(6, assemblyId);
+            if (assembly.getLongitude() != null) pstmt.setDouble(6, assembly.getLongitude()); else pstmt.setNull(6, Types.DOUBLE);
+            if (assembly.getLatitude() != null) pstmt.setDouble(7, assembly.getLatitude()); else pstmt.setNull(7, Types.DOUBLE);
+            pstmt.setString(8, assemblyId);
             pstmt.executeUpdate();
             return getAssembly(assemblyId);
         } catch (SQLException e) {

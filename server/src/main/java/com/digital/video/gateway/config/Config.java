@@ -153,6 +153,10 @@ public class Config {
         private String commandTopic;
         @JsonProperty("response_topic")
         private String responseTopic;
+        @JsonProperty("gateway_status_topic")
+        private String gatewayStatusTopic;
+        @JsonProperty("report_topic_prefix")
+        private String reportTopicPrefix;
         private int qos;
         @JsonProperty("keep_alive")
         private int keepAlive;
@@ -191,7 +195,7 @@ public class Config {
         }
 
         public String getStatusTopic() {
-            return statusTopic;
+            return statusTopic != null ? statusTopic : "senhub/device/status";
         }
 
         public void setStatusTopic(String statusTopic) {
@@ -199,7 +203,7 @@ public class Config {
         }
 
         public String getCommandTopic() {
-            return commandTopic;
+            return commandTopic != null ? commandTopic : "senhub/command";
         }
 
         public void setCommandTopic(String commandTopic) {
@@ -207,11 +211,27 @@ public class Config {
         }
 
         public String getResponseTopic() {
-            return responseTopic;
+            return responseTopic != null ? responseTopic : "senhub/response";
         }
 
         public void setResponseTopic(String responseTopic) {
             this.responseTopic = responseTopic;
+        }
+
+        public String getGatewayStatusTopic() {
+            return gatewayStatusTopic != null ? gatewayStatusTopic : "senhub/gateway/status";
+        }
+
+        public void setGatewayStatusTopic(String gatewayStatusTopic) {
+            this.gatewayStatusTopic = gatewayStatusTopic;
+        }
+
+        public String getReportTopicPrefix() {
+            return reportTopicPrefix != null ? reportTopicPrefix : "senhub/report";
+        }
+
+        public void setReportTopicPrefix(String reportTopicPrefix) {
+            this.reportTopicPrefix = reportTopicPrefix;
         }
 
         public int getQos() {

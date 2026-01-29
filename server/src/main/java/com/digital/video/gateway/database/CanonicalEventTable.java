@@ -3,6 +3,13 @@ package com.digital.video.gateway.database;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -26,13 +33,14 @@ public class CanonicalEventTable {
     public static void createTables(Connection connection) throws SQLException {
         String createCanonicalEventsTable = "CREATE TABLE IF NOT EXISTS canonical_events (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "event_id INTEGER UNIQUE, " + // 网关事件编号 1000～2000，与 mqtt-alarm-event-ids.csv 一致
                 "event_key TEXT UNIQUE NOT NULL, " + // 标准事件键（全局唯一，如 PERIMETER_INTRUSION）
-                "name_zh TEXT NOT NULL, " + // 中文名称
-                "name_en TEXT, " + // 英文名称
-                "category TEXT DEFAULT 'vca', " + // 分类: basic, vca, face, its
-                "description TEXT, " + // 描述
-                "severity TEXT DEFAULT 'warning', " + // 严重程度: info, warning, error, critical
-                "enabled INTEGER DEFAULT 1, " + // 是否可用
+                "name_zh TEXT NOT NULL, " +
+                "name_en TEXT, " +
+                "category TEXT DEFAULT 'vca', " +
+                "description TEXT, " +
+                "severity TEXT DEFAULT 'warning', " +
+                "enabled INTEGER DEFAULT 1, " +
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
                 "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
                 ")";
@@ -62,9 +70,121 @@ public class CanonicalEventTable {
             stmt.execute(createBrandMappingTable);
             stmt.execute(createIndex);
             logger.info("标准事件表和品牌映射表创建成功");
-
-            // 初始化默认标准事件
+            // 初始化默认标准事件（仅当表为空时）
             initDefaultCanonicalEvents(connection);
+            // 已有表可能缺少 event_id 列，尝试添加并回填；或新表已有 event_id 由 init 写入
+            ensureEventIdColumnAndBackfill(connection);
+        }
+    }
+
+    /**
+     * 为 canonical_events 添加 event_id 列并按最新 docs/mqtt-alarm-event-ids.csv 回填/对齐
+     */
+    public static void ensureEventIdColumnAndBackfill(Connection connection) throws SQLException {
+        try (Statement stmt = connection.createStatement()) {
+            try {
+                stmt.execute("ALTER TABLE canonical_events ADD COLUMN event_id INTEGER");
+                logger.info("已为 canonical_events 添加 event_id 列");
+            } catch (SQLException e) {
+                if (!e.getMessage().toLowerCase().contains("duplicate column")) {
+                    logger.debug("event_id 列可能已存在: {}", e.getMessage());
+                }
+            }
+            try {
+                stmt.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_events_event_id ON canonical_events(event_id)");
+            } catch (SQLException e) {
+                logger.debug("event_id 唯一索引可能已存在: {}", e.getMessage());
+            }
+        }
+        backfillEventIdFromCsv(connection);
+    }
+
+    /**
+     * 从 mqtt-alarm-event-ids.csv 加载并回填/更新 canonical_events 的 event_id 及名称等，与最新 CSV 对齐。
+     * 优先读取 docs/mqtt-alarm-event-ids.csv、../docs/mqtt-alarm-event-ids.csv，其次 classpath /mqtt-alarm-event-ids.csv
+     */
+    public static void backfillEventIdFromCsv(Connection connection) throws SQLException {
+        BufferedReader reader = null;
+        Path docsPath = Paths.get(System.getProperty("user.dir", ".")).resolve("docs").resolve("mqtt-alarm-event-ids.csv");
+        Path docsPathParent = Paths.get(System.getProperty("user.dir", ".")).resolve("..").resolve("docs").resolve("mqtt-alarm-event-ids.csv");
+        try {
+            if (Files.isRegularFile(docsPath)) {
+                reader = new BufferedReader(new InputStreamReader(Files.newInputStream(docsPath), StandardCharsets.UTF_8));
+                logger.info("从文件加载 event_id 表: {}", docsPath.toAbsolutePath());
+            } else if (Files.isRegularFile(docsPathParent)) {
+                reader = new BufferedReader(new InputStreamReader(Files.newInputStream(docsPathParent), StandardCharsets.UTF_8));
+                logger.info("从文件加载 event_id 表: {}", docsPathParent.toAbsolutePath());
+            } else {
+                java.io.InputStream in = CanonicalEventTable.class.getResourceAsStream("/mqtt-alarm-event-ids.csv");
+                if (in != null) {
+                    reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+                    logger.info("从 classpath 加载 event_id 表: mqtt-alarm-event-ids.csv");
+                }
+            }
+            if (reader == null) {
+                logger.warn("未找到 mqtt-alarm-event-ids.csv，跳过 event_id 回填");
+                return;
+            }
+            String updateSql = "UPDATE canonical_events SET event_id = ?, name_zh = ?, name_en = ?, category = ?, severity = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE event_key = ?";
+            String insertSql = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            int updated = 0, inserted = 0;
+            String line = reader.readLine();
+            if (line == null || !line.trim().toLowerCase().startsWith("event_id")) {
+                logger.warn("CSV 无表头或格式异常，跳过");
+                return;
+            }
+            try (PreparedStatement pstmtUpdate = connection.prepareStatement(updateSql);
+                 PreparedStatement pstmtInsert = connection.prepareStatement(insertSql)) {
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty()) continue;
+                    String[] parts = line.split(",", 7);
+                    if (parts.length < 7) continue;
+                    int eventId;
+                    try {
+                        eventId = Integer.parseInt(parts[0].trim());
+                    } catch (NumberFormatException e) {
+                        continue;
+                    }
+                    String eventKey = parts[1].trim();
+                    String nameZh = parts[2].trim();
+                    String nameEn = parts[3].trim();
+                    String category = parts[4].trim();
+                    String severity = parts[5].trim();
+                    String description = parts.length > 6 ? parts[6].trim() : "";
+                    pstmtUpdate.setInt(1, eventId);
+                    pstmtUpdate.setString(2, nameZh);
+                    pstmtUpdate.setString(3, nameEn);
+                    pstmtUpdate.setString(4, category);
+                    pstmtUpdate.setString(5, severity);
+                    pstmtUpdate.setString(6, description);
+                    pstmtUpdate.setString(7, eventKey);
+                    int n = pstmtUpdate.executeUpdate();
+                    if (n > 0) {
+                        updated++;
+                    } else {
+                        pstmtInsert.setInt(1, eventId);
+                        pstmtInsert.setString(2, eventKey);
+                        pstmtInsert.setString(3, nameZh);
+                        pstmtInsert.setString(4, nameEn);
+                        pstmtInsert.setString(5, category);
+                        pstmtInsert.setString(6, severity);
+                        pstmtInsert.setString(7, description);
+                        pstmtInsert.executeUpdate();
+                        inserted++;
+                    }
+                }
+            }
+            logger.info("canonical_events event_id 回填完成: 更新 {} 条，新增 {} 条（与 mqtt-alarm-event-ids.csv 对齐）", updated, inserted);
+        } catch (IOException e) {
+            logger.warn("读取 mqtt-alarm-event-ids.csv 失败: {}，跳过 event_id 回填", e.getMessage());
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException ignored) {
+                }
+            }
         }
     }
 
@@ -82,56 +202,54 @@ public class CanonicalEventTable {
             }
         }
 
-        String sql = "INSERT INTO canonical_events (event_key, name_zh, name_en, category, description, severity) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, description, severity) VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-        // 定义标准事件（与品牌无关的通用事件）
+        // 定义标准事件（event_id 与 docs/mqtt-alarm-event-ids.csv 一致，1000～2000）
         Object[][] canonicalEvents = {
-                // ========== 基础报警事件 ==========
-                { "MOTION_DETECTION", "移动侦测", "Motion Detection", "basic", "视频画面移动侦测报警", "warning" },
-                { "VIDEO_LOST", "视频丢失", "Video Lost", "basic", "视频信号丢失报警", "error" },
-                { "VIDEO_TAMPER", "视频遮挡", "Video Tamper", "basic", "视频遮挡/遮盖报警", "warning" },
-                { "ALARM_INPUT", "开关量输入", "Alarm Input", "basic", "外部开关量输入触发", "warning" },
-                { "ALARM_OUTPUT", "开关量输出", "Alarm Output", "basic", "外部开关量输出触发", "info" },
-                { "AUDIO_LOST", "音频丢失", "Audio Lost", "basic", "音频信号丢失报警", "warning" },
-                { "DEVICE_EXCEPTION", "设备异常", "Device Exception", "basic", "设备异常报警", "error" },
-                { "RECORDING_ALARM", "录像报警", "Recording Alarm", "basic", "录像状态异常报警", "warning" },
-                { "UNIQUE_ALERT", "特色警戒报警", "Unique Alert Alarm", "basic", "特色警戒报警消息", "warning" },
-
-                // ========== 智能分析事件 ==========
-                { "LINE_CROSSING", "单绊线越界", "Line Crossing", "vca", "单绊线越界检测", "warning" },
-                { "DOUBLE_LINE_CROSSING", "双绊线越界", "Double Line Crossing", "vca", "双绊线越界检测", "warning" },
-                { "PERIMETER_INTRUSION", "周界入侵", "Perimeter Intrusion", "vca", "周界/区域入侵检测", "warning" },
-                { "LOITERING", "徘徊检测", "Loitering", "vca", "人员徘徊检测", "warning" },
-                { "PARKING_DETECTION", "停车检测", "Parking Detection", "vca", "违规停车检测", "warning" },
-                { "RUNNING_DETECTION", "快速奔跑", "Running Detection", "vca", "人员快速奔跑检测", "warning" },
-                { "CROWD_DENSITY", "区域人员密度", "Crowd Density", "vca", "区域人员密度统计", "info" },
-                { "OBJECT_LEFT", "物品遗弃", "Object Left", "vca", "物品遗留检测", "warning" },
-                { "OBJECT_REMOVAL", "物品遗失", "Object Removal", "vca", "物品被拿走/遗失检测", "warning" },
-                { "FACE_RECOGNITION", "人脸识别", "Face Recognition", "face", "人脸检测与识别", "info" },
-                { "VIDEO_DIAGNOSIS", "视频诊断", "Video Diagnosis", "vca", "画面异常诊断", "warning" },
-                { "INTELLIGENT_TRACKING", "智能跟踪", "Intelligent Tracking", "vca", "目标自动跟踪", "info" },
-                { "TRAFFIC_STATISTICS", "交通统计", "Traffic Statistics", "its", "车流/人流量统计", "info" },
-                { "CROWD_GATHERING", "人群聚集", "Crowd Gathering", "vca", "人群异常聚集检测", "warning" },
-                { "ABSENCE_DETECTION", "离岗检测", "Absence Detection", "vca", "岗位无人/离岗检测", "warning" },
-                { "WATER_LEVEL_DETECTION", "水位监测", "Water Level Detection", "vca", "水位监测", "warning" },
-                { "AUDIO_DIAGNOSIS", "音频诊断", "Audio Diagnosis", "vca", "声音异常检测", "warning" },
-
-                // ========== 海康特有事件（从COMM_ALARM_RULE等解析） ==========
-                { "BEHAVIOR_ANALYSIS", "行为分析", "Behavior Analysis", "vca", "异常行为检测信息", "warning" },
-                { "REGION_ENTRANCE", "进入区域", "Region Entrance", "vca", "目标进入指定区域", "warning" },
-                { "REGION_EXITING", "离开区域", "Region Exiting", "vca", "目标离开指定区域", "info" },
-                { "FALL_DETECTION", "倒地检测", "Fall Detection", "vca", "人员倒地检测", "critical" },
-                { "PLAYING_PHONE", "玩手机", "Playing Phone", "vca", "玩手机检测", "warning" },
+                // 基础 1000～1008
+                { 1000, "MOTION_DETECTION", "移动侦测", "Motion Detection", "basic", "视频画面移动侦测报警", "warning" },
+                { 1001, "VIDEO_LOST", "视频丢失", "Video Lost", "basic", "视频信号丢失报警", "error" },
+                { 1002, "VIDEO_TAMPER", "视频遮挡", "Video Tamper", "basic", "视频遮挡/遮盖报警", "warning" },
+                { 1003, "ALARM_INPUT", "开关量输入", "Alarm Input", "basic", "外部开关量输入触发", "warning" },
+                { 1004, "ALARM_OUTPUT", "开关量输出", "Alarm Output", "basic", "外部开关量输出触发", "info" },
+                { 1005, "AUDIO_LOST", "音频丢失", "Audio Lost", "basic", "音频信号丢失报警", "warning" },
+                { 1006, "DEVICE_EXCEPTION", "设备异常", "Device Exception", "basic", "设备异常报警", "error" },
+                { 1007, "RECORDING_ALARM", "录像报警", "Recording Alarm", "basic", "录像状态异常报警", "warning" },
+                { 1008, "UNIQUE_ALERT", "特色警戒报警", "Unique Alert Alarm", "basic", "特色警戒报警消息", "warning" },
+                // 智能分析 1100～1121
+                { 1100, "LINE_CROSSING", "单绊线越界", "Line Crossing", "vca", "单绊线越界检测", "warning" },
+                { 1101, "DOUBLE_LINE_CROSSING", "双绊线越界", "Double Line Crossing", "vca", "双绊线越界检测", "warning" },
+                { 1102, "PERIMETER_INTRUSION", "周界入侵", "Perimeter Intrusion", "vca", "周界/区域入侵检测", "warning" },
+                { 1103, "LOITERING", "徘徊检测", "Loitering", "vca", "人员徘徊检测", "warning" },
+                { 1104, "PARKING_DETECTION", "停车检测", "Parking Detection", "vca", "违规停车检测", "warning" },
+                { 1105, "RUNNING_DETECTION", "快速奔跑", "Running Detection", "vca", "人员快速奔跑检测", "warning" },
+                { 1106, "CROWD_DENSITY", "区域人员密度", "Crowd Density", "vca", "区域人员密度统计", "info" },
+                { 1107, "OBJECT_LEFT", "物品遗弃", "Object Left", "vca", "物品遗留检测", "warning" },
+                { 1108, "OBJECT_REMOVAL", "物品遗失", "Object Removal", "vca", "物品被拿走/遗失检测", "warning" },
+                { 1109, "FACE_RECOGNITION", "人脸识别", "Face Recognition", "face", "人脸检测与识别", "info" },
+                { 1110, "VIDEO_DIAGNOSIS", "视频诊断", "Video Diagnosis", "vca", "画面异常诊断", "warning" },
+                { 1111, "INTELLIGENT_TRACKING", "智能跟踪", "Intelligent Tracking", "vca", "目标自动跟踪", "info" },
+                { 1112, "TRAFFIC_STATISTICS", "交通统计", "Traffic Statistics", "its", "车流/人流量统计", "info" },
+                { 1113, "CROWD_GATHERING", "人群聚集", "Crowd Gathering", "vca", "人群异常聚集检测", "warning" },
+                { 1114, "ABSENCE_DETECTION", "离岗检测", "Absence Detection", "vca", "岗位无人/离岗检测", "warning" },
+                { 1115, "WATER_LEVEL_DETECTION", "水位监测", "Water Level Detection", "vca", "水位监测", "warning" },
+                { 1116, "AUDIO_DIAGNOSIS", "音频诊断", "Audio Diagnosis", "vca", "声音异常检测", "warning" },
+                { 1117, "BEHAVIOR_ANALYSIS", "行为分析", "Behavior Analysis", "vca", "异常行为检测信息", "warning" },
+                { 1118, "REGION_ENTRANCE", "进入区域", "Region Entrance", "vca", "目标进入指定区域", "warning" },
+                { 1119, "REGION_EXITING", "离开区域", "Region Exiting", "vca", "目标离开指定区域", "info" },
+                { 1120, "FALL_DETECTION", "倒地检测", "Fall Detection", "vca", "人员倒地检测", "critical" },
+                { 1121, "PLAYING_PHONE", "玩手机", "Playing Phone", "vca", "玩手机检测", "warning" },
         };
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             for (Object[] event : canonicalEvents) {
-                pstmt.setString(1, (String) event[0]);
+                pstmt.setInt(1, (Integer) event[0]);
                 pstmt.setString(2, (String) event[1]);
                 pstmt.setString(3, (String) event[2]);
                 pstmt.setString(4, (String) event[3]);
                 pstmt.setString(5, (String) event[4]);
                 pstmt.setString(6, (String) event[5]);
+                pstmt.setString(7, (String) event[6]);
                 pstmt.addBatch();
             }
             pstmt.executeBatch();
@@ -253,6 +371,62 @@ public class CanonicalEventTable {
     }
 
     /**
+     * 从 mqtt-alarm-event-ids.csv 按 event_key 查找 event_id 与中英文名称（DB 无记录时的兜底）
+     */
+    public static Map<String, Object> getEventIdAndNamesFromCsv(String eventKey) {
+        if (eventKey == null || eventKey.isEmpty()) return null;
+        BufferedReader reader = null;
+        Path docsPath = Paths.get(System.getProperty("user.dir", ".")).resolve("docs").resolve("mqtt-alarm-event-ids.csv");
+        Path docsPathParent = Paths.get(System.getProperty("user.dir", ".")).resolve("..").resolve("docs").resolve("mqtt-alarm-event-ids.csv");
+        try {
+            if (Files.isRegularFile(docsPath)) {
+                reader = new BufferedReader(new InputStreamReader(Files.newInputStream(docsPath), StandardCharsets.UTF_8));
+            } else if (Files.isRegularFile(docsPathParent)) {
+                reader = new BufferedReader(new InputStreamReader(Files.newInputStream(docsPathParent), StandardCharsets.UTF_8));
+            } else {
+                java.io.InputStream in = CanonicalEventTable.class.getResourceAsStream("/mqtt-alarm-event-ids.csv");
+                if (in != null) {
+                    reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+                }
+            }
+            if (reader == null) return null;
+            String line = reader.readLine();
+            if (line == null || !line.trim().toLowerCase().startsWith("event_id")) return null;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split(",", 7);
+                if (parts.length < 4) continue;
+                try {
+                    Integer.parseInt(parts[0].trim());
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                String key = parts[1].trim();
+                if (!eventKey.equals(key)) continue;
+                int eventId = Integer.parseInt(parts[0].trim());
+                String nameZh = parts[2].trim();
+                String nameEn = parts[3].trim();
+                Map<String, Object> out = new HashMap<>();
+                out.put("eventId", eventId);
+                out.put("nameZh", nameZh);
+                out.put("nameEn", nameEn);
+                return out;
+            }
+        } catch (IOException | NumberFormatException e) {
+            logger.debug("从 CSV 按 event_key 查找失败: eventKey={}, {}", eventKey, e.getMessage());
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * 根据event_key获取标准事件
      */
     public static Map<String, Object> getCanonicalEvent(Connection connection, String eventKey) {
@@ -341,9 +515,32 @@ public class CanonicalEventTable {
         return mappings;
     }
 
+    /**
+     * 根据 event_key 查询 event_id（1000～2000），报警上报时使用
+     */
+    public static Integer getEventIdByEventKey(Connection connection, String eventKey) {
+        String sql = "SELECT event_id FROM canonical_events WHERE event_key = ? AND enabled = 1 LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                int id = rs.getInt("event_id");
+                return rs.wasNull() ? null : id;
+            }
+        } catch (SQLException e) {
+            logger.error("查询 event_id 失败: eventKey={}", eventKey, e);
+        }
+        return null;
+    }
+
     private static Map<String, Object> mapResultSetToEvent(ResultSet rs) throws SQLException {
         Map<String, Object> event = new HashMap<>();
         event.put("id", rs.getInt("id"));
+        try {
+            event.put("eventId", rs.getObject("event_id"));
+        } catch (SQLException e) {
+            // event_id 列可能尚未存在
+        }
         event.put("eventKey", rs.getString("event_key"));
         event.put("nameZh", rs.getString("name_zh"));
         event.put("nameEn", rs.getString("name_en"));

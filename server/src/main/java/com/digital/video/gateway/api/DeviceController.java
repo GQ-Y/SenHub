@@ -64,6 +64,60 @@ public class DeviceController {
     }
 
     /**
+     * 建议一个可用的设备国标 20 位 ID（供前端「自动生成」按钮使用，不在后台自动赋值）
+     * GET /api/devices/suggest-gb-id
+     */
+    public String suggestGbId(Request request, Response response) {
+        try {
+            String suggested = database.suggestDeviceGbId();
+            Map<String, Object> data = new HashMap<>();
+            data.put("suggested_gb_id", suggested);
+            response.type("application/json");
+            return objectMapper.writeValueAsString(Map.of("code", 0, "data", data));
+        } catch (Exception e) {
+            logger.error("建议国标 ID 失败", e);
+            response.status(500);
+            return createErrorResponse(500, "建议国标 ID 失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 用户主动设置设备国标 ID（将当前 device_id 更新为 20 位国标 ID，并同步所有关联表）
+     * PUT /api/devices/:id/set-gb-id   body: { "gb_id": "34017101041320000001" }
+     */
+    public String setDeviceGbId(Request request, Response response) {
+        try {
+            String deviceId = request.params(":id");
+            if (deviceId == null || deviceId.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "缺少设备 ID");
+            }
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String gbId = (String) body.get("gb_id");
+            if (gbId == null || gbId.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "缺少 gb_id");
+            }
+            DeviceInfo device = deviceManager.getDevice(deviceId);
+            if (device == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在");
+            }
+            if (!database.setDeviceGbId(deviceId, gbId.trim())) {
+                response.status(400);
+                return createErrorResponse(400, "设置国标 ID 失败（格式须为 20 位数字或该 ID 已存在）");
+            }
+            DeviceInfo updated = deviceManager.getDevice(gbId.trim());
+            response.type("application/json");
+            return createSuccessResponse(convertDeviceToMap(updated));
+        } catch (Exception e) {
+            logger.error("设置设备国标 ID 失败", e);
+            response.status(500);
+            return createErrorResponse(500, "设置国标 ID 失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取设备列表
      * GET /api/devices
      */
@@ -139,10 +193,20 @@ public class DeviceController {
         try {
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
 
+            String ip = (String) body.get("ip");
+            int port = ((Number) body.get("port")).intValue();
+            DeviceInfo existingDevice = database.getDeviceByIpPort(ip, port);
+
             DeviceInfo device = new DeviceInfo();
-            device.setDeviceId(generateDeviceId((String) body.get("ip"), (Integer) body.get("port")));
-            device.setIp((String) body.get("ip"));
-            device.setPort(((Number) body.get("port")).intValue());
+            if (existingDevice != null) {
+                device.setDeviceId(existingDevice.getDeviceId());
+                device.setId(existingDevice.getId());
+            } else {
+                // 新设备使用虚拟 ID，国标 ID 由用户在前端主动设置
+                device.setDeviceId("v_" + java.util.UUID.randomUUID().toString().replace("-", ""));
+            }
+            device.setIp(ip);
+            device.setPort(port);
             device.setName((String) body.get("name"));
             device.setUsername((String) body.getOrDefault("username", "admin"));
             device.setPassword((String) body.getOrDefault("password", ""));
@@ -156,13 +220,6 @@ public class DeviceController {
             String rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(),
                     device.getPassword());
             device.setRtspUrl(rtspUrl);
-
-            // 检查设备是否已存在
-            DeviceInfo existingDevice = deviceManager.getDevice(device.getDeviceId());
-            if (existingDevice != null) {
-                // 设备已存在，更新
-                device.setId(existingDevice.getId());
-            }
 
             // 保存到数据库
             database.saveOrUpdateDevice(device);
@@ -222,7 +279,13 @@ public class DeviceController {
             if (body.containsKey("channel")) {
                 device.setChannel(((Number) body.get("channel")).intValue());
             }
-            
+            if (body.containsKey("cameraType")) {
+                device.setCameraType((String) body.get("cameraType"));
+            }
+            if (body.containsKey("serialNumber")) {
+                device.setSerialNumber((String) body.get("serialNumber"));
+            }
+
             // 处理品牌变化
             String newBrand = oldBrand;
             boolean brandChanged = false;
@@ -427,6 +490,8 @@ public class DeviceController {
         map.put("username", device.getUsername());
         map.put("password", device.getPassword()); // 也返回密码，前端可能需要
         map.put("channel", device.getChannel());
+        map.put("cameraType", device.getCameraType() != null ? device.getCameraType() : "other");
+        map.put("serialNumber", device.getSerialNumber());
         return map;
     }
 

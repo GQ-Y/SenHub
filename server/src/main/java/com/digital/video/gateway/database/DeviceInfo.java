@@ -25,6 +25,8 @@ public class DeviceInfo {
     private int userId; // SDK登录返回的用户ID
     private int channel; // 通道号（起始通道号）
     private String brand; // 设备品牌：hikvision, tiandy, dahua, auto, unknown
+    private String cameraType; // 摄像头类型：ptz=球机, bullet=枪机, dome=半球, other=其他
+    private String serialNumber; // 设备序列号
     private Timestamp lastSeen;
     private Timestamp createdAt;
     private Timestamp updatedAt;
@@ -124,6 +126,22 @@ public class DeviceInfo {
 
     public void setBrand(String brand) {
         this.brand = brand;
+    }
+
+    public String getCameraType() {
+        return cameraType != null ? cameraType : "other";
+    }
+
+    public void setCameraType(String cameraType) {
+        this.cameraType = cameraType;
+    }
+
+    public String getSerialNumber() {
+        return serialNumber;
+    }
+
+    public void setSerialNumber(String serialNumber) {
+        this.serialNumber = serialNumber;
     }
 
     public Timestamp getLastSeen() {

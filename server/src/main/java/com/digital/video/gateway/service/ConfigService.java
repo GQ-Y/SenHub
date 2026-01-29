@@ -63,6 +63,8 @@ public class ConfigService {
                 saveConfig("mqtt.status_topic", config.getMqtt().getStatusTopic());
                 saveConfig("mqtt.command_topic", config.getMqtt().getCommandTopic());
                 saveConfig("mqtt.response_topic", config.getMqtt().getResponseTopic());
+                saveConfig("mqtt.gateway_status_topic", config.getMqtt().getGatewayStatusTopic());
+                saveConfig("mqtt.report_topic_prefix", config.getMqtt().getReportTopicPrefix());
                 saveConfig("mqtt.qos", String.valueOf(config.getMqtt().getQos()));
                 saveConfig("mqtt.keep_alive", String.valueOf(config.getMqtt().getKeepAlive()));
             }
@@ -180,6 +182,10 @@ public class ConfigService {
                         getConfig(dbConfigs, "mqtt.command_topic", defaultConfig.getMqtt().getCommandTopic()));
                 mqtt.setResponseTopic(
                         getConfig(dbConfigs, "mqtt.response_topic", defaultConfig.getMqtt().getResponseTopic()));
+                mqtt.setGatewayStatusTopic(
+                        getConfig(dbConfigs, "mqtt.gateway_status_topic", defaultConfig.getMqtt().getGatewayStatusTopic()));
+                mqtt.setReportTopicPrefix(
+                        getConfig(dbConfigs, "mqtt.report_topic_prefix", defaultConfig.getMqtt().getReportTopicPrefix()));
                 mqtt.setQos(getIntConfig(dbConfigs, "mqtt.qos", defaultConfig.getMqtt().getQos()));
                 mqtt.setKeepAlive(getIntConfig(dbConfigs, "mqtt.keep_alive", defaultConfig.getMqtt().getKeepAlive()));
                 config.setMqtt(mqtt);

@@ -1,14 +1,16 @@
 # 综合性数字视频监控网关系统配置文件
 
-# MQTT配置
+# MQTT配置（senhub 主题规范）
 mqtt:
   broker: "tcp://mqtt.yingzhu.net:1883"  # MQTT服务器地址
   client_id: "video-gateway-service"  # 客户端ID
   username: "demos1"  # MQTT用户名
   password: "demos1"  # MQTT密码
-  status_topic: "hikvision/status"  # 状态上报主题
-  command_topic: "hikvision/command"  # 命令接收主题
-  response_topic: "hikvision/response"  # 命令响应主题
+  status_topic: "senhub/device/status"  # 设备/雷达状态上报主题
+  command_topic: "senhub/command"  # 命令接收主题
+  response_topic: "senhub/response"  # 命令响应主题
+  gateway_status_topic: "senhub/gateway/status"  # 网关上下线/故障主题（LWT）
+  report_topic_prefix: "senhub/report"  # 报警/工作流上报主题前缀，实际为 senhub/report/{deviceId}
   qos: 1  # 消息质量等级 (0, 1, 2)
   keep_alive: 60  # 保活时间（秒）
 

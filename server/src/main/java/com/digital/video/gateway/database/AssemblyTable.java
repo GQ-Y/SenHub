@@ -58,6 +58,22 @@ public class AssemblyTable {
             } catch (SQLException e) {
                 logger.debug("ptz_linkage_enabled 列可能已存在: {}", e.getMessage());
             }
+            try {
+                stmt.execute("ALTER TABLE assemblies ADD COLUMN longitude REAL");
+                logger.info("为 assemblies 表添加 longitude 列");
+            } catch (SQLException e) {
+                if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("duplicate column")) {
+                    logger.debug("longitude 列可能已存在: {}", e.getMessage());
+                }
+            }
+            try {
+                stmt.execute("ALTER TABLE assemblies ADD COLUMN latitude REAL");
+                logger.info("为 assemblies 表添加 latitude 列");
+            } catch (SQLException e) {
+                if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("duplicate column")) {
+                    logger.debug("latitude 列可能已存在: {}", e.getMessage());
+                }
+            }
             stmt.execute(createAssemblyDevicesTable);
             stmt.execute(createIndex);
             logger.info("装置相关表创建成功");

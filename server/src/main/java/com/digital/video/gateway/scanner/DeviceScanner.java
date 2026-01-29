@@ -146,11 +146,11 @@ public class DeviceScanner {
             // 生成设备ID（使用IP地址）
             String deviceId = ip;
 
-            // 检查设备是否已存在
+            // 检查设备是否已存在（按 ip:port）
             DeviceInfo existingDevice = database.getDeviceByIpPort(ip, port);
             if (existingDevice != null) {
-                // 更新最后发现时间
-                database.updateLastSeen(deviceId);
+                // 更新最后发现时间（使用国标 device_id）
+                database.updateLastSeen(existingDevice.getDeviceId());
                 logger.debug("设备已存在，更新最后发现时间: {}:{}", ip, port);
                 return;
             }
@@ -175,9 +175,9 @@ public class DeviceScanner {
                 String brandUsername = preset.getUsername();
                 String brandPassword = preset.getPassword();
 
-                // 创建临时设备信息用于登录尝试
+                // 创建临时设备信息用于登录尝试（device_id 仅用于登录尝试，新设备保存前会赋国标 ID）
                 DeviceInfo tempDevice = new DeviceInfo();
-                tempDevice.setDeviceId(deviceId);
+                tempDevice.setDeviceId(ip);
                 tempDevice.setIp(ip);
                 tempDevice.setPort(brandPort);
                 tempDevice.setUsername(brandUsername);
@@ -209,6 +209,9 @@ public class DeviceScanner {
 
             // 只有登录成功才保存到数据库
             if (loginSuccess && device != null) {
+                // 新设备使用虚拟 ID，国标 ID 由用户在前端主动设置
+                device.setDeviceId("v_" + java.util.UUID.randomUUID().toString().replace("-", ""));
+                device.setIp(ip);
                 // 保存到数据库
                 database.saveOrUpdateDevice(device);
                 logger.info("扫描发现的新设备已保存到数据库: {}:{} (品牌: {})", ip, device.getPort(), detectedBrand);

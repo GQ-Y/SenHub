@@ -3,6 +3,7 @@ package com.digital.video.gateway.service;
 import com.digital.video.gateway.device.DeviceManager;
 import com.digital.video.gateway.database.AlarmRecord;
 import com.digital.video.gateway.database.AlarmRule;
+import com.digital.video.gateway.database.CanonicalEventTable;
 import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.database.RecordingTask;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -43,7 +44,7 @@ public class AlarmService {
     private RecordingTaskService recordingTaskService;
     private SpeakerService speakerService;
     private PTZService ptzService;
-    private com.digital.video.gateway.mqtt.MqttClient mqttClient;
+    private com.digital.video.gateway.mqtt.MqttPublisher mqttPublisher;
     private FlowService flowService;
     private FlowExecutor flowExecutor;
     private boolean enabled = true;
@@ -100,8 +101,8 @@ public class AlarmService {
     /**
      * 设置MQTT客户端
      */
-    public void setMqttClient(com.digital.video.gateway.mqtt.MqttClient mqttClient) {
-        this.mqttClient = mqttClient;
+    public void setMqttPublisher(com.digital.video.gateway.mqtt.MqttPublisher mqttPublisher) {
+        this.mqttPublisher = mqttPublisher;
     }
 
     /**
@@ -394,6 +395,30 @@ public class AlarmService {
         payload.put("channel", channel);
         if (alarmData != null) {
             payload.put("alarmData", alarmData);
+        }
+        // 报警事件以 CSV/canonical_events 的 event_id 为主，并推送 event_key、event_name_zh、event_name_en
+        if (alarmType != null) {
+            payload.put("event_key", alarmType);
+            java.util.Map<String, Object> canonical = null;
+            if (database != null) {
+                canonical = CanonicalEventTable.getCanonicalEvent(database.getConnection(), alarmType);
+            }
+            if (canonical == null) {
+                canonical = CanonicalEventTable.getEventIdAndNamesFromCsv(alarmType);
+            }
+            if (canonical != null) {
+                Object eventId = canonical.get("eventId");
+                if (eventId != null) {
+                    payload.put("event_id", eventId);
+                }
+                String nameZh = canonical.get("nameZh") != null ? canonical.get("nameZh").toString() : null;
+                String nameEn = canonical.get("nameEn") != null ? canonical.get("nameEn").toString() : null;
+                payload.put("event_name_zh", nameZh != null ? nameZh : alarmType);
+                payload.put("event_name_en", nameEn != null ? nameEn : alarmType);
+            } else {
+                payload.put("event_name_zh", alarmType);
+                payload.put("event_name_en", alarmType);
+            }
         }
         context.setPayload(payload);
         return context;

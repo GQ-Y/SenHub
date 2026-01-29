@@ -251,9 +251,9 @@ public class ScannerController {
                         continue;
                     }
 
-                    // 创建设备信息并保存到数据库
+                    // 创建设备信息并保存到数据库（新设备使用虚拟 ID，国标 ID 由用户在前端主动设置）
                     DeviceInfo device = new DeviceInfo();
-                    device.setDeviceId(scannedDevice.getIp());
+                    device.setDeviceId("v_" + java.util.UUID.randomUUID().toString().replace("-", ""));
                     device.setIp(scannedDevice.getIp());
                     device.setPort(scannedDevice.getPort());
                     device.setName(scannedDevice.getName() != null ? scannedDevice.getName() : "未知设备");
