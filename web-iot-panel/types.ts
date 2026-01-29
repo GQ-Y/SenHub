@@ -159,6 +159,8 @@ export interface Assembly {
   description?: string;
   location?: string;
   status: 'active' | 'inactive';
+  /** 是否开启 PTZ 联动（雷达侵入时联动球机） */
+  ptzLinkageEnabled?: boolean;
   deviceCount?: number;
   devices?: AssemblyDevice[];
   createdAt?: string;

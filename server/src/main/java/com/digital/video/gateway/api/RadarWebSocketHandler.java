@@ -10,7 +10,11 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -30,9 +34,21 @@ public class RadarWebSocketHandler {
     private final Map<String, AtomicLong> pointCloudFrameCount = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> pointCloudPointCount = new ConcurrentHashMap<>();
     private final Map<String, Long> lastLogTime = new ConcurrentHashMap<>();
-    
+
+    /** 点云缓冲：worker 只写入缓冲，由定时任务批量发送，避免 worker 阻塞在 send 导致吞吐骤降 */
+    private static final int BATCH_FLUSH_MS = 80;
+    private static final int MAX_BUFFER_POINTS = 80000;
+    private static final int MAX_POINTS_PER_MESSAGE = 50000;
+    private final Map<String, ConcurrentLinkedQueue<Map<String, Object>>> pointCloudBuffer = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService batchFlusher = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "PointCloudBatchFlusher");
+        t.setDaemon(true);
+        return t;
+    });
+
     public RadarWebSocketHandler(RadarService radarService) {
         this.radarService = radarService;
+        batchFlusher.scheduleAtFixedRate(this::flushPointCloudBatches, BATCH_FLUSH_MS, BATCH_FLUSH_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -57,55 +73,77 @@ public class RadarWebSocketHandler {
                     pointCloudFrameCount.remove(deviceId);
                     pointCloudPointCount.remove(deviceId);
                     lastLogTime.remove(deviceId);
+                    pointCloudBuffer.remove(deviceId);
                 }
             }
         });
     }
 
     /**
-     * 推送点云数据
+     * 推送点云数据（写入缓冲，由定时任务批量发送，避免 worker 阻塞在 send）
      */
     public void pushPointCloud(String deviceId, List<Point> points) {
         if (points == null || points.isEmpty()) {
             return;
         }
-        
         List<Session> conns = connections.get(deviceId);
         if (conns == null || conns.isEmpty()) {
-            // 没有连接，不推送（避免日志过多）
             return;
         }
-        
-        // 更新统计信息
+
         pointCloudFrameCount.computeIfAbsent(deviceId, k -> new AtomicLong(0)).incrementAndGet();
         pointCloudPointCount.computeIfAbsent(deviceId, k -> new AtomicLong(0)).addAndGet(points.size());
-        
-        // 每5秒打印一次统计信息
+
+        ConcurrentLinkedQueue<Map<String, Object>> queue = pointCloudBuffer.computeIfAbsent(deviceId, k -> new ConcurrentLinkedQueue<>());
+        List<Map<String, Object>> maps = convertPointsToMap(points);
+        for (Map<String, Object> m : maps) {
+            queue.offer(m);
+        }
+        // 防止缓冲无限增长：超过上限时丢弃最旧的一批
+        while (queue.size() > MAX_BUFFER_POINTS) {
+            for (int i = 0; i < 10000 && queue.poll() != null; i++) { }
+        }
+
         long now = System.currentTimeMillis();
         Long lastLog = lastLogTime.get(deviceId);
         if (lastLog == null || (now - lastLog) >= 5000) {
             long frameCount = pointCloudFrameCount.get(deviceId).get();
             long pointCount = pointCloudPointCount.get(deviceId).get();
             long avgPointsPerFrame = frameCount > 0 ? pointCount / frameCount : 0;
-            
-            logger.info("[点云推送统计] deviceId={}, 总帧数={}, 总点数={}, 平均每帧点数={}, 当前帧点数={}, 连接数={}", 
-                    deviceId, frameCount, pointCount, avgPointsPerFrame, points.size(), conns.size());
-            
+            logger.info("[点云推送统计] deviceId={}, 总帧数={}, 总点数={}, 平均每帧点数={}, 缓冲点数={}, 连接数={}",
+                    deviceId, frameCount, pointCount, avgPointsPerFrame, queue.size(), conns.size());
             lastLogTime.put(deviceId, now);
-        } else {
-            // 详细日志（debug级别）
-            logger.debug("推送点云数据: deviceId={}, 点数={}, 连接数={}", 
-                    deviceId, points.size(), conns.size());
         }
+    }
 
-        // 不采样，发送全部点云数据
-        Map<String, Object> message = new HashMap<>();
-        message.put("type", "pointcloud");
-        message.put("timestamp", System.currentTimeMillis());
-        message.put("points", convertPointsToMap(points));
-        message.put("pointCount", points.size());
-
-        sendToAll(deviceId, message);
+    /**
+     * 定时将缓冲中的点云批量发送（单线程执行，不阻塞 worker）
+     */
+    private void flushPointCloudBatches() {
+        for (String deviceId : new ArrayList<>(connections.keySet())) {
+            List<Session> conns = connections.get(deviceId);
+            if (conns == null || conns.isEmpty()) {
+                continue;
+            }
+            ConcurrentLinkedQueue<Map<String, Object>> queue = pointCloudBuffer.get(deviceId);
+            if (queue == null || queue.isEmpty()) {
+                continue;
+            }
+            List<Map<String, Object>> batch = new ArrayList<>();
+            Map<String, Object> p;
+            while (batch.size() < MAX_POINTS_PER_MESSAGE && (p = queue.poll()) != null) {
+                batch.add(p);
+            }
+            if (batch.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> message = new HashMap<>();
+            message.put("type", "pointcloud");
+            message.put("timestamp", System.currentTimeMillis());
+            message.put("points", batch);
+            message.put("pointCount", batch.size());
+            sendToAll(deviceId, message);
+        }
     }
 
     /**
@@ -169,6 +207,9 @@ public class RadarWebSocketHandler {
             map.put("y", point.y);
             map.put("z", point.z);
             map.put("r", point.reflectivity);
+            if (point.zoneId != null) {
+                map.put("zoneId", point.zoneId);
+            }
             result.add(map);
         }
         return result;

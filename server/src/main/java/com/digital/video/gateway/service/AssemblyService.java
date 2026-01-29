@@ -91,7 +91,7 @@ public class AssemblyService {
         if (assembly.getAssemblyId() == null || assembly.getAssemblyId().isEmpty()) {
             assembly.setAssemblyId(UUID.randomUUID().toString());
         }
-        String sql = "INSERT INTO assemblies (assembly_id, name, description, location, status) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO assemblies (assembly_id, name, description, location, status, ptz_linkage_enabled) VALUES (?, ?, ?, ?, ?, ?)";
         Connection conn = database.getConnection();
         try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -100,6 +100,7 @@ public class AssemblyService {
             pstmt.setString(3, assembly.getDescription());
             pstmt.setString(4, assembly.getLocation());
             pstmt.setInt(5, assembly.getStatus());
+            pstmt.setInt(6, assembly.isPtzLinkageEnabled() ? 1 : 0);
             pstmt.executeUpdate();
             return getAssembly(assembly.getAssemblyId());
         } catch (SQLException e) {
@@ -112,7 +113,7 @@ public class AssemblyService {
      * 更新装置
      */
     public Assembly updateAssembly(String assemblyId, Assembly assembly) {
-        String sql = "UPDATE assemblies SET name = ?, description = ?, location = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE assembly_id = ?";
+        String sql = "UPDATE assemblies SET name = ?, description = ?, location = ?, status = ?, ptz_linkage_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE assembly_id = ?";
         Connection conn = database.getConnection();
         try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -120,7 +121,8 @@ public class AssemblyService {
             pstmt.setString(2, assembly.getDescription());
             pstmt.setString(3, assembly.getLocation());
             pstmt.setInt(4, assembly.getStatus());
-            pstmt.setString(5, assemblyId);
+            pstmt.setInt(5, assembly.isPtzLinkageEnabled() ? 1 : 0);
+            pstmt.setString(6, assemblyId);
             pstmt.executeUpdate();
             return getAssembly(assemblyId);
         } catch (SQLException e) {

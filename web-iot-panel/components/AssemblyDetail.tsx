@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, Bell, History, Plus, X, Trash2, Edit2 } from 'lucide-react';
+import { ArrowLeft, Package, Bell, History, Plus, X, Trash2, Edit2, Camera } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { assemblyService, alarmRuleService, deviceService } from '../src/api/services';
 import { Assembly, AssemblyDevice, AlarmRule, DeviceRole, Device } from '../types';
@@ -263,6 +263,10 @@ export const AssemblyDetail: React.FC = () => {
               {assembly.location && (
                 <div className="text-sm text-gray-500 mt-1">{assembly.location}</div>
               )}
+              <div className="text-sm text-gray-500 mt-1 flex items-center">
+                <Camera size={14} className="mr-1 text-gray-400" />
+                PTZ 联动：{assembly.ptzLinkageEnabled ? '已开启' : '未开启'}
+              </div>
             </div>
           </div>
           <span

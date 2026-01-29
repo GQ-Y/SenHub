@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -27,6 +28,9 @@ public class IntrusionDetectionService {
     // DBSCAN参数
     private final float eps = 0.3f; // 邻域半径（米）
     private final int minPoints = 5; // 最小点数
+
+    /** 按背景缓存 SpatialIndex，避免每帧每防区重建（防区开启时显著降低 CPU、提高点云吞吐） */
+    private final Map<String, SpatialIndex> spatialIndexCache = new ConcurrentHashMap<>();
 
     public IntrusionDetectionService(Database database) {
         this.database = database;
@@ -100,28 +104,41 @@ public class IntrusionDetectionService {
 
     /**
      * 背景差分：从当前点云中移除背景点
+     * 使用按背景缓存的 SpatialIndex，避免每帧每防区重建，提高检测模式下的点云吞吐。
      */
     private List<Point> subtractBackground(List<Point> currentPoints, BackgroundModel background) {
         if (background == null) {
             return new ArrayList<>(currentPoints);
         }
 
-        // 构建空间索引
-        SpatialIndex spatialIndex = new SpatialIndex(background.getGridResolution());
-        for (BackgroundPoint bgPoint : background.getPoints()) {
-            spatialIndex.addPoint(bgPoint);
-        }
+        SpatialIndex spatialIndex = getOrBuildSpatialIndex(background);
 
         // 过滤：只保留不在背景中的点
         List<Point> newPoints = new ArrayList<>();
         for (Point point : currentPoints) {
-            // 检查点是否在背景中（容差0.1米）
             if (!spatialIndex.isPointInBackground(point, 0.1f)) {
                 newPoints.add(point);
             }
         }
 
         return newPoints;
+    }
+
+    private SpatialIndex getOrBuildSpatialIndex(BackgroundModel background) {
+        String key = background.getBackgroundId();
+        if (key == null || key.isEmpty()) {
+            key = "bg_" + System.identityHashCode(background);
+        }
+        SpatialIndex cached = spatialIndexCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        SpatialIndex spatialIndex = new SpatialIndex(background.getGridResolution());
+        for (BackgroundPoint bgPoint : background.getPoints()) {
+            spatialIndex.addPoint(bgPoint);
+        }
+        spatialIndexCache.put(key, spatialIndex);
+        return spatialIndex;
     }
 
     /**

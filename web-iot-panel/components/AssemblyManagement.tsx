@@ -20,6 +20,7 @@ export const AssemblyManagement: React.FC = () => {
     location: '',
     description: '',
     status: 'active',
+    ptzLinkageEnabled: false,
   });
   const [isSaving, setIsSaving] = useState(false);
   const modal = useModal();
@@ -48,7 +49,7 @@ export const AssemblyManagement: React.FC = () => {
   }, [searchTerm]);
 
   const openCreateModal = () => {
-    setFormData({ name: '', location: '', description: '', status: 'active' });
+    setFormData({ name: '', location: '', description: '', status: 'active', ptzLinkageEnabled: false });
     setActiveModal('CREATE');
   };
 
@@ -59,6 +60,7 @@ export const AssemblyManagement: React.FC = () => {
       location: assembly.location,
       description: assembly.description,
       status: assembly.status,
+      ptzLinkageEnabled: assembly.ptzLinkageEnabled ?? false,
     });
     setActiveModal('EDIT');
   };
@@ -245,6 +247,15 @@ export const AssemblyManagement: React.FC = () => {
                   <p className="text-sm text-gray-600 mb-4 line-clamp-2">{assembly.description}</p>
                 )}
 
+                {assembly.ptzLinkageEnabled && (
+                  <div className="mb-4">
+                    <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-amber-50 text-amber-700">
+                      <Camera size={12} className="mr-1" />
+                      PTZ 联动已开启
+                    </span>
+                  </div>
+                )}
+
                 {/* 设备信息预览 */}
                 <div className="space-y-2 mb-4">
                   <div className="text-sm text-gray-600">
@@ -366,6 +377,18 @@ export const AssemblyManagement: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder="请输入描述信息（可选）"
                   />
+                </div>
+                <div>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      checked={formData.ptzLinkageEnabled ?? false}
+                      onChange={(e) => setFormData({ ...formData, ptzLinkageEnabled: e.target.checked })}
+                    />
+                    <span className="text-sm font-medium text-gray-700">PTZ 联动</span>
+                  </label>
+                  <p className="mt-1 text-xs text-gray-500">开启后，雷达防区侵入时可联动装置内球机转向与抓拍</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('status')}</label>

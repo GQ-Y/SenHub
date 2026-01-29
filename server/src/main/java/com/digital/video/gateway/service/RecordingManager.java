@@ -61,7 +61,7 @@ public class RecordingManager {
                 if (recorder == null) {
                     // 新的侵入事件
                     recorder = new ZoneRecorder(zoneId, deviceId, now);
-                    logger.info("开始录制侵入事件: zoneId={}", zoneId);
+                    logger.info("开始录制侵入事件: zoneId={}, 首帧侵入点数={}", zoneId, zonePoints.size());
                 }
                 recorder.addFrame(zonePoints, now);
                 return recorder;
@@ -176,7 +176,12 @@ public class RecordingManager {
                 logger.debug("数据库保存成功: recordId={}, duration={}ms", uuid, duration);
             }
 
-            logger.info("侵入录制已保存: {}", relativePath);
+            // 侵入记录点数排查：输出帧数、总点数、每帧点数分布
+            int minPts = recorder.frames.stream().mapToInt(f -> f.points.size()).min().orElse(0);
+            int maxPts = recorder.frames.stream().mapToInt(f -> f.points.size()).max().orElse(0);
+            double avgPts = recorder.frames.isEmpty() ? 0 : (double) totalPoints / recorder.frames.size();
+            logger.info("侵入录制已保存: {} frameCount={} totalPoints={} pointsPerFrame min={} avg={} max={} duration={}ms",
+                    relativePath, recorder.frames.size(), totalPoints, minPts, String.format("%.1f", avgPts), maxPts, duration);
 
         } catch (Exception e) {
             logger.error("保存侵入录制失败", e);

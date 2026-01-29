@@ -16,6 +16,7 @@ public class Assembly {
     private String description;
     private String location;
     private int status; // 0: 禁用, 1: 启用
+    private boolean ptzLinkageEnabled; // 装置是否开启 PTZ 联动（雷达侵入时联动球机）
     private Timestamp createdAt;
     private Timestamp updatedAt;
 
@@ -68,6 +69,14 @@ public class Assembly {
         this.status = status;
     }
 
+    public boolean isPtzLinkageEnabled() {
+        return ptzLinkageEnabled;
+    }
+
+    public void setPtzLinkageEnabled(boolean ptzLinkageEnabled) {
+        this.ptzLinkageEnabled = ptzLinkageEnabled;
+    }
+
     public Timestamp getCreatedAt() {
         return createdAt;
     }
@@ -95,6 +104,11 @@ public class Assembly {
         assembly.setDescription(rs.getString("description"));
         assembly.setLocation(rs.getString("location"));
         assembly.setStatus(rs.getInt("status"));
+        try {
+            assembly.setPtzLinkageEnabled(rs.getInt("ptz_linkage_enabled") != 0);
+        } catch (SQLException e) {
+            assembly.setPtzLinkageEnabled(false);
+        }
         assembly.setCreatedAt(rs.getTimestamp("created_at"));
         assembly.setUpdatedAt(rs.getTimestamp("updated_at"));
         return assembly;
@@ -111,6 +125,7 @@ public class Assembly {
         map.put("description", description);
         map.put("location", location);
         map.put("status", status);
+        map.put("ptzLinkageEnabled", ptzLinkageEnabled);
         if (createdAt != null)
             map.put("createdAt", createdAt.toString());
         if (updatedAt != null)

@@ -595,6 +595,9 @@ public class RadarController {
                 zone.setCameraChannel(
                         body.get("cameraChannel") != null ? ((Number) body.get("cameraChannel")).intValue() : 1);
             }
+            if (body.get("coordinateTransform") != null) {
+                zone.setCoordinateTransformJson(coordinateTransformToJsonString(body.get("coordinateTransform")));
+            }
 
             String zoneId = defenseZoneService.createZone(zone);
             if (zoneId != null) {
@@ -648,6 +651,14 @@ public class RadarController {
                 zone.setCameraDeviceId((String) body.get("cameraDeviceId"));
                 zone.setCameraChannel(
                         body.get("cameraChannel") != null ? ((Number) body.get("cameraChannel")).intValue() : 1);
+            }
+            if (body.get("coordinateTransform") != null) {
+                zone.setCoordinateTransformJson(coordinateTransformToJsonString(body.get("coordinateTransform")));
+            } else {
+                DefenseZone existing = defenseZoneService.getZone(zoneId);
+                if (existing != null && existing.getCoordinateTransformJson() != null) {
+                    zone.setCoordinateTransformJson(existing.getCoordinateTransformJson());
+                }
             }
 
             if (defenseZoneService.updateZone(zoneId, zone)) {
@@ -887,10 +898,22 @@ public class RadarController {
         map.put("maxZ", zone.getMaxZ());
         map.put("cameraDeviceId", zone.getCameraDeviceId());
         map.put("cameraChannel", zone.getCameraChannel());
+        map.put("coordinateTransform", zone.getCoordinateTransformJson());
         map.put("enabled", zone.getEnabled());
         map.put("name", zone.getName());
         map.put("description", zone.getDescription());
         return map;
+    }
+
+    /** 将 coordinateTransform 请求参数转为 JSON 字符串（支持传对象或已序列化字符串） */
+    private String coordinateTransformToJsonString(Object coordinateTransform) {
+        if (coordinateTransform == null) return null;
+        if (coordinateTransform instanceof String) return (String) coordinateTransform;
+        try {
+            return objectMapper.writeValueAsString(coordinateTransform);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String createSuccessResponse(Object data) {

@@ -229,6 +229,14 @@ public class Main {
             // 始终初始化雷达服务（即使数据库中暂时没有设备，后续可通过API添加）
             try {
                 radarService = new RadarService(ptzService, database);
+                // 设置抓拍服务，用于PTZ联动抓拍
+                if (captureService != null) {
+                    radarService.setCaptureService(captureService);
+                }
+                // 设置装置服务，用于读取装置 PTZ 联动开关
+                if (assemblyService != null) {
+                    radarService.setAssemblyService(assemblyService);
+                }
                 if (config.getLog() != null) {
                     radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
                 }

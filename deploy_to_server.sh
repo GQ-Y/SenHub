@@ -72,6 +72,7 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/api/RadarController.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/api/RadarWebSocketHandler.java" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/api/"
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \

@@ -6,6 +6,7 @@ import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
 import com.digital.video.gateway.driver.livox.model.*;
 import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
 import com.digital.video.gateway.driver.livox.algorithm.PointCloudProcessor;
+import com.digital.video.gateway.database.Assembly;
 import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.RadarDeviceDAO;
@@ -21,8 +22,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -42,6 +46,10 @@ public class RadarService {
     private final DefenseZoneService defenseZoneService;
     private final IntrusionDetectionService intrusionDetectionService;
     private final RecordingManager recordingManager; // 侵入录制管理器
+    private final TargetTrackingService targetTrackingService; // 目标跟踪服务
+    private final MotionPredictionService motionPredictionService; // 运动预测服务
+    private CaptureService captureService; // 抓拍服务（可选，通过setter注入）
+    private AssemblyService assemblyService; // 装置服务（用于读取装置 PTZ 联动开关，通过 setter 注入）
 
     // WebSocket处理器（用于实时推送）
     private RadarWebSocketHandler webSocketHandler;
@@ -71,6 +79,39 @@ public class RadarService {
     private RadarStatusMonitor statusMonitor;
     private int statsLogIntervalSeconds = 60; // 点云统计日志间隔（秒）
 
+    /** PTZ 联动抓拍：共用调度器，按设备防抖，避免同一球机短时间内多次抓拍导致设备锁等待超时 */
+    private static final ScheduledExecutorService ptzCaptureScheduler = Executors.newScheduledThreadPool(2, r -> {
+        Thread t = new Thread(r, "PTZCaptureScheduler");
+        t.setDaemon(true);
+        return t;
+    });
+    private final Map<String, ScheduledFuture<?>> pendingPtzCaptures = new ConcurrentHashMap<>();
+
+    /** 侵入点数排查：按设备限流，避免刷屏 */
+    private static final long INTRUSION_LOG_INTERVAL_MS = 5000;
+    private final Map<String, Long> lastIntrusionLogTime = new ConcurrentHashMap<>();
+
+    /**
+     * 点云处理线程池：将 routePointCloud（降噪/侵入检测/推送）从 Livox 回调线程中剥离，
+     * 避免在检测模式下阻塞回调导致 UDP 收包变慢、点云吞吐量骤降。
+     * 4 线程 + 有界队列(8)，队列满时丢弃新帧，保证回调立即返回。
+     */
+    private static final int POINT_CLOUD_WORKER_THREADS = 4;
+    private static final int POINT_CLOUD_QUEUE_CAPACITY = 8;
+    private final ThreadPoolExecutor pointCloudExecutor = new ThreadPoolExecutor(
+            POINT_CLOUD_WORKER_THREADS, POINT_CLOUD_WORKER_THREADS, 60L, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(POINT_CLOUD_QUEUE_CAPACITY),
+            r -> {
+                Thread t = new Thread(r, "PointCloudWorker");
+                t.setDaemon(true);
+                return t;
+            },
+            (r, e) -> {
+                // 队列满时丢弃新任务，避免阻塞 Livox 回调
+                logger.warn("点云处理队列已满，丢弃本帧（防区开启时勿阻塞回调）");
+            }
+    );
+
     // 降噪配置参数
     private boolean enableDenoising = true; // 默认启用降噪
     private int denoiseKNeighbors = 20; // K近邻数量
@@ -86,8 +127,24 @@ public class RadarService {
         this.defenseZoneService = new DefenseZoneService(database);
         this.intrusionDetectionService = new IntrusionDetectionService(database);
         this.recordingManager = new RecordingManager(database);
+        this.targetTrackingService = new TargetTrackingService();
+        this.motionPredictionService = new MotionPredictionService();
         this.webSocketHandler = new RadarWebSocketHandler(this);
         this.statusMonitor = new RadarStatusMonitor(database);
+    }
+
+    /**
+     * 设置抓拍服务（用于PTZ联动抓拍）
+     */
+    public void setCaptureService(CaptureService captureService) {
+        this.captureService = captureService;
+    }
+
+    /**
+     * 设置装置服务（用于读取装置 PTZ 联动开关）
+     */
+    public void setAssemblyService(AssemblyService assemblyService) {
+        this.assemblyService = assemblyService;
     }
 
     /**
@@ -448,8 +505,8 @@ public class RadarService {
                 totalPointCloudFrames.incrementAndGet();
                 totalPointCloudPoints.addAndGet(points.size());
 
-                // 根据设备状态路由点云数据
-                routePointCloud(deviceId, points);
+                // 提交到独立线程池处理，避免在 Livox 回调中执行侵入检测/推送导致阻塞、点云吞吐骤降
+                submitPointCloud(deviceId, points);
             }
         } else if (dataType == 0x02) {
             // 低精度笛卡尔坐标
@@ -459,7 +516,7 @@ public class RadarService {
                 totalPointCloudFrames.incrementAndGet();
                 totalPointCloudPoints.addAndGet(points.size());
 
-                routePointCloud(deviceId, points);
+                submitPointCloud(deviceId, points);
             }
         } else {
             logger.debug("不支持的点云数据类型: 0x{}", String.format("%02X", dataType));
@@ -528,6 +585,20 @@ public class RadarService {
         }
 
         return points;
+    }
+
+    /**
+     * 将点云提交到独立线程池处理，避免 Livox 回调阻塞。
+     * 队列满时丢弃本帧（由 RejectedExecutionHandler 处理）。
+     */
+    private void submitPointCloud(String deviceId, List<Point> points) {
+        pointCloudExecutor.execute(() -> {
+            try {
+                routePointCloud(deviceId, points);
+            } catch (Exception e) {
+                logger.warn("点云处理异常: deviceId={}", deviceId, e);
+            }
+        });
     }
 
     /**
@@ -604,6 +675,12 @@ public class RadarService {
                 long intruderCount = processedPoints.stream().filter(p -> p.zoneId != null).count();
                 if (intruderCount > 0) {
                     logger.debug("检测到侵入点: deviceId={}, 总点数={}, 侵入点数={}", deviceId, beforeCount, intruderCount);
+                    // 侵入记录点数排查：限流打点（约每5秒一次）
+                    long now = System.currentTimeMillis();
+                    if (now - lastIntrusionLogTime.getOrDefault(deviceId, 0L) >= INTRUSION_LOG_INTERVAL_MS) {
+                        lastIntrusionLogTime.put(deviceId, now);
+                        logger.info("侵入点数统计: deviceId={}, 本帧总点数={}, 本帧侵入点数={}", deviceId, beforeCount, intruderCount);
+                    }
                 }
             } else {
                 if (background == null) {
@@ -694,9 +771,18 @@ public class RadarService {
             List<IntrusionEvent> events = intrusionDetectionService.detectIntrusion(currentPoints, zone, background);
             allEvents.addAll(events);
 
-            // 处理侵入事件：触发PTZ联动
+            // 更新目标跟踪
             for (IntrusionEvent event : events) {
-                handleIntrusionEvent(event, zone);
+                PointCluster cluster = event.getCluster();
+                if (cluster != null && cluster.getCentroid() != null) {
+                    String targetId = event.getClusterId();
+                    targetTrackingService.updateTarget(targetId, cluster.getCentroid());
+                }
+            }
+
+            // 处理侵入事件：触发PTZ联动（仅当雷达关联装置且防区配置了球机时）
+            for (IntrusionEvent event : events) {
+                handleIntrusionEvent(deviceId, event, zone);
             }
         }
 
@@ -704,15 +790,46 @@ public class RadarService {
     }
 
     /**
-     * 处理侵入事件：PTZ联动
+     * 处理侵入事件：PTZ联动和抓拍
+     * 仅当以下条件同时满足时才执行 PTZ：
+     * 1. 雷达已关联到装置（radar_devices.assembly_id 非空）
+     * 2. 防区已配置关联球机（cameraDeviceId 非空）
      */
-    private void handleIntrusionEvent(IntrusionEvent event, DefenseZone zone) {
+    private void handleIntrusionEvent(String radarDeviceId, IntrusionEvent event, DefenseZone zone) {
+        // 1. 防区未配置球机则不进行 PTZ 联动
+        String cameraDeviceId = zone.getCameraDeviceId();
+        if (cameraDeviceId == null || cameraDeviceId.trim().isEmpty()) {
+            return;
+        }
+
+        // 2. 雷达未关联装置则不进行 PTZ 联动
+        RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+        RadarDevice radar = radarDeviceDAO.getByDeviceId(radarDeviceId);
+        if (radar == null || radar.getAssemblyId() == null || radar.getAssemblyId().trim().isEmpty()) {
+            return;
+        }
+
+        // 3. 装置未开启 PTZ 联动则不执行
+        if (assemblyService != null) {
+            Assembly assembly = assemblyService.getAssembly(radar.getAssemblyId());
+            if (assembly == null || !assembly.isPtzLinkageEnabled()) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("装置未开启PTZ联动，跳过: assemblyId={}, zoneId={}", radar.getAssemblyId(), zone.getZoneId());
+                }
+                return;
+            }
+        }
+
         PointCluster cluster = event.getCluster();
         if (cluster == null || cluster.getCentroid() == null) {
             return;
         }
 
-        Point radarPoint = cluster.getCentroid();
+        String targetId = event.getClusterId();
+        Point currentRadarPoint = cluster.getCentroid();
+
+        // 获取目标速度
+        float[] velocity = targetTrackingService.getLatestVelocity(targetId);
 
         // 坐标系转换
         DefenseZone.CoordinateTransform transform = zone.getCoordinateTransform();
@@ -721,20 +838,155 @@ public class RadarService {
                 transform.rotationX, transform.rotationY, transform.rotationZ,
                 transform.scale);
 
-        Point cameraPoint = coordTransform.transformRadarToCamera(radarPoint);
+        // PTZ延迟时间（秒）- 球机转向和变焦的延迟
+        float ptzDelaySeconds = 0.5f; // 默认0.5秒，可根据实际情况调整
+
+        // 运动预测：预测PTZ到位时的目标位置
+        MotionPredictionService.PredictionResult prediction = motionPredictionService.predictForPTZ(
+                currentRadarPoint, velocity, ptzDelaySeconds);
+
+        // 将预测位置转换到摄像头坐标系
+        Point predictedCameraPoint = coordTransform.transformRadarToCamera(prediction.predictedPosition);
 
         // 计算PTZ角度
-        float[] angles = coordTransform.calculatePTZAngles(cameraPoint);
+        float[] angles = coordTransform.calculatePTZAngles(predictedCameraPoint);
         float pan = angles[0];
         float tilt = angles[1];
 
-        // 驱动PTZ
-        if (zone.getCameraDeviceId() != null) {
-            int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
-            ptzService.gotoAngle(zone.getCameraDeviceId(), channel, pan, tilt, 1.0f);
-            logger.info("侵入检测触发PTZ联动: zoneId={}, camera={}, pan={}, tilt={}",
-                    zone.getZoneId(), zone.getCameraDeviceId(), pan, tilt);
+        // 根据目标状态计算变倍（zoom）
+        float zoom = calculateZoom(prediction, predictedCameraPoint);
+
+        // 驱动PTZ转向到预测位置
+        int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
+        boolean ptzSuccess = ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
+
+        if (ptzSuccess) {
+            logger.info("侵入检测触发PTZ联动: zoneId={}, camera={}, targetId={}, " +
+                    "state={}, pan={}°, tilt={}°, zoom={}x, confidence={}",
+                    zone.getZoneId(), cameraDeviceId, targetId,
+                    prediction.motionState, pan, tilt, zoom, String.format("%.2f", prediction.confidence));
+
+            // 根据运动状态决定抓拍策略
+            scheduleCapture(cameraDeviceId, channel, prediction, ptzDelaySeconds);
+        } else {
+            logger.warn("PTZ控制失败: zoneId={}, camera={}, targetId={}",
+                    zone.getZoneId(), cameraDeviceId, targetId);
         }
+    }
+
+    /**
+     * 根据目标状态和距离计算变倍（zoom）
+     */
+    private float calculateZoom(MotionPredictionService.PredictionResult prediction, Point cameraPoint) {
+        // 计算目标距离
+        float distance = (float) Math.sqrt(
+                cameraPoint.x * cameraPoint.x +
+                cameraPoint.y * cameraPoint.y +
+                cameraPoint.z * cameraPoint.z);
+
+        // 根据距离和状态调整变倍
+        float baseZoom = 1.0f;
+        
+        if (distance > 50) {
+            // 距离较远，放大
+            baseZoom = 3.0f;
+        } else if (distance > 20) {
+            baseZoom = 2.0f;
+        } else if (distance > 10) {
+            baseZoom = 1.5f;
+        }
+
+        // 如果目标在下落，稍微放大以便抓拍
+        if (prediction.motionState == MotionPredictionService.MotionState.FALLING) {
+            baseZoom *= 1.2f;
+        }
+
+        // 限制变倍范围（1.0x - 10.0x）
+        return Math.max(1.0f, Math.min(10.0f, baseZoom));
+    }
+
+    /**
+     * 根据目标状态安排抓拍
+     */
+    private void scheduleCapture(String cameraDeviceId, int channel, 
+                                 MotionPredictionService.PredictionResult prediction,
+                                 float ptzDelaySeconds) {
+        if (captureService == null) {
+            logger.debug("抓拍服务未配置，跳过抓拍");
+            return;
+        }
+
+        // 根据运动状态决定抓拍时机
+        long captureDelayMs = 0;
+
+        switch (prediction.motionState) {
+            case FALLING:
+                // 下落中：如果落地时间小于PTZ延迟，等待落地后抓拍
+                if (prediction.landingPoint != null && prediction.timeToLand > 0) {
+                    if (prediction.timeToLand <= ptzDelaySeconds) {
+                        // 落地时间小于PTZ延迟，等待落地后抓拍
+                        captureDelayMs = (long) ((prediction.timeToLand + 0.2f) * 1000); // 落地后0.2秒抓拍
+                        logger.info("目标下落中，将在落地后抓拍: 落地时间={}秒, 抓拍延迟={}ms",
+                                prediction.timeToLand, captureDelayMs);
+                    } else {
+                        // 落地时间大于PTZ延迟，PTZ到位后立即抓拍
+                        captureDelayMs = (long) (ptzDelaySeconds * 1000);
+                        logger.info("目标下落中，PTZ到位后抓拍: 延迟={}ms", captureDelayMs);
+                    }
+                } else {
+                    // 无法预测落地时间，PTZ到位后立即抓拍
+                    captureDelayMs = (long) (ptzDelaySeconds * 1000);
+                }
+                break;
+
+            case HOVERING:
+                // 滞空：PTZ到位后稍等片刻再抓拍，确保目标稳定
+                captureDelayMs = (long) ((ptzDelaySeconds + 0.3f) * 1000);
+                logger.info("目标滞空，PTZ到位后稳定抓拍: 延迟={}ms", captureDelayMs);
+                break;
+
+            case LANDED:
+                // 已落地：立即抓拍
+                captureDelayMs = (long) (ptzDelaySeconds * 1000);
+                logger.info("目标已落地，PTZ到位后立即抓拍: 延迟={}ms", captureDelayMs);
+                break;
+
+            case MOVING:
+            default:
+                // 正常移动：PTZ到位后立即抓拍
+                captureDelayMs = (long) (ptzDelaySeconds * 1000);
+                logger.info("目标正常移动，PTZ到位后抓拍: 延迟={}ms", captureDelayMs);
+                break;
+        }
+
+        // 安排异步抓拍任务（按设备防抖：同一球机只保留最后一次调度，避免并发抢锁超时）
+        final String finalDeviceId = cameraDeviceId;
+        final int finalChannel = channel;
+        final long finalDelay = captureDelayMs;
+        final MotionPredictionService.MotionState finalState = prediction.motionState;
+
+        ScheduledFuture<?> existing = pendingPtzCaptures.remove(finalDeviceId);
+        if (existing != null) {
+            existing.cancel(false);
+        }
+
+        ScheduledFuture<?> future = ptzCaptureScheduler.schedule(() -> {
+            try {
+                String picPath = captureService.captureSnapshot(finalDeviceId, finalChannel);
+                if (picPath != null) {
+                    logger.info("PTZ联动抓拍成功: deviceId={}, channel={}, state={}, path={}",
+                            finalDeviceId, finalChannel, finalState, picPath);
+                } else {
+                    logger.warn("PTZ联动抓拍失败: deviceId={}, channel={}", finalDeviceId, finalChannel);
+                }
+            } catch (Exception e) {
+                logger.error("PTZ联动抓拍异常: deviceId={}, channel={}", finalDeviceId, finalChannel, e);
+            } finally {
+                pendingPtzCaptures.remove(finalDeviceId);
+            }
+        }, finalDelay, TimeUnit.MILLISECONDS);
+
+        pendingPtzCaptures.put(finalDeviceId, future);
     }
 
     /**

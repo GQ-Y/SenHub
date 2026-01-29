@@ -101,6 +101,8 @@ public class AssemblyController {
             } else {
                 assembly.setStatus(0);
             }
+            Object ptzObj = body.get("ptzLinkageEnabled");
+            assembly.setPtzLinkageEnabled(ptzObj instanceof Boolean ? (Boolean) ptzObj : (ptzObj instanceof Number && ((Number) ptzObj).intValue() != 0));
 
             Assembly created = assemblyService.createAssembly(assembly);
             if (created == null) {
@@ -125,6 +127,7 @@ public class AssemblyController {
         try {
             String assemblyId = request.params(":id");
             Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Assembly existing = assemblyService.getAssembly(assemblyId);
             Assembly assembly = new Assembly();
             assembly.setName((String) body.get("name"));
             assembly.setDescription((String) body.get("description"));
@@ -137,6 +140,12 @@ public class AssemblyController {
                 assembly.setStatus(1);
             } else if (statusObj != null) {
                 assembly.setStatus(0);
+            }
+            if (body.containsKey("ptzLinkageEnabled")) {
+                Object ptzObj = body.get("ptzLinkageEnabled");
+                assembly.setPtzLinkageEnabled(ptzObj instanceof Boolean ? (Boolean) ptzObj : (ptzObj instanceof Number && ((Number) ptzObj).intValue() != 0));
+            } else if (existing != null) {
+                assembly.setPtzLinkageEnabled(existing.isPtzLinkageEnabled());
             }
 
             Assembly updated = assemblyService.updateAssembly(assemblyId, assembly);

@@ -52,6 +52,12 @@ public class AssemblyTable {
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createAssembliesTable);
+            try {
+                stmt.execute("ALTER TABLE assemblies ADD COLUMN ptz_linkage_enabled INTEGER DEFAULT 0");
+                logger.info("为 assemblies 表添加 ptz_linkage_enabled 列");
+            } catch (SQLException e) {
+                logger.debug("ptz_linkage_enabled 列可能已存在: {}", e.getMessage());
+            }
             stmt.execute(createAssemblyDevicesTable);
             stmt.execute(createIndex);
             logger.info("装置相关表创建成功");

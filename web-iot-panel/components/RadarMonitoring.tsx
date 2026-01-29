@@ -67,15 +67,11 @@ export const RadarMonitoring: React.FC = () => {
 
     try {
       const res = await radarService.getIntrusionData(record.recordId);
-      console.log('获取侵入数据响应:', res);
-      // API 返回完整的录制对象: { zoneId, deviceId, startTime, duration, frameCount, frames }
+      // API 返回完整录制对象: { zoneId, deviceId, startTime, duration, frameCount, frames }
       const recordData = res.data;
-      console.log('解析后的录制数据:', recordData);
-      const frames = recordData?.frames;
-      console.log('帧数据:', frames, '帧数:', frames?.length);
+      const frames = Array.isArray(recordData) ? recordData : recordData?.frames;
       if (!frames || !Array.isArray(frames)) {
-        console.error('无效的录制数据:', { recordData, frames });
-        modal.showModal({ message: '无效的录制数据', type: 'error' });
+        modal.showModal({ message: '无效的录制数据（缺少帧数据）', type: 'error' });
         setPlaybackMode(false);
         return;
       }

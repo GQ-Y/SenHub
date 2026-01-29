@@ -43,6 +43,11 @@ export const RadarDefenseZone: React.FC = () => {
   const [showSolid, setShowSolid] = useState(false); // 控制防区实体化显示
   const [showBackground, setShowBackground] = useState(true); // 控制背景显示
   const [zoneType, setZoneType] = useState<'shrink' | 'bounding_box'>('shrink');
+  const defaultCoordinateTransform = () => ({
+    translation: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    scale: 1
+  });
   const [formData, setFormData] = useState<any>({
     backgroundId: '',
     name: '',
@@ -56,8 +61,10 @@ export const RadarDefenseZone: React.FC = () => {
     minZ: null,
     maxZ: null,
     cameraDeviceId: '',
-    cameraChannel: 1
+    cameraChannel: 1,
+    coordinateTransform: defaultCoordinateTransform()
   });
+  const [showCoordinateTransform, setShowCoordinateTransform] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // WebSocket 实时点云
@@ -79,9 +86,12 @@ export const RadarDefenseZone: React.FC = () => {
 
     try {
       const res = await radarService.getIntrusionData(record.recordId);
-      const frames = res.data;
+      // API 返回完整录制对象: { zoneId, deviceId, startTime, duration, frameCount, frames }
+      const data = res.data as unknown[] | { frames?: unknown[] } | undefined;
+      const frames = Array.isArray(data) ? data : data?.frames;
       if (!frames || !Array.isArray(frames)) {
-        modal.showModal({ message: '无效的录制数据', type: 'error' });
+        modal.showModal({ message: '无效的录制数据（缺少帧数据）', type: 'error' });
+        setPlaybackMode(false);
         return;
       }
 
@@ -91,10 +101,13 @@ export const RadarDefenseZone: React.FC = () => {
           if (playbackIntervalRef.current) clearInterval(playbackIntervalRef.current);
           return;
         }
-        const frame = frames[i];
+        const frame = frames[i] as { points?: Array<{ x?: number; y?: number; z?: number; r?: number; zoneId?: string }> };
         // 确保点云有 zoneId，如果没有则使用记录的 zoneId
-        const pts = (frame.points || []).map((p: any) => ({
-          ...p,
+        const pts = (frame?.points || []).map((p: any) => ({
+          x: p.x || 0,
+          y: p.y || 0,
+          z: p.z || 0,
+          r: p.r,
           zoneId: p.zoneId || record.zoneId
         }));
         setPlaybackPoints(pts);
@@ -102,7 +115,8 @@ export const RadarDefenseZone: React.FC = () => {
       }, 100);
     } catch (e: any) {
       console.error(e);
-      modal.showModal({ message: '加载轨迹失败: ' + e.message, type: 'error' });
+      setPlaybackMode(false);
+      modal.showModal({ message: '加载轨迹失败: ' + (e?.message || '未知错误'), type: 'error' });
     }
   };
 
@@ -381,7 +395,8 @@ export const RadarDefenseZone: React.FC = () => {
       minZ: null,
       maxZ: null,
       cameraDeviceId: '',
-      cameraChannel: 1
+      cameraChannel: 1,
+      coordinateTransform: defaultCoordinateTransform()
     });
     setZoneType('shrink');
     setActiveModal('CREATE');
@@ -402,7 +417,21 @@ export const RadarDefenseZone: React.FC = () => {
       minZ: zone.minZ,
       maxZ: zone.maxZ,
       cameraDeviceId: zone.cameraDeviceId || '',
-      cameraChannel: zone.cameraChannel || 1
+      cameraChannel: zone.cameraChannel || 1,
+      coordinateTransform: (() => {
+        const ct = zone.coordinateTransform;
+        if (!ct) return defaultCoordinateTransform();
+        try {
+          const obj = typeof ct === 'string' ? JSON.parse(ct) : ct;
+          return {
+            translation: obj.translation || { x: 0, y: 0, z: 0 },
+            rotation: obj.rotation || { x: 0, y: 0, z: 0 },
+            scale: obj.scale != null ? obj.scale : 1
+          };
+        } catch {
+          return defaultCoordinateTransform();
+        }
+      })()
     });
     setZoneType(zone.zoneType || 'shrink');
     setActiveModal('EDIT');
@@ -434,7 +463,8 @@ export const RadarDefenseZone: React.FC = () => {
       const zoneData = {
         ...formData,
         zoneType,
-        deviceId
+        deviceId,
+        coordinateTransform: formData.coordinateTransform || defaultCoordinateTransform()
       };
 
       if (activeModal === 'CREATE') {
@@ -840,7 +870,7 @@ export const RadarDefenseZone: React.FC = () => {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">关联摄像头（可选）</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">关联球机/摄像头（可选）</label>
                   <select
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.cameraDeviceId}
@@ -848,11 +878,56 @@ export const RadarDefenseZone: React.FC = () => {
                   >
                     <option value="">不关联摄像头</option>
                     {devices.map((device) => (
-                      <option key={device.deviceId} value={device.deviceId}>
-                        {device.deviceName || device.deviceId}
+                      <option key={device.id} value={device.id}>
+                        {device.name || device.id}
                       </option>
                     ))}
                   </select>
+                  {devices.length === 0 && (
+                    <p className="mt-1 text-xs text-amber-600">暂无球机/摄像头设备，请先在「设备管理」中添加。</p>
+                  )}
+                </div>
+                <div className="border border-gray-200 rounded-xl p-3 bg-gray-50/50">
+                  <button
+                    type="button"
+                    className="flex items-center justify-between w-full text-left"
+                    onClick={() => setShowCoordinateTransform(!showCoordinateTransform)}
+                  >
+                    <span className="text-sm font-medium text-gray-700">雷达与球机坐标系对齐（标定）</span>
+                    <span className="text-gray-500">{showCoordinateTransform ? '▼' : '▶'}</span>
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">平移/旋转/缩放：将雷达坐标变换到球机坐标系，用于 PTZ 联动。标定方法见文档。</p>
+                  {showCoordinateTransform && (
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">平移（米）</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <input type="number" step="0.01" placeholder="X" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                            value={formData.coordinateTransform?.translation?.x ?? 0} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, translation: { ...formData.coordinateTransform?.translation, x: parseFloat(e.target.value) || 0 } } })} />
+                          <input type="number" step="0.01" placeholder="Y" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                            value={formData.coordinateTransform?.translation?.y ?? 0} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, translation: { ...formData.coordinateTransform?.translation, y: parseFloat(e.target.value) || 0 } } })} />
+                          <input type="number" step="0.01" placeholder="Z" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                            value={formData.coordinateTransform?.translation?.z ?? 0} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, translation: { ...formData.coordinateTransform?.translation, z: parseFloat(e.target.value) || 0 } } })} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">旋转（度，欧拉角 Z→Y→X）</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <input type="number" step="0.1" placeholder="X" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                            value={formData.coordinateTransform?.rotation?.x ?? 0} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, rotation: { ...formData.coordinateTransform?.rotation, x: parseFloat(e.target.value) || 0 } } })} />
+                          <input type="number" step="0.1" placeholder="Y" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                            value={formData.coordinateTransform?.rotation?.y ?? 0} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, rotation: { ...formData.coordinateTransform?.rotation, y: parseFloat(e.target.value) || 0 } } })} />
+                          <input type="number" step="0.1" placeholder="Z" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                            value={formData.coordinateTransform?.rotation?.z ?? 0} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, rotation: { ...formData.coordinateTransform?.rotation, z: parseFloat(e.target.value) || 0 } } })} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">缩放</label>
+                        <input type="number" step="0.01" min="0.1" className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          value={formData.coordinateTransform?.scale ?? 1} onChange={(e) => setFormData({ ...formData, coordinateTransform: { ...formData.coordinateTransform, scale: parseFloat(e.target.value) || 1 } })} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="flex items-center space-x-2">
