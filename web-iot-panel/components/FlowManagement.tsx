@@ -5,26 +5,32 @@ import { useAppContext } from '../contexts/AppContext';
 import {
   Plus, Trash2, RefreshCw, Save, X, Download, Upload, ZoomIn, ZoomOut,
   Play, Square, GitBranch, Camera, Video, Radio, Cloud, Volume2, Send, Zap, Settings, Move,
-  Maximize2, Minimize2, ChevronDown, ChevronRight, Check
+  Maximize2, Minimize2, ChevronDown, ChevronRight, Check, Clock, Power, MapPin, Globe, Brain
 } from 'lucide-react';
 
 // 内置组件定义
 const FLOW_COMPONENTS: FlowComponentDefinition[] = [
   { type: 'event_trigger', label: 'node_event_trigger', icon: 'Zap', category: 'trigger', defaultConfig: { debounceSeconds: 5 } },
   { type: 'mqtt_subscribe', label: 'node_mqtt_subscribe', icon: 'Radio', category: 'trigger', defaultConfig: { topic: 'senhub/custom/command', qos: 1 } },
-  { type: 'condition', label: 'node_condition', icon: 'GitBranch', category: 'logic', hasConditionPorts: true, defaultConfig: { expression: '' } },
+  { type: 'condition', label: 'node_condition', icon: 'GitBranch', category: 'logic', hasConditionPorts: true, defaultConfig: { field: 'event_key', operator: 'eq', value: '' } },
+  { type: 'delay', label: 'node_delay', icon: 'Clock', category: 'logic', defaultConfig: { seconds: 5 } },
   { type: 'capture', label: 'node_capture', icon: 'Camera', category: 'action', defaultConfig: { channel: 1 } },
   { type: 'record', label: 'node_record', icon: 'Video', category: 'action', defaultConfig: { channel: 1, beforeSeconds: 15, afterSeconds: 15 } },
   { type: 'ptz_control', label: 'node_ptz_control', icon: 'Move', category: 'action', defaultConfig: { preset: 1 } },
+  { type: 'ptz_goto', label: 'node_ptz_goto', icon: 'MapPin', category: 'action', defaultConfig: { deviceId: '{deviceId}', channel: 1 } },
+  { type: 'device_reboot', label: 'node_device_reboot', icon: 'Power', category: 'action', defaultConfig: { deviceId: '{deviceId}' } },
+  { type: 'radar_zone_toggle', label: 'node_radar_zone_toggle', icon: 'MapPin', category: 'action', defaultConfig: { zoneId: '', enabled: true } },
   { type: 'mqtt_publish', label: 'node_mqtt_publish', icon: 'Radio', category: 'output', defaultConfig: { topic: 'alarm/report/{deviceId}' } },
   { type: 'oss_upload', label: 'node_oss_upload', icon: 'Cloud', category: 'output', defaultConfig: { path: 'alarm/{deviceId}/{fileName}' } },
   { type: 'speaker_play', label: 'node_speaker_play', icon: 'Volume2', category: 'output', defaultConfig: { audioFile: '' } },
   { type: 'webhook', label: 'node_webhook', icon: 'Send', category: 'output', defaultConfig: { url: '', method: 'POST' } },
+  { type: 'http_request', label: 'node_http_request', icon: 'Globe', category: 'output', defaultConfig: { url: '', method: 'POST' } },
+  { type: 'ai_inference', label: 'node_ai_inference', icon: 'Brain', category: 'output', defaultConfig: { apiUrl: '', requestBody: '{"image_url":"{captureUrl}"}', outputVariablePrefix: 'ai_', timeoutSeconds: 30 } },
   { type: 'end', label: 'node_end', icon: 'Square', category: 'logic', defaultConfig: {} },
 ];
 
 const ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
-  Zap, GitBranch, Camera, Video, Move, Radio, Cloud, Volume2, Send, Square, Settings, Play
+  Zap, GitBranch, Camera, Video, Move, Radio, Cloud, Volume2, Send, Square, Settings, Play, Clock, Power, MapPin, Globe, Brain
 };
 
 const CATEGORY_ORDER = ['trigger', 'logic', 'action', 'output'] as const;
@@ -41,9 +47,9 @@ const genConnId = () => `conn_${Date.now()}_${Math.random().toString(36).slice(2
 const getNodeColor = (type: FlowNodeType) => {
   switch (type) {
     case 'event_trigger': case 'mqtt_subscribe': return { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-700' };
-    case 'condition': return { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-700' };
-    case 'capture': case 'record': case 'ptz_control': return { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700' };
-    case 'mqtt_publish': case 'oss_upload': case 'speaker_play': case 'webhook': return { bg: 'bg-green-50', border: 'border-green-400', text: 'text-green-700' };
+    case 'condition': case 'delay': return { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-700' };
+    case 'capture': case 'record': case 'ptz_control': case 'ptz_goto': case 'device_reboot': case 'radar_zone_toggle': return { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700' };
+    case 'mqtt_publish': case 'oss_upload': case 'speaker_play': case 'webhook': case 'http_request': case 'ai_inference': return { bg: 'bg-green-50', border: 'border-green-400', text: 'text-green-700' };
     case 'end': return { bg: 'bg-gray-50', border: 'border-gray-400', text: 'text-gray-700' };
     default: return { bg: 'bg-gray-50', border: 'border-gray-300', text: 'text-gray-700' };
   }
@@ -172,13 +178,20 @@ export const FlowManagement: React.FC = () => {
       };
     });
 
-    const canvasConns: CanvasConnection[] = (flow.connections || []).map((conn, idx) => ({
-      id: `conn_${idx}`,
-      fromNodeId: conn.from,
-      toNodeId: conn.to,
-      fromPort: conn.fromPort || 'default',
-      condition: conn.condition,
-    }));
+    const canvasConns: CanvasConnection[] = (flow.connections || []).map((conn, idx) => {
+      const fromNode = (flow.nodes || []).find((n: any) => n.nodeId === conn.from);
+      const isConditionFrom = fromNode?.type === 'condition';
+      const fromPort = isConditionFrom && (conn.condition === 'true' || conn.condition === 'false')
+        ? (conn.condition === 'true' ? 'yes' : 'no')
+        : (conn.fromPort || 'default');
+      return {
+        id: `conn_${idx}`,
+        fromNodeId: conn.from,
+        toNodeId: conn.to,
+        fromPort: fromPort as 'default' | 'yes' | 'no',
+        condition: conn.condition,
+      };
+    });
 
     setNodes(canvasNodes);
     setConnections(canvasConns);
@@ -191,12 +204,19 @@ export const FlowManagement: React.FC = () => {
       type: n.type,
       config: { ...n.config, x: n.x, y: n.y },
     }));
-    const flowConns = connections.map(c => ({
-      from: c.fromNodeId,
-      to: c.toNodeId,
-      fromPort: c.fromPort,
-      condition: c.condition,
-    }));
+    const flowConns = connections.map(c => {
+      const fromNode = nodes.find(n => n.id === c.fromNodeId);
+      const isConditionFrom = fromNode?.type === 'condition';
+      const condition = isConditionFrom
+        ? (c.fromPort === 'yes' ? 'true' : 'false')
+        : c.condition;
+      return {
+        from: c.fromNodeId,
+        to: c.toNodeId,
+        fromPort: c.fromPort,
+        condition,
+      };
+    });
     return { nodes: flowNodes, connections: flowConns };
   };
 
@@ -506,13 +526,22 @@ export const FlowManagement: React.FC = () => {
             config: n.config,
           };
         });
-        const importedConns: CanvasConnection[] = (data.connections || []).map((c: any, idx: number) => ({
-          id: c.id || `conn_${idx}`,
-          fromNodeId: c.from || c.fromNodeId,
-          toNodeId: c.to || c.toNodeId,
-          fromPort: c.fromPort || 'default',
-          condition: c.condition,
-        }));
+        const importedNodesForConn = (data.nodes || []).map((n: any) => ({ id: n.nodeId || n.id, type: n.type }));
+        const importedConns: CanvasConnection[] = (data.connections || []).map((c: any, idx: number) => {
+          const fromId = c.from || c.fromNodeId;
+          const fromNode = importedNodesForConn.find((n: any) => n.id === fromId);
+          const isConditionFrom = fromNode?.type === 'condition';
+          const fromPort = isConditionFrom && (c.condition === 'true' || c.condition === 'false')
+            ? (c.condition === 'true' ? 'yes' : 'no')
+            : (c.fromPort || 'default');
+          return {
+            id: c.id || `conn_${idx}`,
+            fromNodeId: fromId,
+            toNodeId: c.to || c.toNodeId,
+            fromPort: fromPort as 'default' | 'yes' | 'no',
+            condition: c.condition,
+          };
+        });
         setNodes(importedNodes);
         setConnections(importedConns);
         setShowImportModal(false);
@@ -739,8 +768,8 @@ export const FlowManagement: React.FC = () => {
     const comp = FLOW_COMPONENTS.find(c => c.type === selectedNode.type);
 
     return (
-      <div className="absolute top-4 right-4 w-64 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-20">
-        <div className="flex items-center justify-between mb-3">
+      <div className="absolute top-4 right-4 w-64 max-h-[85vh] bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-20 flex flex-col">
+        <div className="flex items-center justify-between mb-3 flex-shrink-0">
           <h4 className="font-semibold text-gray-800">{t('node_config')}</h4>
           <button
             onClick={() => deleteNode(selectedNode.id)}
@@ -751,7 +780,7 @@ export const FlowManagement: React.FC = () => {
           </button>
         </div>
 
-        <div className="space-y-2 text-sm">
+        <div className="space-y-2 text-sm overflow-y-auto flex-1 min-h-0">
           <div>
             <label className="block text-gray-600 mb-1">ID</label>
             <input
@@ -842,14 +871,249 @@ export const FlowManagement: React.FC = () => {
           )}
 
           {selectedNode.type === 'condition' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_condition_field')}</label>
+                <input
+                  value={selectedNode.config?.field || 'event_key'}
+                  onChange={e => updateNodeConfig('field', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="event_key, assemblyId, deviceId..."
+                />
+                <p className="text-xs text-gray-400 mt-1">{t('config_condition_field_hint')}</p>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_condition_operator')}</label>
+                <select
+                  value={selectedNode.config?.operator || 'eq'}
+                  onChange={e => updateNodeConfig('operator', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="eq">eq (等于)</option>
+                  <option value="ne">ne (不等于)</option>
+                  <option value="in">in (在列表中)</option>
+                  <option value="not_in">not_in (不在列表中)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_condition_value')}</label>
+                <input
+                  value={Array.isArray(selectedNode.config?.value) ? (selectedNode.config.value as string[]).join(',') : (selectedNode.config?.value ?? '')}
+                  onChange={e => {
+                    const v = e.target.value.trim();
+                    if (selectedNode.config?.operator === 'in' || selectedNode.config?.operator === 'not_in') {
+                      updateNodeConfig('value', v ? v.split(',').map(s => s.trim()) : []);
+                    } else {
+                      updateNodeConfig('value', v);
+                    }
+                  }}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="PERIMETER_INTRUSION 或 逗号分隔列表"
+                />
+              </div>
+            </div>
+          )}
+
+          {selectedNode.type === 'delay' && (
             <div>
-              <label className="block text-gray-600 mb-1">{t('config_condition_expr')}</label>
+              <label className="block text-gray-600 mb-1">{t('config_delay_seconds')}</label>
               <input
-                value={selectedNode.config?.expression || ''}
-                onChange={e => updateNodeConfig('expression', e.target.value)}
+                type="number"
+                min="0"
+                max="300"
+                step="0.5"
+                value={selectedNode.config?.seconds ?? 5}
+                onChange={e => updateNodeConfig('seconds', parseFloat(e.target.value) || 0)}
                 className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
-                placeholder="e.g. confidence > 0.8"
               />
+            </div>
+          )}
+
+          {selectedNode.type === 'ptz_goto' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_device_id')}</label>
+                <input
+                  value={selectedNode.config?.deviceId ?? '{deviceId}'}
+                  onChange={e => updateNodeConfig('deviceId', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="{deviceId}"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_channel')}</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={selectedNode.config?.channel ?? 1}
+                  onChange={e => updateNodeConfig('channel', parseInt(e.target.value) || 1)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ptz_goto_preset')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={selectedNode.config?.presetIndex ?? ''}
+                  onChange={e => updateNodeConfig('presetIndex', e.target.value === '' ? undefined : parseInt(e.target.value))}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="留空则用角度"
+                />
+              </div>
+              <div className="text-xs text-gray-500">或填写 pan / tilt / zoom 角度</div>
+              <div className="grid grid-cols-3 gap-1">
+                <div>
+                  <label className="block text-gray-500 text-xs">pan</label>
+                  <input
+                    type="number"
+                    value={selectedNode.config?.pan ?? ''}
+                    onChange={e => updateNodeConfig('pan', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                    className="w-full px-2 py-1 rounded border border-gray-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 text-xs">tilt</label>
+                  <input
+                    type="number"
+                    value={selectedNode.config?.tilt ?? ''}
+                    onChange={e => updateNodeConfig('tilt', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                    className="w-full px-2 py-1 rounded border border-gray-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 text-xs">zoom</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={selectedNode.config?.zoom ?? ''}
+                    onChange={e => updateNodeConfig('zoom', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                    className="w-full px-2 py-1 rounded border border-gray-200 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedNode.type === 'device_reboot' && (
+            <div>
+              <label className="block text-gray-600 mb-1">{t('config_device_id')}</label>
+              <input
+                value={selectedNode.config?.deviceId ?? '{deviceId}'}
+                onChange={e => updateNodeConfig('deviceId', e.target.value)}
+                className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                placeholder="{deviceId}"
+              />
+            </div>
+          )}
+
+          {selectedNode.type === 'radar_zone_toggle' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_radar_zone_id')}</label>
+                <input
+                  value={selectedNode.config?.zoneId ?? ''}
+                  onChange={e => updateNodeConfig('zoneId', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="zone_xxx"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_radar_device_id')}</label>
+                <input
+                  value={selectedNode.config?.radarDeviceId ?? ''}
+                  onChange={e => updateNodeConfig('radarDeviceId', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="可选，留空从防区解析"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="radar_zone_enabled"
+                  checked={selectedNode.config?.enabled !== false}
+                  onChange={e => updateNodeConfig('enabled', e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <label htmlFor="radar_zone_enabled" className="text-sm text-gray-600">{t('config_radar_zone_enabled')}</label>
+              </div>
+            </div>
+          )}
+
+          {selectedNode.type === 'http_request' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_http_url')}</label>
+                <input
+                  value={selectedNode.config?.url ?? ''}
+                  onChange={e => updateNodeConfig('url', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="https://..."
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_http_method')}</label>
+                <select
+                  value={selectedNode.config?.method ?? 'POST'}
+                  onChange={e => updateNodeConfig('method', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_http_body')}</label>
+                <textarea
+                  value={selectedNode.config?.body ?? ''}
+                  onChange={e => updateNodeConfig('body', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 text-sm min-h-[60px]"
+                  placeholder='{"key":"{deviceId}"}'
+                />
+              </div>
+            </div>
+          )}
+
+          {selectedNode.type === 'ai_inference' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_api_url')}</label>
+                <input
+                  value={selectedNode.config?.apiUrl ?? ''}
+                  onChange={e => updateNodeConfig('apiUrl', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="https://api.xxx/v1/vision"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_request_body')}</label>
+                <textarea
+                  value={selectedNode.config?.requestBody ?? '{"image_url":"{captureUrl}"}'}
+                  onChange={e => updateNodeConfig('requestBody', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 text-sm min-h-[60px] font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_output_prefix')}</label>
+                <input
+                  value={selectedNode.config?.outputVariablePrefix ?? 'ai_'}
+                  onChange={e => updateNodeConfig('outputVariablePrefix', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_timeout')}</label>
+                <input
+                  type="number"
+                  min="5"
+                  max="120"
+                  value={selectedNode.config?.timeoutSeconds ?? 30}
+                  onChange={e => updateNodeConfig('timeoutSeconds', parseInt(e.target.value) || 30)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
             </div>
           )}
 

@@ -158,6 +158,18 @@ public interface DeviceSDK {
     }
 
     /**
+     * 云台转到预置点
+     *
+     * @param userId      登录句柄
+     * @param channel     通道号
+     * @param presetIndex 预置点号（1-based）
+     * @return 是否成功
+     */
+    default boolean gotoPreset(int userId, int channel, int presetIndex) {
+        return false; // 默认不支持，子类可重写
+    }
+
+    /**
      * 获取云台PTZ位置信息
      * 
      * @param userId  登录句柄

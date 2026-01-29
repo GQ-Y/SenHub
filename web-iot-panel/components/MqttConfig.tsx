@@ -221,7 +221,7 @@ export const MqttConfig: React.FC = () => {
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-700">{t('password')} (Optional)</label>
               <input
-                type="password"
+                type="text"
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
@@ -241,6 +241,7 @@ export const MqttConfig: React.FC = () => {
                         value={formData.topicStatus}
                         onChange={handleChange}
                         className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm"
+                        placeholder="senhub/device/status"
                     />
                 </div>
                 <div className="space-y-1">
@@ -251,6 +252,7 @@ export const MqttConfig: React.FC = () => {
                         value={formData.topicCommand}
                         onChange={handleChange}
                         className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm"
+                        placeholder="senhub/command"
                     />
                 </div>
             </div>

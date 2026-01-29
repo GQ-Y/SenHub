@@ -270,13 +270,19 @@ export type FlowNodeType =
   | 'event_trigger'   // 事件触发器（起始节点）
   | 'mqtt_subscribe'  // MQTT 订阅（起始节点，消息到达主题时触发）
   | 'condition'       // 条件判断 (if/else)
+  | 'delay'           // 延迟 N 秒
   | 'capture'         // 抓拍
   | 'record'          // 录像
-  | 'ptz_control'    // 云台控制
+  | 'ptz_control'    // 云台控制（相对）
+  | 'ptz_goto'        // 云台转预置点/角度
+  | 'device_reboot'   // 设备重启
+  | 'radar_zone_toggle' // 雷达防区启用/关闭
   | 'mqtt_publish'    // MQTT上报
   | 'oss_upload'      // OSS上传
   | 'speaker_play'    // 音柱播报
   | 'webhook'         // Webhook推送（企业微信等）
+  | 'http_request'    // 通用 HTTP 请求
+  | 'ai_inference'    // AI 推理
   | 'end';            // 结束节点
 
 // 画布节点（包含位置信息）

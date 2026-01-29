@@ -152,6 +152,44 @@ public class PTZService {
     }
 
     /**
+     * 云台转到预置点
+     *
+     * @param deviceId    设备ID
+     * @param channel     通道号
+     * @param presetIndex 预置点号（1-based）
+     * @return 是否成功
+     */
+    public boolean gotoPreset(String deviceId, int channel, int presetIndex) {
+        DeviceInfo device = deviceManager.getDevice(deviceId);
+        if (device == null) {
+            logger.warn("设备不存在: {}", deviceId);
+            return false;
+        }
+        if (!deviceManager.isDeviceLoggedIn(deviceId)) {
+            if (!deviceManager.loginDevice(device)) {
+                logger.warn("设备未登录，无法转预置点: {}", deviceId);
+                return false;
+            }
+        }
+        DeviceSDK sdk = deviceManager.getDeviceSDK(deviceId);
+        if (sdk == null) {
+            return false;
+        }
+        int userId = deviceManager.getDeviceUserId(deviceId);
+        int actualChannel = channel > 0 ? channel : device.getChannel();
+        try {
+            boolean result = sdk.gotoPreset(userId, actualChannel, presetIndex);
+            if (result) {
+                logger.debug("云台转预置点成功: deviceId={}, presetIndex={}", deviceId, presetIndex);
+            }
+            return result;
+        } catch (Exception e) {
+            logger.error("云台转预置点异常: deviceId={}", deviceId, e);
+            return false;
+        }
+    }
+
+    /**
      * 验证命令是否有效
      */
     private boolean isValidCommand(String command) {

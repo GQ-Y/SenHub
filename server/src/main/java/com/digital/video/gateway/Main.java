@@ -470,6 +470,13 @@ public class Main {
         executor.registerHandler("webhook", new WebhookHandler(configService));
         executor.registerHandler("record", new RecordHandler(recordingTaskService));
         executor.registerHandler("ptz_control", new PTZControlHandler(ptzService));
+        executor.registerHandler("delay", new com.digital.video.gateway.workflow.handlers.DelayHandler());
+        executor.registerHandler("condition", new com.digital.video.gateway.workflow.handlers.ConditionHandler());
+        executor.registerHandler("http_request", new com.digital.video.gateway.workflow.handlers.HttpRequestHandler());
+        executor.registerHandler("ptz_goto", new com.digital.video.gateway.workflow.handlers.PtzGotoHandler(ptzService));
+        executor.registerHandler("device_reboot", new com.digital.video.gateway.workflow.handlers.DeviceRebootHandler(deviceManager));
+        executor.registerHandler("radar_zone_toggle", new com.digital.video.gateway.workflow.handlers.RadarZoneToggleHandler(database, radarService));
+        executor.registerHandler("ai_inference", new com.digital.video.gateway.workflow.handlers.AiInferenceHandler());
         return executor;
     }
 

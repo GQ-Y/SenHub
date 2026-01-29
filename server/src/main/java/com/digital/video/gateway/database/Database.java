@@ -22,6 +22,8 @@ public class Database {
     private static final Logger logger = LoggerFactory.getLogger(Database.class);
     private String dbPath;
     private Connection connection;
+    /** 串行化对共享连接的访问，避免 SQLite 多线程并发导致 connection closed / database locked */
+    private final Object connectionLock = new Object();
 
     public Database(String dbPath) {
         this.dbPath = dbPath;
@@ -42,7 +44,11 @@ public class Database {
             // 连接数据库
             String url = "jdbc:sqlite:" + dbPath;
             connection = DriverManager.getConnection(url);
-            logger.info("数据库连接成功: {}", dbPath);
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA journal_mode=WAL");
+                stmt.execute("PRAGMA busy_timeout=30000");
+            }
+            logger.info("数据库连接成功: {} (WAL, busy_timeout=30s)", dbPath);
 
             // 创建表
             createTables();
@@ -568,15 +574,28 @@ public class Database {
         }
     }
 
+    /** MQTT 主题默认值（与 config.yaml / Config.MqttConfig 一致，保证数据库初始化写入正确） */
+    private static final String DEFAULT_MQTT_STATUS_TOPIC = "senhub/device/status";
+    private static final String DEFAULT_MQTT_COMMAND_TOPIC = "senhub/command";
+
     /**
      * 初始化默认系统配置
-     * 确保关键配置项有默认值，特别是自动扫描功能默认关闭
+     * 确保关键配置项有默认值：自动扫描默认关闭，MQTT 状态/命令主题使用 senhub 规范
      */
     private void initDefaultConfig() {
         // 初始化自动扫描配置：默认关闭
         if (getConfig("scanner.enabled") == null) {
             saveOrUpdateConfig("scanner.enabled", "false", "boolean");
             logger.info("默认系统配置已设置: scanner.enabled = false");
+        }
+        // MQTT 主题：缺失时写入正确默认值（与 config.yaml 一致）
+        if (getConfig("mqtt.status_topic") == null) {
+            saveOrUpdateConfig("mqtt.status_topic", DEFAULT_MQTT_STATUS_TOPIC, "string");
+            logger.info("默认系统配置已设置: mqtt.status_topic = {}", DEFAULT_MQTT_STATUS_TOPIC);
+        }
+        if (getConfig("mqtt.command_topic") == null) {
+            saveOrUpdateConfig("mqtt.command_topic", DEFAULT_MQTT_COMMAND_TOPIC, "string");
+            logger.info("默认系统配置已设置: mqtt.command_topic = {}", DEFAULT_MQTT_COMMAND_TOPIC);
         }
     }
 
@@ -1337,11 +1356,13 @@ public class Database {
                             logger.debug("忽略对共享数据库连接的 close() 调用");
                             return null;
                         }
-                        // 其他方法正常执行
-                        try {
-                            return method.invoke(connection, args);
-                        } catch (java.lang.reflect.InvocationTargetException e) {
-                            throw e.getTargetException();
+                        // 串行化访问：SQLite 同一连接不能多线程并发使用
+                        synchronized (connectionLock) {
+                            try {
+                                return method.invoke(connection, args);
+                            } catch (java.lang.reflect.InvocationTargetException e) {
+                                throw e.getTargetException();
+                            }
                         }
                     }
                 });

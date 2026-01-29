@@ -87,15 +87,30 @@ public class FlowDefinition {
      * 获取下一个可执行节点（根据执行结果过滤condition）
      */
     public List<FlowNodeDefinition> getNextNodes(String nodeId, boolean success) {
+        return getNextNodes(nodeId, success, null);
+    }
+
+    /**
+     * 获取下一个可执行节点（支持 condition 节点的分支键 _last_node_branch）
+     * 当 context 非空且含 _last_node_branch 时，用其值匹配 connection.condition（如 true/false 或 match/no_match）
+     */
+    public List<FlowNodeDefinition> getNextNodes(String nodeId, boolean success, FlowContext context) {
         if (connections == null || connections.isEmpty()) {
             return new ArrayList<>();
         }
         String conditionValue = success ? "success" : "failure";
+        if (context != null) {
+            Object branch = context.getVariable("_last_node_branch");
+            if (branch != null && !branch.toString().isEmpty()) {
+                conditionValue = branch.toString();
+            }
+        }
+        final String matchValue = conditionValue;
         List<String> nextIds = connections.stream()
                 .filter(c -> nodeId.equals(c.getFrom()))
                 .filter(c -> c.getCondition() == null
                         || c.getCondition().isEmpty()
-                        || conditionValue.equalsIgnoreCase(c.getCondition()))
+                        || matchValue.equalsIgnoreCase(c.getCondition()))
                 .map(FlowConnection::getTo)
                 .collect(Collectors.toList());
 

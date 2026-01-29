@@ -311,11 +311,11 @@ export const SystemSettings: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">{t('def_pass')}</label>
                       <input
-                        type="password"
+                        type="text"
                         value={config.auth.presets.hikvision.password}
                         onChange={(e) => updatePreset('hikvision', 'password', e.target.value)}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="••••••••"
+                        placeholder="默认密码"
                       />
                     </div>
                   </div>
@@ -349,11 +349,11 @@ export const SystemSettings: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">{t('def_pass')}</label>
                       <input
-                        type="password"
+                        type="text"
                         value={config.auth.presets.tiandy.password}
                         onChange={(e) => updatePreset('tiandy', 'password', e.target.value)}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="••••••••"
+                        placeholder="默认密码"
                       />
                     </div>
                   </div>
@@ -387,11 +387,11 @@ export const SystemSettings: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">{t('def_pass')}</label>
                       <input
-                        type="password"
+                        type="text"
                         value={config.auth.presets.dahua.password}
                         onChange={(e) => updatePreset('dahua', 'password', e.target.value)}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="••••••••"
+                        placeholder="默认密码"
                       />
                     </div>
                   </div>
@@ -532,7 +532,7 @@ export const SystemSettings: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">{t('oss_secret_key')}</label>
                       <input
-                        type="password"
+                        type="text"
                         value={config.oss.accessKeySecret || ''}
                         onChange={(e) => setConfig({ ...config, oss: { ...config.oss, accessKeySecret: e.target.value } })}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
@@ -624,7 +624,7 @@ export const SystemSettings: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">{t('dingtalk_secret')}</label>
                       <input
-                        type="password"
+                        type="text"
                         value={config.notification.dingtalk.secret || ''}
                         onChange={(e) => updateNotification('dingtalk', 'secret', e.target.value)}
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"

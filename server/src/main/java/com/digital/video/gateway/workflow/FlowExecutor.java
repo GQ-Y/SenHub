@@ -240,7 +240,7 @@ public class FlowExecutor {
             return;
         }
         
-        List<FlowNodeDefinition> nextNodes = flow.getNextNodes(node.getNodeId(), success);
+        List<FlowNodeDefinition> nextNodes = flow.getNextNodes(node.getNodeId(), success, context);
         if (nextNodes == null || nextNodes.isEmpty()) {
             logger.debug("流程分支结束: nodeId={}", node.getNodeId());
             return;
@@ -386,12 +386,12 @@ public class FlowExecutor {
         }
         
         // 获取后续节点（只有在success=true时才会执行到这里）
-        List<FlowNodeDefinition> nextNodes = flow.getNextNodes(node.getNodeId(), success);
+        List<FlowNodeDefinition> nextNodes = flow.getNextNodes(node.getNodeId(), success, context);
         if (nextNodes == null || nextNodes.isEmpty()) {
             logger.debug("异步节点后续无节点，流程分支结束: nodeId={}", node.getNodeId());
             return;
         }
-        
+
         // 继续执行后续节点
         if (nextNodes.size() == 1) {
             // 只有一个后续节点，直接顺序执行

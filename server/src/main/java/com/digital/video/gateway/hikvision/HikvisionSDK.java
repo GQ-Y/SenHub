@@ -1284,6 +1284,31 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
+
+    @Override
+    public boolean gotoPreset(int userId, int channel, int presetIndex) {
+        if (!initialized || hCNetSDK == null) {
+            logger.error("海康SDK未初始化");
+            return false;
+        }
+        if (presetIndex < 1) {
+            logger.warn("预置点号无效: {}", presetIndex);
+            return false;
+        }
+        try {
+            boolean result = hCNetSDK.NET_DVR_PTZPreset_Other(userId, channel, HCNetSDK.GOTO_PRESET, presetIndex);
+            if (!result) {
+                int errorCode = getLastError();
+                logger.error("海康云台转预置点失败: userId={}, channel={}, presetIndex={}, 错误码={}", userId, channel, presetIndex, errorCode);
+                return false;
+            }
+            logger.info("海康云台转预置点成功: userId={}, channel={}, presetIndex={}", userId, channel, presetIndex);
+            return true;
+        } catch (Exception e) {
+            logger.error("海康云台转预置点异常: userId={}, channel={}, presetIndex={}", userId, channel, presetIndex, e);
+            return false;
+        }
+    }
     
     /**
      * 将十进制数转换为BCD码
