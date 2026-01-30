@@ -1,0 +1,806 @@
+
+===== mqtt_subscriber 启动 2026-01-29T16:16:25.838743 =====
+/Users/hook/Downloads/demo/mqtt-client/mqtt_subscriber.py:198: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+  client = mqtt.Client(client_id=client_id)
+[OK] 已连接: mqtt.yingzhu.net:1883
+[OK] 已订阅: senhub/#
+[OK] 已订阅: alarm/#
+
+[2026-01-29 16:18:35] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b17dc0721b/697b17dc075de29161836.jpg",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 14.37,
+    "absTime": 1769703514,
+    "relativeTime": 0,
+    "azimuthDescription": "正北",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 14.3
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 14.37°(正北) | PTZ: 水平14.3° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b17dc0721b/697b17dc075de29161836.jpg"
+}
+
+[2026-01-29 16:22:02] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b18aaa43bf/697b18aaa46ba29162202.jpg",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 14.37,
+    "absTime": 1769703720,
+    "relativeTime": 0,
+    "azimuthDescription": "正北",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 11.4
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 14.37°(正北) | PTZ: 水平11.4° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b18aaa43bf/697b18aaa46ba29162202.jpg"
+}
+
+[2026-01-29 16:22:42] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29162241697b18d1e5d90.mp4",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 14.37,
+    "absTime": 1769703720,
+    "relativeTime": 0,
+    "azimuthDescription": "正北",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 11.4
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 14.37°(正北) | PTZ: 水平11.4° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:23:31] topic: senhub/gateway/status
+{
+  "type": "offline",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769674370,
+  "version": "1.0",
+  "reason": "connection_lost"
+}
+[OK] 校验通过
+
+[2026-01-29 16:28:23] topic: senhub/gateway/status
+{
+  "type": "online",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769675303,
+  "version": "1.0"
+}
+[OK] 校验通过
+
+[2026-01-29 16:28:24] topic: senhub/assembly/c8335e19-1a61-4143-92c8-05d39d9fd556/status
+{
+  "assembly_info": {
+    "name": "测试装置",
+    "location": "123",
+    "device_ids": [
+      "34017101041320000001"
+    ],
+    "device_count": 1
+  },
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "type": "online",
+  "timestamp": 1769675304
+}
+[OK] 校验通过
+
+[2026-01-29 16:29:32] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1a6cbfcfa/697b1a6cbfff529162932.jpg",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 251.89,
+    "absTime": 1769704170,
+    "relativeTime": 0,
+    "azimuthDescription": "正西",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 251.8
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 251.89°(正西) | PTZ: 水平251.8° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1a6cbfcfa/697b1a6cbfff529162932.jpg"
+}
+
+[2026-01-29 16:30:17] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29163017697b1a99a8e3c.mp4",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 251.89,
+    "absTime": 1769704170,
+    "relativeTime": 0,
+    "azimuthDescription": "正西",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 251.8
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 251.89°(正西) | PTZ: 水平251.8° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:30:18] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1a9acb064/697b1a9acb5c329163018.jpg",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 324.73,
+    "absTime": 1769704171,
+    "relativeTime": 0,
+    "azimuthDescription": "西北",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 324.7
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 324.73°(西北) | PTZ: 水平324.7° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1a9acb064/697b1a9acb5c329163018.jpg"
+}
+
+[2026-01-29 16:31:00] topic: alarm/report/34017101041320000001
+{
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "device_id": "34017101041320000001",
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29163100697b1ac4bd795.mp4",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 324.73,
+    "absTime": 1769704171,
+    "relativeTime": 0,
+    "azimuthDescription": "西北",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 324.7
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 324.73°(西北) | PTZ: 水平324.7° 垂直38.0° 变倍1.0x",
+  "deviceId": "34017101041320000001",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:31:02] topic: senhub/gateway/status
+{
+  "type": "offline",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769675303,
+  "version": "1.0",
+  "reason": "connection_lost"
+}
+[OK] 校验通过
+
+[2026-01-29 16:38:08] topic: senhub/gateway/status
+{
+  "type": "online",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769675888,
+  "version": "1.0"
+}
+[OK] 校验通过
+
+[2026-01-29 16:38:08] topic: senhub/assembly/c8335e19-1a61-4143-92c8-05d39d9fd556/status
+{
+  "assembly_info": {
+    "name": "测试装置",
+    "location": "123",
+    "device_ids": [
+      "34017101041320000001"
+    ],
+    "device_count": 1
+  },
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "type": "online",
+  "timestamp": 1769675888
+}
+[OK] 校验通过
+
+[2026-01-29 16:46:46] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 293.71,
+    "absTime": 1769705161,
+    "relativeTime": 0,
+    "azimuthDescription": "西北",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 293.7
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 293.71°(西北) | PTZ: 水平293.7° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29164646697b1e760b110.mp4",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:46:46] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 284.48,
+    "absTime": 1769705162,
+    "relativeTime": 0,
+    "azimuthDescription": "正西",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 284.4
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 284.48°(正西) | PTZ: 水平284.4° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1e76dc0c1/697b1e76dc35229164646.jpg",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1e76dc0c1/697b1e76dc35229164646.jpg",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:47:29] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 284.48,
+    "absTime": 1769705162,
+    "relativeTime": 0,
+    "azimuthDescription": "正西",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 284.4
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 284.48°(正西) | PTZ: 水平284.4° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29164728697b1ea0f2c66.mp4",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:47:29] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 209.81,
+    "absTime": 1769705189,
+    "relativeTime": 0,
+    "azimuthDescription": "西南",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 209.8
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 209.81°(西南) | PTZ: 水平209.8° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1ea1b60c6/697b1ea1b66e329164729.jpg",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1ea1b60c6/697b1ea1b66e329164729.jpg",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:48:10] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 209.81,
+    "absTime": 1769705189,
+    "relativeTime": 0,
+    "azimuthDescription": "西南",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 209.8
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 209.81°(西南) | PTZ: 水平209.8° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29164810697b1eca0c47f.mp4",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:48:10] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 179.9,
+    "absTime": 1769705190,
+    "relativeTime": 0,
+    "azimuthDescription": "正南",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 179.9
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 179.90°(正南) | PTZ: 水平179.9° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "captureUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1ecad020a/697b1ecad090129164810.jpg",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/697b1ecad020a/697b1ecad090129164810.jpg",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:48:55] topic: alarm/report/34017101041320000001
+{
+  "device_id": "34017101041320000001",
+  "assemblyId": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "channel": 1,
+  "alarmData": {
+    "maxViewRadius": 552.0,
+    "longitudeType": "东经",
+    "latitude": "N 0°0'0.00\"",
+    "latitudeType": "北纬",
+    "horizontalFov": 57.53,
+    "azimuth": 179.9,
+    "absTime": 1769705190,
+    "relativeTime": 0,
+    "azimuthDescription": "正南",
+    "visibleRadius": 13.8,
+    "longitudeDecimal": 0.0,
+    "ptz": {
+      "tiltPos": 38.0,
+      "zoomPos": 1.0,
+      "panPos": 179.9
+    },
+    "latitudeDecimal": 0.0,
+    "sensor": {
+      "verWidth": 0.005,
+      "sensorType": "CMOS",
+      "horWidth": 0.0074,
+      "focalLength": 6.9
+    },
+    "verticalFov": 33.2,
+    "device": {
+      "channel": 1
+    },
+    "longitude": "E 0°0'0.00\""
+  },
+  "event_name_en": "GIS Info Upload",
+  "alarmMessage": "GIS信息上传: 位置: N 0°0'0.00\", E 0°0'0.00\" | 朝向: 179.90°(正南) | PTZ: 水平179.9° 垂直38.0° 变倍1.0x",
+  "event_name_zh": "GIS信息上传",
+  "deviceId": "34017101041320000001",
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "alarmType": "GIS_INFO_UPLOAD",
+  "event_id": 1272,
+  "ossUrl": "https://oss.smartrail.cloud/warning_img/20260129/29164855697b1ef70e560.mp4",
+  "flowId": "default_alarm_flow",
+  "event_key": "GIS_INFO_UPLOAD"
+}
+
+[2026-01-29 16:48:56] topic: senhub/gateway/status
+{
+  "type": "offline",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769675888,
+  "version": "1.0",
+  "reason": "connection_lost"
+}
+[OK] 校验通过
+
+[2026-01-29 17:14:20] topic: senhub/gateway/status
+{
+  "type": "online",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769678061,
+  "version": "1.0"
+}
+[OK] 校验通过
+
+[2026-01-29 17:14:21] topic: senhub/assembly/c8335e19-1a61-4143-92c8-05d39d9fd556/status
+{
+  "assembly_info": {
+    "name": "测试装置",
+    "location": "123",
+    "device_ids": [
+      "34017101041320000001"
+    ],
+    "device_count": 1
+  },
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "type": "online",
+  "timestamp": 1769678061
+}
+[OK] 校验通过
+
+[2026-01-29 17:15:03] topic: senhub/gateway/status
+{
+  "type": "online",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769678103,
+  "version": "1.0"
+}
+[OK] 校验通过
+
+[2026-01-29 17:15:04] topic: senhub/assembly/c8335e19-1a61-4143-92c8-05d39d9fd556/status
+{
+  "assembly_info": {
+    "name": "测试装置",
+    "location": "123",
+    "device_ids": [
+      "34017101041320000001"
+    ],
+    "device_count": 1
+  },
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "type": "online",
+  "timestamp": 1769678104
+}
+[OK] 校验通过
+
+[2026-01-29 17:25:24] topic: senhub/gateway/status
+{
+  "type": "online",
+  "gateway_id": "42:F5:58:8F:AA:F8",
+  "timestamp": 1769678724,
+  "version": "1.0"
+}
+[OK] 校验通过
+
+[2026-01-29 17:25:24] topic: senhub/assembly/c8335e19-1a61-4143-92c8-05d39d9fd556/status
+{
+  "assembly_info": {
+    "name": "测试装置",
+    "location": "123",
+    "device_ids": [
+      "34017101041320000001"
+    ],
+    "device_count": 1
+  },
+  "assembly_id": "c8335e19-1a61-4143-92c8-05d39d9fd556",
+  "type": "online",
+  "timestamp": 1769678724
+}
+[OK] 校验通过

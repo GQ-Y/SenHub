@@ -6,6 +6,8 @@
     "command_topic": "hikvision/command",
     "response_topic": "hikvision/response",
     "status_topic": "hikvision/status",
+    "gateway_status_topic": "senhub/gateway/status",
+    "report_topic_prefix": "senhub/report",
     "qos": 1
   },
   "test": {

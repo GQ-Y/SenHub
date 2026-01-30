@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" width="820" height="520">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="currentColor"/>
+    </marker>
+    <marker id="arrowheadSub" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#0d6"/>
+    </marker>
+    <marker id="arrowheadPub" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#06c"/>
+    </marker>
+  </defs>
+  <title>MQTT 服务架构流程图</title>
+  <rect width="820" height="520" fill="#fafafa"/>
+  <!-- Broker -->
+  <rect x="320" y="20" width="180" height="56" rx="6" fill="#e8e8e8" stroke="#666" stroke-width="1.5"/>
+  <text x="410" y="42" text-anchor="middle" font-size="14" font-weight="bold">MQTT 代理</text>
+  <text x="410" y="58" text-anchor="middle" font-size="11" fill="#444">状态主题 / 命令主题 / 响应主题</text>
+  <!-- Gateway MqttClient -->
+  <rect x="340" y="100" width="140" height="44" rx="4" fill="#cce" stroke="#66c" stroke-width="1"/>
+  <text x="410" y="122" text-anchor="middle" font-size="13" font-weight="bold">MQTT 客户端</text>
+  <text x="410" y="136" text-anchor="middle" font-size="10" fill="#444">(单例)</text>
+  <!-- Connection Broker to MqttClient -->
+  <line x1="410" y1="76" x2="410" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="420" y="92" font-size="10" fill="#333">连接 / 订阅命令主题</text>
+  <!-- Left column: Device status sources -->
+  <rect x="40" y="200" width="140" height="36" rx="4" fill="#e0f0e0" stroke="#4a4" stroke-width="1"/>
+  <text x="110" y="222" text-anchor="middle" font-size="12">海康SDK / 大华SDK</text>
+  <rect x="40" y="260" width="140" height="36" rx="4" fill="#e0f0e0" stroke="#4a4" stroke-width="1"/>
+  <text x="110" y="282" text-anchor="middle" font-size="12">主程序 Main</text>
+  <text x="110" y="294" text-anchor="middle" font-size="9">自动连接 / 设备发现</text>
+  <rect x="40" y="320" width="140" height="44" rx="4" fill="#e8e8e8" stroke="#666" stroke-width="1"/>
+  <text x="110" y="340" text-anchor="middle" font-size="12">设备管理器</text>
+  <text x="110" y="354" text-anchor="middle" font-size="10">更新设备状态并通知</text>
+  <!-- Arrow SDK to DeviceManager -->
+  <line x1="180" y1="218" x2="180" y2="320" stroke="#4a4" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrowheadSub)"/>
+  <text x="188" y="272" font-size="9">回调</text>
+  <!-- Arrow Main to MqttClient -->
+  <path d="M 180 278 L 260 278 L 260 144 L 340 144" fill="none" stroke="#06c" stroke-width="1" marker-end="url(#arrowheadPub)"/>
+  <text x="268" y="268" font-size="9">发布设备状态(1/0)</text>
+  <!-- Arrow DeviceManager to MqttClient status -->
+  <path d="M 180 342 L 260 342 L 260 144 L 340 144" fill="none" stroke="#06c" stroke-width="1" marker-end="url(#arrowheadPub)"/>
+  <text x="200" y="336" font-size="9">发布状态()</text>
+  <!-- status_topic label -->
+  <text x="350" y="138" font-size="9" fill="#06c">状态主题</text>
+  <!-- Right column: Command flow -->
+  <rect x="640" y="200" width="140" height="36" rx="4" fill="#f0e8e0" stroke="#c84" stroke-width="1"/>
+  <text x="710" y="218" text-anchor="middle" font-size="10">外部客户端</text>
+  <text x="710" y="230" text-anchor="middle" font-size="10">下发命令</text>
+  <rect x="640" y="260" width="140" height="44" rx="4" fill="#e8e8e8" stroke="#666" stroke-width="1"/>
+  <text x="710" y="280" text-anchor="middle" font-size="12">命令处理器</text>
+  <text x="710" y="296" text-anchor="middle" font-size="9">处理命令()</text>
+  <!-- Broker to MqttClient messageArrived (command_topic) -->
+  <line x1="500" y1="48" x2="500" y2="122" stroke="#0d6" stroke-width="1" stroke-dasharray="3,2"/>
+  <path d="M 500 122 L 570 122 L 570 282" fill="none" stroke="#0d6" stroke-width="1" marker-end="url(#arrowheadSub)"/>
+  <text x="508" y="88" font-size="9" fill="#0d6">订阅命令主题</text>
+  <text x="568" y="200" font-size="9" fill="#0d6">消息处理</text>
+  <!-- CommandHandler to MqttClient response -->
+  <path d="M 640 282 L 560 282 L 560 144 L 480 144" fill="none" stroke="#06c" stroke-width="1" marker-end="url(#arrowheadPub)"/>
+  <text x="588" y="276" font-size="9">发布响应()</text>
+  <text x="518" y="138" font-size="9" fill="#06c">响应主题</text>
+  <!-- Bottom: Alarm / Workflow flow -->
+  <rect x="240" y="400" width="120" height="36" rx="4" fill="#f0e0e0" stroke="#a44" stroke-width="1"/>
+  <text x="300" y="420" text-anchor="middle" font-size="11">设备报警</text>
+  <rect x="240" y="448" width="120" height="36" rx="4" fill="#e8e8e8" stroke="#666" stroke-width="1"/>
+  <text x="300" y="468" text-anchor="middle" font-size="11">报警服务</text>
+  <rect x="400" y="448" width="120" height="36" rx="4" fill="#e8e8e8" stroke="#666" stroke-width="1"/>
+  <text x="460" y="468" text-anchor="middle" font-size="11">流程执行器</text>
+  <rect x="560" y="448" width="140" height="36" rx="4" fill="#e8e8e8" stroke="#666" stroke-width="1"/>
+  <text x="630" y="468" text-anchor="middle" font-size="11">MQTT 发布节点</text>
+  <line x1="300" y1="436" x2="300" y2="448" stroke="#a44" stroke-width="1" marker-end="url(#arrowhead)"/>
+  <line x1="300" y1="466" x2="400" y2="466" stroke="#666" stroke-width="1" marker-end="url(#arrowhead)"/>
+  <text x="342" y="462" font-size="9">执行工作流</text>
+  <line x1="460" y1="466" x2="560" y2="466" stroke="#666" stroke-width="1" marker-end="url(#arrowhead)"/>
+  <text x="502" y="462" font-size="9">mqtt_publish 节点</text>
+  <!-- MqttPublishHandler to MqttClient -->
+  <path d="M 630 448 L 630 200 L 480 200 L 480 144" fill="none" stroke="#06c" stroke-width="1" marker-end="url(#arrowheadPub)"/>
+  <text x="538" y="195" font-size="9" fill="#06c">发布(topic, msg)</text>
+  <text x="455" y="188" font-size="9">alarm/report/&#123;deviceId&#125; 等</text>
+  <!-- Legend -->
+  <rect x="40" y="28" width="200" height="68" rx="4" fill="#fff" stroke="#ccc" stroke-width="1"/>
+  <text x="50" y="46" font-size="11" font-weight="bold">图例</text>
+  <line x1="50" y1="54" x2="120" y2="54" stroke="#0d6" stroke-dasharray="3,2"/>
+  <text x="128" y="58" font-size="10">订阅/接收</text>
+  <line x1="50" y1="68" x2="120" y2="68" stroke="#06c"/>
+  <text x="128" y="72" font-size="10">发布</text>
+  <line x1="50" y1="82" x2="120" y2="82" stroke="#666" stroke-dasharray="4,2"/>
+  <text x="128" y="86" font-size="10">回调/内部调用</text>
+</svg>

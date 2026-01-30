@@ -700,6 +700,58 @@ public class RadarController {
     }
 
     /**
+     * 获取当前侵入检测是否开启
+     * GET /api/radar/:deviceId/detection
+     */
+    public Object getDetectionEnabled(Request request, Response response) {
+        try {
+            String deviceId = request.params("deviceId");
+            String state = radarService.getDeviceState(deviceId);
+            boolean enabled = "detecting".equals(state);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("deviceId", deviceId);
+            payload.put("detectionEnabled", enabled);
+            return createSuccessResponse(payload);
+        } catch (Exception e) {
+            logger.error("获取检测状态失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
+     * 开启或关闭侵入检测
+     * PUT /api/radar/:deviceId/detection
+     * Body: { "enabled": true } 开启检测，{ "enabled": false } 关闭检测（仅推送点云，不跑侵入检测，避免队列满）
+     */
+    public Object setDetectionEnabled(Request request, Response response) {
+        try {
+            String deviceId = request.params("deviceId");
+            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            Boolean enabled = body.get("enabled") != null && Boolean.TRUE.equals(body.get("enabled"));
+
+            if (enabled) {
+                radarService.reloadDeviceDetectionContext(deviceId);
+                radarService.setDeviceState(deviceId, "detecting");
+                logger.info("开启侵入检测: deviceId={}", deviceId);
+            } else {
+                radarService.setDeviceState(deviceId, "");
+                logger.info("关闭侵入检测: deviceId={}", deviceId);
+            }
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("deviceId", deviceId);
+            payload.put("detectionEnabled", enabled);
+            return createSuccessResponse(payload);
+        } catch (Exception e) {
+            logger.error("设置检测状态失败", e);
+            response.status(500);
+            return createErrorResponse(500, e.getMessage());
+        }
+    }
+
+    /**
      * 切换防区启用状态
      * PUT /api/radar/:deviceId/zones/:zoneId/toggle
      */

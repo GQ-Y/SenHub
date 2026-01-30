@@ -927,6 +927,8 @@ public class Main {
         Spark.put("/api/radar/:deviceId/zones/:zoneId", radarController::updateZone);
         Spark.delete("/api/radar/:deviceId/zones/:zoneId", radarController::deleteZone);
         Spark.put("/api/radar/:deviceId/zones/:zoneId/toggle", radarController::toggleZone);
+        Spark.get("/api/radar/:deviceId/detection", radarController::getDetectionEnabled);
+        Spark.put("/api/radar/:deviceId/detection", radarController::setDetectionEnabled);
         Spark.get("/api/radar/:deviceId/backgrounds", radarController::getBackgrounds);
         Spark.delete("/api/radar/:deviceId/backgrounds/:backgroundId", radarController::deleteBackground);
         Spark.get("/api/radar/:deviceId/intrusions", radarController::getIntrusions);

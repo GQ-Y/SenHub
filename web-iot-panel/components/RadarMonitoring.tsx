@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { radarService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
 import { Modal, ConfirmModal } from './Modal';
-import { PointCloudRenderer } from './PointCloudRenderer';
+import { PointCloudRenderer, type PointCloudBuffer } from './PointCloudRenderer';
 import { IntrusionHistoryPanel } from './IntrusionHistoryPanel';
 import { ArrowLeft } from 'lucide-react';
 
@@ -40,6 +40,10 @@ export const RadarMonitoring: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const pointCloudContainerRef = useRef<HTMLDivElement>(null);
 
+  // 侵入检测开关：未开启时仅推送点云，开启后每帧跑侵入检测
+  const [detectionEnabled, setDetectionEnabledState] = useState<boolean | null>(null);
+  const [detectionLoading, setDetectionLoading] = useState(false);
+
   // 累积时间配置（秒）- 滑动窗口模式
   // 只保留指定时间内的数据，老数据自动滑出窗口
   const [accumulationTime, setAccumulationTime] = useState(1); // 默认 1 秒
@@ -50,10 +54,19 @@ export const RadarMonitoring: React.FC = () => {
     accumulationTimeRef.current = accumulationTime * 1000;
   }, [accumulationTime]);
 
-  // 点云缓冲区：滑动窗口累积指定时间内的点云数据
+  // Worker 路径：接收与渲染解耦，主线程只写 ref，渲染循环内消费（参考 PCL/RViz 单视觉器+互斥更新）
+  const workerRef = useRef<Worker | null>(null);
+  const workerReadyRef = useRef(false);
+  const workerLatestRef = useRef<PointCloudBuffer | null>(null);
+  const [workerReady, setWorkerReady] = useState(false);       // 用于决定是否传 pendingFrameRef
+  const [workerDisplayCount, setWorkerDisplayCount] = useState(0); // 渲染消费后回传的点数，供 UI 显示
+  const [pointCloudBuffer, setPointCloudBufferState] = useState<PointCloudBuffer | null>(null);
+
+  // 传统路径备用：点云缓冲区（Worker 未启用时使用）
   const pointCloudBufferRef = useRef<TimestampedPoint[]>([]);
-  const renderIntervalRef = useRef<number | null>(null);
-  const lastLogTimeRef = useRef<number>(0); // 用于控制日志输出频率
+  const renderFrameRef = useRef<number | null>(null);
+  const lastLogTimeRef = useRef<number>(0);
+  const pendingUpdateRef = useRef(false);
 
   // 回放状态
   const [playbackMode, setPlaybackMode] = useState(false);
@@ -109,71 +122,129 @@ export const RadarMonitoring: React.FC = () => {
     };
   }, []);
 
+  // 拉取当前检测开关状态
+  const fetchDetectionState = async () => {
+    if (!deviceId) return;
+    try {
+      const res = await radarService.getDetectionEnabled(deviceId);
+      setDetectionEnabledState(!!res.data?.detectionEnabled);
+    } catch (e) {
+      console.error('获取检测状态失败', e);
+      setDetectionEnabledState(false);
+    }
+  };
+
   useEffect(() => {
-    // 使用标志位防止 React StrictMode 导致的重复连接问题
+    if (deviceId) fetchDetectionState();
+  }, [deviceId]);
+
+  // 累积时间变化时同步到 Worker
+  useEffect(() => {
+    if (workerRef.current) {
+      workerRef.current.postMessage({ type: 'setWindow', windowMs: accumulationTime * 1000 });
+    }
+  }, [accumulationTime]);
+
+  const handleToggleDetection = async () => {
+    if (!deviceId || detectionLoading) return;
+    const next = !(detectionEnabled ?? false);
+    setDetectionLoading(true);
+    try {
+      await radarService.setDetectionEnabled(deviceId, next);
+      setDetectionEnabledState(next);
+      modal.showModal({ message: next ? '已开启侵入检测' : '已关闭侵入检测（仅推送点云）', type: 'success' });
+    } catch (e: any) {
+      modal.showModal({ message: (e?.message || '操作失败') + '', type: 'error' });
+    } finally {
+      setDetectionLoading(false);
+    }
+  };
+
+  useEffect(() => {
     let isCleaningUp = false;
     let ws: WebSocket | null = null;
 
     loadIntrusions();
 
-    // 连接WebSocket
+    // Worker 路径：二进制在子线程解析 + 滑动窗口，主线程只收缓冲并渲染，支撑 20 万点/秒
+    const useWorker = true;
+    if (useWorker) {
+      try {
+        const worker = new Worker(new URL('../src/workers/pointcloud.worker.ts', import.meta.url), { type: 'module' });
+        workerRef.current = worker;
+        worker.postMessage({ type: 'setWindow', windowMs: accumulationTimeRef.current });
+        worker.onmessage = (e: MessageEvent) => {
+          if (isCleaningUp) return;
+          if (e.data?.type === 'update') {
+            workerLatestRef.current = {
+              positions: e.data.positions,
+              colors: e.data.colors,
+              count: e.data.count
+            };
+            pendingUpdateRef.current = true;
+          }
+        };
+        worker.onerror = (err) => console.warn('[点云] Worker 错误', err);
+        workerReadyRef.current = true;
+        setWorkerReady(true);
+        console.log('[点云] 使用 Worker 路径（接收与渲染解耦）');
+      } catch (e) {
+        console.warn('[点云] Worker 不可用，回退主线程', e);
+        workerRef.current = null;
+        workerReadyRef.current = false;
+        setWorkerReady(false);
+      }
+    }
+
     if (deviceId) {
       try {
         console.log('开始连接WebSocket，deviceId:', deviceId);
-        ws = radarService.connectWebSocket(deviceId, (data) => {
-          // 如果正在清理，忽略消息
-          if (isCleaningUp) return;
-
-          // 减少日志输出频率，避免控制台刷屏
-          if (data.type !== 'pointcloud') {
-            console.log('收到WebSocket消息:', data.type, data);
-          }
-
-          if (data.type === 'pointcloud' && data.points) {
-            // 接收点云数据，添加时间戳后放入缓冲区
-            const now = Date.now();
-            const pointCount = data.points.length;
-
-            // 关键修复：给每个点添加均匀分布的时间偏移
-            // 这样点会逐渐过期而不是同时消失，消除频闪
-            // 将一帧的点分散在 50ms 的时间窗口内
-            const timeSpread = 50; // 50ms 的时间分散
-
-            const newPoints: TimestampedPoint[] = data.points.map((p: any, index: number) => ({
-              x: p.x || 0,
-              y: p.y || 0,
-              z: p.z || 0,
-              r: p.r,
-              // 给每个点一个微小的时间偏移，让它们均匀分布
-              timestamp: now - (timeSpread * index / pointCount)
-            }));
-
-            // 将新点添加到缓冲区
-            const cutoffTime = now - accumulationTimeRef.current;
-
-            // 滑动窗口：清理超时数据并添加新点
-            pointCloudBufferRef.current = [
-              ...pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime),
-              ...newPoints
-            ];
-          } else if (data.type === 'intrusion') {
-            // 处理侵入检测结果
-            setIntrusions(prev => [data, ...prev].slice(0, 50)); // 保留最近50条
-
-            // 提取侵入物体点云（如果有）
-            if (data.cluster && data.cluster.points) {
-              const intrusionPts: Point[] = data.cluster.points.map((p: any) => ({
+        // 仅当 Worker 创建成功时才走二进制路径，否则主线程解析并更新点云（回退）
+        const wsOptions = useWorker && workerReadyRef.current
+          ? { onBinaryPointCloud: (buf: ArrayBuffer) => workerRef.current?.postMessage({ type: 'binary', buffer: buf }, [buf]) }
+          : undefined;
+        ws = radarService.connectWebSocket(
+          deviceId,
+          (data) => {
+            if (isCleaningUp) return;
+            if (data.type !== 'pointcloud') {
+              console.log('收到WebSocket消息:', data.type, data);
+            }
+            if (data.type === 'pointcloud' && data.points && (!useWorker || !workerReadyRef.current)) {
+              const now = Date.now();
+              const pointCount = data.points.length;
+              const timeSpread = 50;
+              const newPoints: TimestampedPoint[] = data.points.map((p: any, index: number) => ({
                 x: p.x || 0,
                 y: p.y || 0,
-                z: p.z || 0
+                z: p.z || 0,
+                r: p.r,
+                timestamp: now - (timeSpread * index / Math.max(1, pointCount))
               }));
-              setIntrusionPoints(prev => [...prev, ...intrusionPts].slice(-1000)); // 保留最近1000个侵入点
+              const cutoffTime = now - accumulationTimeRef.current;
+              pointCloudBufferRef.current = [
+                ...pointCloudBufferRef.current.filter(p => p.timestamp! > cutoffTime),
+                ...newPoints
+              ];
+              pendingUpdateRef.current = true;
             }
-          } else if (data.type === 'status') {
-            setIsConnected(data.connected || false);
-            console.log('WebSocket状态更新:', data.connected);
-          }
-        });
+            if (data.type === 'intrusion') {
+              setIntrusions(prev => [data, ...prev].slice(0, 50));
+              if (data.cluster && data.cluster.points) {
+                const intrusionPts: Point[] = data.cluster.points.map((p: any) => ({
+                  x: p.x || 0,
+                  y: p.y || 0,
+                  z: p.z || 0
+                }));
+                setIntrusionPoints(prev => [...prev, ...intrusionPts].slice(-1000));
+              }
+            } else if (data.type === 'status') {
+              setIsConnected(data.connected || false);
+              console.log('WebSocket状态更新:', data.connected);
+            }
+          },
+          wsOptions
+        );
         wsRef.current = ws;
 
         // 监听WebSocket状态
@@ -211,50 +282,72 @@ export const RadarMonitoring: React.FC = () => {
       }
     }
 
-    // 核心改进：滑动窗口模式 - 每100ms更新一次渲染
-    // 这样可以实现平滑过渡，避免频闪
-    renderIntervalRef.current = window.setInterval(() => {
+    // rAF 节流：Worker 路径只从 Worker 更新；传统路径只做滑动窗口 + setPointCloudData
+    const tick = () => {
       if (isCleaningUp) return;
+      renderFrameRef.current = requestAnimationFrame(tick);
+      if (!pendingUpdateRef.current) return;
+      pendingUpdateRef.current = false;
 
       const now = Date.now();
-      const cutoffTime = now - accumulationTimeRef.current;
-
-      // 滑动窗口：只保留时间窗口内的点，老数据自动滑出
-      const windowPoints = pointCloudBufferRef.current.filter(p => p.timestamp > cutoffTime);
-
-      // 立即更新缓冲区，确保内存不会无限累积
-      pointCloudBufferRef.current = windowPoints;
-
-      // 更新渲染数据
-      if (windowPoints.length > 0) {
-        setPointCloudData(windowPoints);
+      const buf = workerLatestRef.current;
+      if (buf) {
+        // 仅回退路径写 state 并清 ref；Worker 路径由 PointCloudRenderer 在 rAF 内消费 ref，不在此清
+        if (!workerReadyRef.current) {
+          if (buf.count > 0) setPointCloudBufferState(buf);
+          workerLatestRef.current = null;
+        }
+        if (buf.count > 0 && now - lastLogTimeRef.current >= 2000) {
+          console.log(`[点云 Worker] 窗口点数: ${buf.count.toLocaleString()}`);
+          lastLogTimeRef.current = now;
+        }
+      } else if (!useWorker || !workerReadyRef.current) {
+        // 传统路径或 Worker 失败回退：滑动窗口 + setPointCloudData
+        const cutoffTime = now - accumulationTimeRef.current;
+        const windowPoints = pointCloudBufferRef.current.filter(p => p.timestamp! > cutoffTime);
+        pointCloudBufferRef.current = windowPoints;
+        if (windowPoints.length > 0) {
+          setPointCloudData(windowPoints);
+        }
+        if (now - lastLogTimeRef.current >= 2000) {
+          const accTimeSeconds = accumulationTimeRef.current / 1000;
+          console.log(`[点云滑动窗口] 点数: ${windowPoints.length.toLocaleString()}, 窗口: ${accTimeSeconds}s`);
+          lastLogTimeRef.current = now;
+        }
       }
-
-      // 每秒打印一次日志
-      if (now - lastLogTimeRef.current >= 2000) {
-        const accTimeSeconds = accumulationTimeRef.current / 1000;
-        console.log(`[点云滑动窗口] 点数: ${windowPoints.length.toLocaleString()}, 窗口: ${accTimeSeconds}s`);
-        lastLogTimeRef.current = now;
-      }
-    }, 100); // 每100ms更新一次，实现平滑过渡
+    };
+    renderFrameRef.current = requestAnimationFrame(tick);
 
     return () => {
-      // 设置清理标志，防止后续事件触发错误日志
       isCleaningUp = true;
 
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+        workerReadyRef.current = false;
+        setWorkerReady(false);
+        setWorkerDisplayCount(0);
+      }
       if (ws) {
         console.log('关闭WebSocket连接');
-        ws.close(1000, '组件卸载'); // 使用正常关闭码
+        ws.close(1000, '组件卸载');
         wsRef.current = null;
       }
-      if (renderIntervalRef.current) {
-        clearInterval(renderIntervalRef.current);
-        renderIntervalRef.current = null;
+      if (renderFrameRef.current != null) {
+        cancelAnimationFrame(renderFrameRef.current);
+        renderFrameRef.current = null;
       }
-      // 清空缓冲区
       pointCloudBufferRef.current = [];
     };
   }, [deviceId]);
+
+  // Worker 路径：累积时间变化时同步窗口到 Worker
+  useEffect(() => {
+    const w = workerRef.current;
+    if (w) {
+      w.postMessage({ type: 'setWindow', windowMs: accumulationTime * 1000 });
+    }
+  }, [accumulationTime]);
 
   const loadIntrusions = async () => {
     try {
@@ -324,12 +417,14 @@ export const RadarMonitoring: React.FC = () => {
     };
   }, []);
 
-  // 合并点云数据：背景点云（灰色）+ 侵入点（红色）
-  // 移除timestamp字段，因为PointCloudRenderer不需要
+  // Worker 路径：点数由渲染消费后 onFrameConsumed 回传；回退/传统路径用 pointCloudBuffer 或 allPoints
   const allPoints: Point[] = [
     ...pointCloudData.map(({ timestamp, ...p }) => ({ ...p, isIntrusion: false })),
     ...intrusionPoints.map(p => ({ ...p, isIntrusion: true }))
   ];
+  const displayPointCount = workerReady
+    ? workerDisplayCount + intrusionPoints.length
+    : (pointCloudBuffer ? pointCloudBuffer.count + intrusionPoints.length : allPoints.length);
 
   return (
     <div className="space-y-6">
@@ -364,6 +459,24 @@ export const RadarMonitoring: React.FC = () => {
               <option value={3}>3秒</option>
               <option value={5}>5秒</option>
             </select>
+          </div>
+
+          {/* 侵入检测开关 */}
+          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg">
+            <span className="text-sm text-gray-600">侵入检测:</span>
+            <button
+              type="button"
+              onClick={handleToggleDetection}
+              disabled={detectionLoading || detectionEnabled === null}
+              className={`text-sm font-medium px-3 py-1 rounded-md transition-colors ${
+                detectionEnabled
+                  ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+              } ${detectionLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+              title={detectionEnabled ? '点击关闭检测（仅推送点云，减轻队列压力）' : '点击开启侵入检测'}
+            >
+              {detectionLoading ? '…' : detectionEnabled ? '已开启' : '已关闭'}
+            </button>
           </div>
 
           {/* 连接状态 */}
@@ -419,9 +532,12 @@ export const RadarMonitoring: React.FC = () => {
               </button>
             )}
 
-            {allPoints.length > 0 || playbackPoints.length > 0 ? (
+            {(displayPointCount > 0 || playbackPoints.length > 0 || isConnected) ? (
               <PointCloudRenderer
-                points={playbackMode ? playbackPoints : allPoints}
+                points={playbackMode ? playbackPoints : (workerReady ? intrusionPoints : (pointCloudBuffer ? intrusionPoints : allPoints))}
+                pointCloudBuffer={playbackMode || workerReady ? null : pointCloudBuffer}
+                pendingFrameRef={workerReady ? workerLatestRef : undefined}
+                onFrameConsumed={workerReady ? setWorkerDisplayCount : undefined}
                 color={(point: Point) => {
                   // 侵入点显示为红色，正常点使用colorMode处理
                   const p = point as any;
@@ -450,12 +566,16 @@ export const RadarMonitoring: React.FC = () => {
               </div>
             )}
 
-            {(isFullscreen || !playbackMode) && allPoints.length > 0 && (
-              // Existing fullscreen overlay Logic ...
+            {(isFullscreen || !playbackMode) && displayPointCount > 0 && (
               isFullscreen && (
                 <>
                   <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded text-sm">
-                    当前显示 {allPoints.length.toLocaleString()} 个点
+                    当前显示 {displayPointCount.toLocaleString()} 个点
+                    {accumulationTime >= 1 && (
+                      <span className="ml-2 text-gray-300">
+                        约 {(displayPointCount / accumulationTime).toFixed(1)} 点/秒
+                      </span>
+                    )}
                     {intrusionPoints.length > 0 && (
                       <span className="ml-2 text-red-400">
                         （{intrusionPoints.length} 个侵入点）
@@ -476,9 +596,13 @@ export const RadarMonitoring: React.FC = () => {
               </div>
             )}
           </div>
-          {!isFullscreen && (allPoints.length > 0 || playbackPoints.length > 0) && (
+          {!isFullscreen && (displayPointCount > 0 || playbackPoints.length > 0) && (
             <div className="mt-2 text-xs text-gray-500 text-center">
-              {playbackMode ? `正在回放... (${playbackPoints.length} points)` : `当前显示 ${allPoints.length} 个点`}
+              {playbackMode
+                ? `正在回放... (${playbackPoints.length} points)`
+                : accumulationTime >= 1
+                  ? `当前显示 ${displayPointCount.toLocaleString()} 个点，约 ${(displayPointCount / accumulationTime).toFixed(1)} 点/秒`
+                  : `当前显示 ${displayPointCount.toLocaleString()} 个点`}
             </div>
           )}
         </div>

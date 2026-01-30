@@ -75,6 +75,8 @@ public class RadarService {
     // 点云数据统计
     private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
     private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
+    /** 因点云处理队列满而丢弃的帧数（用于日志定位瓶颈） */
+    private final AtomicLong rejectedPointCloudFrames = new AtomicLong(0);
     private ScheduledExecutorService statsExecutor;
     private RadarStatusMonitor statusMonitor;
     private int statsLogIntervalSeconds = 60; // 点云统计日志间隔（秒）
@@ -94,10 +96,10 @@ public class RadarService {
     /**
      * 点云处理线程池：将 routePointCloud（降噪/侵入检测/推送）从 Livox 回调线程中剥离，
      * 避免在检测模式下阻塞回调导致 UDP 收包变慢、点云吞吐量骤降。
-     * 4 线程 + 有界队列(8)，队列满时丢弃新帧，保证回调立即返回。
+     * 为支撑 Mid-360 约 20 万点/秒，增大队列与线程；队列满时丢弃新帧，保证回调立即返回。
      */
-    private static final int POINT_CLOUD_WORKER_THREADS = 4;
-    private static final int POINT_CLOUD_QUEUE_CAPACITY = 8;
+    private static final int POINT_CLOUD_WORKER_THREADS = 32;
+    private static final int POINT_CLOUD_QUEUE_CAPACITY = 256;
     private final ThreadPoolExecutor pointCloudExecutor = new ThreadPoolExecutor(
             POINT_CLOUD_WORKER_THREADS, POINT_CLOUD_WORKER_THREADS, 60L, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(POINT_CLOUD_QUEUE_CAPACITY),
@@ -107,7 +109,7 @@ public class RadarService {
                 return t;
             },
             (r, e) -> {
-                // 队列满时丢弃新任务，避免阻塞 Livox 回调
+                rejectedPointCloudFrames.incrementAndGet();
                 logger.warn("点云处理队列已满，丢弃本帧（防区开启时勿阻塞回调）");
             }
     );
@@ -358,19 +360,28 @@ public class RadarService {
 
         final AtomicLong lastTotalFrames = new AtomicLong(0);
         final AtomicLong lastTotalPoints = new AtomicLong(0);
+        final AtomicLong lastRejectedFrames = new AtomicLong(0);
 
         statsExecutor.scheduleAtFixedRate(() -> {
             long currentFrames = totalPointCloudFrames.get();
             long currentPoints = totalPointCloudPoints.get();
+            long currentRejected = rejectedPointCloudFrames.get();
 
             long framesThisPeriod = currentFrames - lastTotalFrames.get();
             long pointsThisPeriod = currentPoints - lastTotalPoints.get();
+            long rejectedThisPeriod = currentRejected - lastRejectedFrames.get();
 
             lastTotalFrames.set(currentFrames);
             lastTotalPoints.set(currentPoints);
+            lastRejectedFrames.set(currentRejected);
 
-            logger.info("[点云统计] 本周期接收: {} 帧, {} 点 | 累计: {} 帧, {} 点",
-                    framesThisPeriod, pointsThisPeriod, currentFrames, currentPoints);
+            int queueSize = pointCloudExecutor.getQueue().size();
+            int activeCount = pointCloudExecutor.getActiveCount();
+
+            logger.info("[点云统计] 本周期接收: {} 帧, {} 点 | 本周期丢弃: {} 帧 | 累计接收: {} 帧, {} 点, 累计丢弃: {} 帧 | 处理队列: 排队={}, 工作中={}",
+                    framesThisPeriod, pointsThisPeriod, rejectedThisPeriod,
+                    currentFrames, currentPoints, currentRejected,
+                    queueSize, activeCount);
         }, statsLogIntervalSeconds, statsLogIntervalSeconds, TimeUnit.SECONDS);
 
         logger.info("点云统计报告器已启动（每{}秒打印一次）", statsLogIntervalSeconds);
@@ -619,18 +630,17 @@ public class RadarService {
             syncDeviceStatus(deviceId, true);
         }
 
-        // 降噪处理（可选）
-        List<Point> processedPoints = points;
+        String state = deviceStates.get(deviceId);
 
-        if (enableDenoising && points.size() > denoiseKNeighbors) {
+        // 降噪处理（可选）：仅在检测模式下执行，以支撑 20 万点/秒实时预览
+        // SOR 为 O(n²)，在 collecting/默认模式下跳过可避免队列满、漏点
+        List<Point> processedPoints = points;
+        if ("detecting".equals(state) && enableDenoising && points.size() > denoiseKNeighbors) {
             try {
-                // 统计去噪：移除离群较远的噪声点
                 processedPoints = PointCloudProcessor.statisticalOutlierRemoval(
                         processedPoints,
                         denoiseKNeighbors,
                         denoiseStdDevThreshold);
-
-                // 记录降噪效果（仅在调试级别）
                 if (logger.isDebugEnabled()) {
                     int removedCount = points.size() - processedPoints.size();
                     logger.debug("降噪处理: 原始点数={}, 处理后={}, 移除={}",
@@ -652,8 +662,6 @@ public class RadarService {
                 logger.warn("下采样处理失败", e);
             }
         }
-
-        String state = deviceStates.get(deviceId);
         if ("collecting".equals(state)) {
             // 采集背景模式：添加到背景采集
             PointCloudFrame frame = new PointCloudFrame(System.currentTimeMillis(), processedPoints);
@@ -1193,17 +1201,17 @@ public class RadarService {
     }
 
     /**
-     * 重新加载设备的检测上下文（背景模型和防区配置）
-     * 在创建、更新、删除防区后调用此方法
+     * 重新加载设备的检测上下文（背景模型和防区配置）。
+     * 仅加载防区和背景到内存，不自动开启检测，避免未显式「开启检测」时每帧跑侵入检测导致队列满、丢帧。
+     * 需显式调用 setDeviceState(deviceId, "detecting") 或 PUT /api/radar/:deviceId/detection 开启检测。
      */
     public void reloadDeviceDetectionContext(String deviceId) {
         // 1. 重新加载防区配置
         loadZonesForDevice(deviceId);
 
-        // 2. 查找防区中使用的背景，并加载
+        // 2. 查找防区中使用的背景，并加载（不自动设为 detecting）
         List<DefenseZone> zones = deviceZones.get(deviceId);
         if (zones != null && !zones.isEmpty()) {
-            // 取第一个启用的防区的背景ID和shrinkDistance（假设一个设备使用一个背景）
             DefenseZone shrinkZone = zones.stream()
                     .filter(DefenseZone::getEnabled)
                     .filter(z -> z.getBackgroundId() != null && !z.getBackgroundId().isEmpty())
@@ -1214,15 +1222,14 @@ public class RadarService {
                 String backgroundId = shrinkZone.getBackgroundId();
                 BackgroundModel background = backgroundService.loadBackground(backgroundId);
                 if (background != null) {
-                    // 构建径向边界网格用于O(1)侵入检测
                     float shrinkDistanceCm = shrinkZone.getShrinkDistanceCm() != null
                             ? shrinkZone.getShrinkDistanceCm()
                             : 20.0f;
                     background.buildBoundaryGrid(shrinkDistanceCm);
 
                     loadedBackgrounds.put(deviceId, background);
-                    deviceStates.put(deviceId, "detecting");
-                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}",
+                    // 不再自动 deviceStates.put(deviceId, "detecting")，由显式「开启检测」控制
+                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}（未自动开启检测，请调用开启检测接口）",
                             deviceId, backgroundId, background.getPoints().size(),
                             background.getBoundaryGrid() != null ? background.getBoundaryGrid().getValidDirections()
                                     : 0);
@@ -1231,8 +1238,19 @@ public class RadarService {
                 }
             } else {
                 logger.debug("没有启用的防区或背景ID为空: deviceId={}", deviceId);
+                deviceStates.put(deviceId, ""); // 无启用防区时确保不处于检测状态
             }
+        } else {
+            deviceStates.put(deviceId, ""); // 无防区时确保不处于检测状态
         }
+    }
+
+    /**
+     * 获取设备当前状态（"collecting" | "detecting" | "" 等）
+     */
+    public String getDeviceState(String deviceId) {
+        String s = deviceStates.get(deviceId);
+        return s != null ? s : "";
     }
 
     /**

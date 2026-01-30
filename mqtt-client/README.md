@@ -48,6 +48,9 @@ pip install -r requirements.txt
     "password": "demos1",
     "command_topic": "hikvision/command",
     "response_topic": "hikvision/response",
+    "status_topic": "hikvision/status",
+    "gateway_status_topic": "senhub/gateway/status",
+    "report_topic_prefix": "senhub/report",
     "qos": 1
   },
   "test": {
@@ -56,6 +59,8 @@ pip install -r requirements.txt
   }
 }
 ```
+
+其中 `gateway_status_topic`、`report_topic_prefix` 为可选，供 **mqtt_subscriber.py** 与网关 config.yaml 的 senhub 主题对齐使用。
 
 ## 使用方法
 
@@ -219,14 +224,81 @@ python mqtt_test_client.py \
 - 检查设备是否在线且可访问
 - 查看server日志获取详细错误信息
 
+## MQTT 监听测试
+
+除命令测试外，可使用 **mqtt_subscriber.py** 订阅网关发布的状态与报警主题，验证“网关是否按规范发出正确消息”。
+
+### 用途与主题
+
+- **mqtt_test_client.py**：发命令（`senhub/command`）+ 收响应（`senhub/response`），验证命令链路。
+- **mqtt_subscriber.py**：仅订阅、不发命令，验证网关主动推送的以下主题：
+  - `senhub/gateway/status` — 网关上下线 / LWT
+  - `senhub/device/status` — 设备/雷达上下线
+  - `senhub/assembly/+/status` — 装置状态
+  - `senhub/report/+` — 工作流报警上报
+  - `senhub/response` — 命令响应（可选，与 test client 重叠）
+
+### 运行方式
+
+```bash
+# 默认订阅 senhub/#，持续打印，Ctrl+C 退出
+python mqtt_subscriber.py
+
+# 开启 payload 结构化校验，失败时打印 WARNING
+python mqtt_subscriber.py --validate
+
+# 仅监听指定主题
+python mqtt_subscriber.py --topics senhub/device/status senhub/gateway/status
+
+# 运行 60 秒后退出（便于 CI/脚本）
+python mqtt_subscriber.py --duration 60
+
+# 将监听日志写入文件，便于后续分析（控制台与文件同时输出）
+python mqtt_subscriber.py --log-file logs/mqtt_subscriber.log --validate
+
+# 使用指定配置文件
+python mqtt_subscriber.py --config config.json --validate
+```
+
+**一键启动（虚拟环境 + 日志保存）**：在 `mqtt-client` 目录下执行：
+
+```bash
+chmod +x run_subscriber_with_log.sh
+./run_subscriber_with_log.sh
+```
+
+脚本会创建/激活虚拟环境、安装依赖、以 `--validate` 启动订阅，并将输出同时写入 `logs/mqtt_subscriber_YYYYMMDD_HHMMSS.log`，按 Ctrl+C 停止。
+
+### 校验项说明
+
+开启 `--validate` 时，会根据主题对 payload 做简单校验：
+
+- **senhub/gateway/status**：`type`、`gateway_id`、`timestamp`；`type` 为 online/offline。
+- **senhub/device/status**：`entity_type`、`device_id`、`type`、`timestamp`；camera 含 `device_info`（含 `camera_type`），radar 含 `radar_info`。
+- **senhub/assembly/+/status**：`assembly_id`、`type`、`timestamp`、`assembly_info`（可含 longitude、latitude、device_ids）。
+- **senhub/report/+**：`device_id`、`event_id`、`event_key`、`flowId`。
+
+校验失败时打印 WARNING 及缺失/异常字段，不中断运行。
+
+### 联调建议
+
+1. 先启动 `python mqtt_subscriber.py --validate`。
+2. 再启动或重启网关，观察是否收到 `senhub/gateway/status` 的 online。
+3. 触发设备上线/下线或装置变更，观察 `senhub/device/status`、`senhub/assembly/+/status` 消息格式。
+4. 触发报警并执行带 mqtt_publish 的工作流，观察 `senhub/report/+` 是否含 `event_id`、`event_key` 等。
+
+---
+
 ## 开发说明
 
 ### 代码结构
 
-- `mqtt_test_client.py`: 主测试程序
+- `mqtt_test_client.py`: 主测试程序（命令下发与响应）
   - `MqttTestClient`: MQTT测试客户端类
   - 各种测试方法（`test_capture`, `test_ptz_control`等）
   - 报告生成功能
+- `mqtt_subscriber.py`: MQTT 监听测试（仅订阅、可选校验）
+  - 默认订阅 `senhub/#`，可指定 `--topics`、`--validate`、`--duration`
 
 ### 扩展测试
 

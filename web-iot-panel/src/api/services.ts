@@ -909,6 +909,24 @@ export const radarService = {
   },
 
   /**
+   * 获取当前侵入检测是否开启
+   */
+  async getDetectionEnabled(deviceId: string): Promise<{ data: { deviceId: string; detectionEnabled: boolean } }> {
+    const response = await get<{ deviceId: string; detectionEnabled: boolean }>(`/radar/${encodeURIComponent(deviceId)}/detection`);
+    return response as any;
+  },
+
+  /**
+   * 开启或关闭侵入检测
+   * @param deviceId 雷达设备 ID
+   * @param enabled true 开启检测，false 仅推送点云（关闭检测，减轻队列压力）
+   */
+  async setDetectionEnabled(deviceId: string, enabled: boolean): Promise<{ data: { deviceId: string; detectionEnabled: boolean } }> {
+    const response = await put<{ deviceId: string; detectionEnabled: boolean }>(`/radar/${encodeURIComponent(deviceId)}/detection`, { enabled });
+    return response as any;
+  },
+
+  /**
    * 获取背景模型列表
    */
   async getBackgrounds(deviceId: string) {
@@ -949,11 +967,36 @@ export const radarService = {
   },
 
   /**
-   * WebSocket连接（需要在组件中实现）
+   * 解析点云二进制帧（支撑 20 万点/秒高吞吐）
+   * 格式（小端序）：1B type(0) + 8B timestamp + 4B pointCount + 每点 13B (x,y,z float + r byte)
    */
-  connectWebSocket(deviceId: string, onMessage: (data: any) => void) {
-    // 从API配置获取基础URL（去掉/api前缀，因为WebSocket路径是完整的）
-    // Spark WebSocket不支持路径参数，使用查询参数传递deviceId
+  parsePointCloudBinary(ab: ArrayBuffer): { type: 'pointcloud'; points: Array<{ x: number; y: number; z: number; r?: number }>; timestamp: number; pointCount: number } | null {
+    if (ab.byteLength < 1 + 8 + 4) return null;
+    const dv = new DataView(ab);
+    let offset = 0;
+    const type = dv.getUint8(offset); offset += 1;
+    if (type !== 0) return null;
+    const timestamp = Number(dv.getBigUint64(offset, true)); offset += 8;
+    const pointCount = dv.getUint32(offset, true); offset += 4;
+    const expectedLen = 1 + 8 + 4 + pointCount * 13;
+    if (ab.byteLength < expectedLen) return null;
+    const points: Array<{ x: number; y: number; z: number; r?: number }> = [];
+    for (let i = 0; i < pointCount; i++) {
+      const x = dv.getFloat32(offset, true);
+      const y = dv.getFloat32(offset + 4, true);
+      const z = dv.getFloat32(offset + 8, true);
+      const r = dv.getUint8(offset + 12);
+      offset += 13;
+      points.push({ x, y, z, r });
+    }
+    return { type: 'pointcloud', points, timestamp, pointCount };
+  },
+
+  /**
+   * WebSocket连接（需要在组件中实现）
+   * @param options.onBinaryPointCloud 若提供，点云二进制帧将直接传入（可转给 Worker），不再在主线程解析
+   */
+  connectWebSocket(deviceId: string, onMessage: (data: any) => void, options?: { onBinaryPointCloud?: (buffer: ArrayBuffer) => void }) {
     const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://192.168.1.210:8084/api';
     const baseUrl = apiBaseUrl.replace('/api', '').replace('http://', '').replace('https://', '');
     const protocol = apiBaseUrl.startsWith('https') ? 'wss:' : 'ws:';
@@ -964,7 +1007,6 @@ export const radarService = {
 
     ws.onopen = () => {
       console.log('Radar WebSocket连接成功:', deviceId);
-      // 发送订阅消息（可选）
       try {
         ws.send(JSON.stringify({ type: 'subscribe', topics: ['pointcloud', 'intrusion', 'status'] }));
       } catch (e) {
@@ -974,7 +1016,28 @@ export const radarService = {
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const raw = event.data;
+        if (raw instanceof ArrayBuffer) {
+          if (options?.onBinaryPointCloud) {
+            options.onBinaryPointCloud(raw);
+            return;
+          }
+          const data = this.parsePointCloudBinary(raw);
+          if (data) onMessage(data);
+          return;
+        }
+        if (raw instanceof Blob) {
+          raw.arrayBuffer().then((ab) => {
+            if (options?.onBinaryPointCloud) {
+              options.onBinaryPointCloud(ab);
+              return;
+            }
+            const data = this.parsePointCloudBinary(ab);
+            if (data) onMessage(data);
+          }).catch((e) => console.error('点云二进制解析失败', e));
+          return;
+        }
+        const data = JSON.parse(raw as string);
         onMessage(data);
       } catch (e) {
         console.error('解析WebSocket消息失败', e, event.data);

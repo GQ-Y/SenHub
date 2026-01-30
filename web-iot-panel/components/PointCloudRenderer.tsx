@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import * as THREE from 'three';
+// 使用 WebGPU 构建以优先走 WebGPU 渲染（Chrome 等支持），不支持时自动回退 WebGL2
+import * as THREE from 'three/webgpu';
 
 interface Point {
   x: number;
@@ -10,8 +11,24 @@ interface Point {
   zoneId?: string; // 标记该点所属的防区ID（如果是侵入点）
 }
 
+/** 由 Worker 输出的点云缓冲，用于 20 万点/秒低占用显示 */
+export interface PointCloudBuffer {
+  positions: Float32Array;
+  colors: Float32Array;
+  count: number;
+}
+
+/** 预分配最大点数（与 Worker MAX_POINTS 一致），避免每帧替换 Buffer 导致全量 GPU 上传 */
+const POINTCLOUD_MAX_POINTS = 250000;
+
 interface PointCloudRendererProps {
   points: Point[];
+  /** 可选：Worker 输出的缓冲，优先于 points 用于主点云，减少主线程与内存占用 */
+  pointCloudBuffer?: PointCloudBuffer | null;
+  /** 接收与渲染解耦：主线程只写 ref，渲染循环内消费，不依赖 React 更新时机；与 pointCloudBuffer 二选一使用 */
+  pendingFrameRef?: React.MutableRefObject<PointCloudBuffer | null>;
+  /** 渲染循环消费完一帧后回调，用于 UI 显示点数（与 pendingFrameRef 配套） */
+  onFrameConsumed?: (count: number) => void;
   color?: string | ((point: Point) => string);
   pointSize?: number;
   backgroundColor?: string;
@@ -32,6 +49,9 @@ interface PointCloudRendererProps {
  */
 export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   points,
+  pointCloudBuffer = null,
+  pendingFrameRef,
+  onFrameConsumed,
   color = '#ffffff',
   pointSize = 0.01,
   backgroundColor = '#000000',
@@ -47,12 +67,13 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const rendererRef = useRef<THREE.Renderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<any>(null);
   const pointsRef = useRef<THREE.Points | null>(null);
   const modelingRef = useRef<THREE.LineSegments | null>(null);
   const backgroundPointsRef = useRef<THREE.Points | null>(null); // 背景参考点云
+  const intrusionPointsRef = useRef<THREE.Points | null>(null);  // Worker 模式下侵入点（红）
   const animationFrameRef = useRef<number | null>(null);
   const cameraInitializedRef = useRef<boolean>(false);
 
@@ -62,6 +83,10 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   const gridHelperRef = useRef<THREE.GridHelper | null>(null);
   const axesHelperRef = useRef<THREE.AxesHelper | null>(null);
   const colorModeRef = useRef(colorMode);
+  const pendingFrameRefRef = useRef(pendingFrameRef);
+  const onFrameConsumedRef = useRef(onFrameConsumed);
+  pendingFrameRefRef.current = pendingFrameRef;
+  onFrameConsumedRef.current = onFrameConsumed;
 
   useEffect(() => {
     colorModeRef.current = colorMode;
@@ -87,13 +112,13 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    // 创建渲染器（启用高性能模式）
-    const renderer = new THREE.WebGLRenderer({
+    // 使用 WebGPURenderer（Chrome 等支持 WebGPU 时走 GPU 加速，否则自动回退 WebGL2）
+    const renderer = new THREE.WebGPURenderer({
       antialias: true,
-      powerPreference: 'high-performance' // 性能优先
+      powerPreference: 'high-performance'
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制像素比以提高性能
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -107,12 +132,38 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       gridHelperRef.current = gridHelper;
     }
 
-    // 添加坐标轴
+    // 添加坐标轴及 X/Y/Z 轴标签（与距离环同风格：Canvas 纹理 + Sprite）
     if (showAxes) {
       const axesSize = 10;
       const axesHelper = new THREE.AxesHelper(axesSize);
       scene.add(axesHelper);
       axesHelperRef.current = axesHelper;
+
+      const labelOffset = 1.2;
+      const axisLabels = [
+        { letter: 'X', position: new THREE.Vector3(axesSize + labelOffset, 0, 0), color: 'rgba(255, 80, 80, 0.9)' },
+        { letter: 'Y', position: new THREE.Vector3(0, axesSize + labelOffset, 0), color: 'rgba(80, 255, 80, 0.9)' },
+        { letter: 'Z', position: new THREE.Vector3(0, 0, axesSize + labelOffset), color: 'rgba(80, 144, 255, 0.9)' }
+      ];
+      axisLabels.forEach(({ letter, position, color }) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          canvas.width = 64;
+          canvas.height = 64;
+          ctx.fillStyle = color;
+          ctx.font = 'bold 36px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(letter, 32, 32);
+          const texture = new THREE.CanvasTexture(canvas);
+          const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+          const sprite = new THREE.Sprite(mat);
+          sprite.position.copy(position);
+          sprite.scale.set(1.5, 1.5, 1);
+          scene.add(sprite);
+        }
+      });
     }
 
     // 添加范围环
@@ -153,15 +204,86 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       console.warn('OrbitControls not available, using basic controls');
     });
 
-    // 渲染循环
-    const animate = () => {
-      animationFrameRef.current = requestAnimationFrame(animate);
+    // 渲染循环：接收与渲染解耦——在 rAF 内消费待显示帧，再 renderAsync（参考 PCL/RViz 单视觉器+互斥更新）
+    const animate = async () => {
+      animationFrameRef.current = requestAnimationFrame(() => animate());
+
+      const pref = pendingFrameRefRef.current;
+      if (pref?.current) {
+        const buf = pref.current;
+        pref.current = null;
+        onFrameConsumedRef.current?.(buf.count);
+        // count===0 时保留上一帧点云不更新，避免 Worker 空窗导致闪黑/消失
+        if (buf.count === 0) {
+          if (controlsRef.current) controlsRef.current.update();
+          await renderer.renderAsync(scene, camera);
+          return;
+        }
+        const n = Math.min(buf.count, POINTCLOUD_MAX_POINTS);
+        const copyLen = n * 3;
+        if (!pointsRef.current && sceneRef.current) {
+          const posArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
+          const colArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
+          posArr.set(buf.positions.subarray(0, copyLen));
+          for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2]; // Z 轴取反，与实际空间一致
+          colArr.set(buf.colors.subarray(0, copyLen));
+          const posAttr = new THREE.Float32BufferAttribute(posArr, 3);
+          const colAttr = new THREE.Float32BufferAttribute(colArr, 3);
+          posAttr.setUsage(THREE.DynamicDrawUsage);
+          colAttr.setUsage(THREE.DynamicDrawUsage);
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', posAttr);
+          geometry.setAttribute('color', colAttr);
+          geometry.setDrawRange(0, n);
+          geometry.computeBoundingSphere();
+          const material = new THREE.PointsMaterial({
+            size: pointSize,
+            vertexColors: true,
+            sizeAttenuation: true
+          });
+          const mesh = new THREE.Points(geometry, material);
+          mesh.frustumCulled = false;
+          pointsRef.current = mesh;
+          sceneRef.current!.add(mesh);
+        } else if (pointsRef.current) {
+          const geom = pointsRef.current.geometry;
+          const posArr = geom.attributes.position.array as Float32Array;
+          const colArr = geom.attributes.color.array as Float32Array;
+          posArr.set(buf.positions.subarray(0, copyLen));
+          for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2]; // Z 轴取反
+          colArr.set(buf.colors.subarray(0, copyLen));
+          geom.attributes.position.needsUpdate = true;
+          geom.attributes.color.needsUpdate = true;
+          geom.setDrawRange(0, n);
+          geom.computeBoundingSphere();
+        }
+        if (!cameraInitializedRef.current && cameraRef.current && n > 0) {
+          const pos = buf.positions;
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          for (let i = 0; i < n; i++) {
+            const x = pos[i * 3], y = pos[i * 3 + 1], z = -pos[i * 3 + 2]; // Z 取反以匹配显示
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+          }
+          const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          const size = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+          const distance = Math.max(size * 1.5, 8);
+          cameraRef.current.position.set(cx + distance, cy + distance, cz + distance);
+          cameraRef.current.lookAt(cx, cy, cz);
+          if (controlsRef.current) {
+            controlsRef.current.target.set(cx, cy, cz);
+            controlsRef.current.update();
+          }
+          cameraInitializedRef.current = true;
+        }
+      }
 
       if (controlsRef.current) {
         controlsRef.current.update();
       }
 
-      renderer.render(scene, camera);
+      await renderer.renderAsync(scene, camera);
     };
     animate();
 
@@ -182,8 +304,16 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
       if (renderer) {
-        container.removeChild(renderer.domElement);
-        renderer.dispose();
+        if (renderer.domElement && container.contains(renderer.domElement)) {
+          container.removeChild(renderer.domElement);
+        }
+        try {
+          if (typeof renderer.dispose === 'function') {
+            renderer.dispose();
+          }
+        } catch (e) {
+          console.warn('PointCloudRenderer cleanup:', e);
+        }
       }
       cameraInitializedRef.current = false;
     };
@@ -299,19 +429,124 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     return [r, g, b];
   };
 
-  // 更新点云数据
+  // 更新点云数据（Worker 缓冲路径：低占用、高点数；若使用 pendingFrameRef 则几何只在 rAF 内更新，此处跳过）
   useEffect(() => {
-    if (!sceneRef.current || points.length === 0) {
-      // 清空点云
+    if (!sceneRef.current) return;
+    if (pendingFrameRefRef.current) return; // 接收与渲染解耦：几何由 animate 消费 ref 更新，不依赖 state
+    const scene = sceneRef.current;
+
+    if (pointCloudBuffer != null && pointCloudBuffer.count > 0) {
+      const { positions, colors, count } = pointCloudBuffer;
+      const n = Math.min(count, POINTCLOUD_MAX_POINTS);
+      const copyLen = n * 3;
+
+      if (!pointsRef.current) {
+        // 预分配一次，之后只做原地拷贝 + needsUpdate，避免每帧全量 GPU 上传
+        const posArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
+        const colArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
+        posArr.set(positions.subarray(0, copyLen));
+        for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2]; // Z 轴取反
+        colArr.set(colors.subarray(0, copyLen));
+        const posAttr = new THREE.Float32BufferAttribute(posArr, 3);
+        const colAttr = new THREE.Float32BufferAttribute(colArr, 3);
+        posAttr.setUsage(THREE.DynamicDrawUsage);
+        colAttr.setUsage(THREE.DynamicDrawUsage);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', posAttr);
+        geometry.setAttribute('color', colAttr);
+        geometry.setDrawRange(0, n);
+        geometry.computeBoundingSphere();
+        const material = new THREE.PointsMaterial({
+          size: pointSize,
+          vertexColors: true,
+          sizeAttenuation: true
+        });
+        const mesh = new THREE.Points(geometry, material);
+        mesh.frustumCulled = false;
+        pointsRef.current = mesh;
+        scene.add(mesh);
+      } else {
+        const geom = pointsRef.current.geometry;
+        const posArr = geom.attributes.position.array as Float32Array;
+        const colArr = geom.attributes.color.array as Float32Array;
+        posArr.set(positions.subarray(0, copyLen));
+        for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2]; // Z 轴取反
+        colArr.set(colors.subarray(0, copyLen));
+        geom.attributes.position.needsUpdate = true;
+        geom.attributes.color.needsUpdate = true;
+        geom.setDrawRange(0, n);
+        geom.computeBoundingSphere();
+      }
+
+      // Worker 路径：首次有数据时初始化相机对准点云
+      if (!cameraInitializedRef.current && cameraRef.current) {
+        const pos = pointCloudBuffer.positions;
+        const numPoints = n;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < numPoints; i++) {
+          const x = pos[i * 3], y = pos[i * 3 + 1], z = -pos[i * 3 + 2]; // Z 取反以匹配显示
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        }
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+        const size = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+        const distance = Math.max(size * 1.5, 8);
+        cameraRef.current.position.set(cx + distance, cy + distance, cz + distance);
+        cameraRef.current.lookAt(cx, cy, cz);
+        if (controlsRef.current) {
+          controlsRef.current.target.set(cx, cy, cz);
+          controlsRef.current.update();
+        }
+        cameraInitializedRef.current = true;
+      }
+      // 侵入点（红）第二层：points 为侵入点数组
+      if (points.length > 0) {
+        const pos = new Float32Array(points.length * 3);
+        const col = new Float32Array(points.length * 3);
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          pos[i * 3] = p.x; pos[i * 3 + 1] = p.z; pos[i * 3 + 2] = -p.y; // Z 轴取反与主点云一致
+          col[i * 3] = 1; col[i * 3 + 1] = 0; col[i * 3 + 2] = 0;
+        }
+        if (intrusionPointsRef.current) {
+          const g = intrusionPointsRef.current.geometry;
+          g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+          g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          g.setDrawRange(0, points.length);
+        } else {
+          const geom = new THREE.BufferGeometry();
+          geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+          geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          const mat = new THREE.PointsMaterial({ size: pointSize * 1.5, vertexColors: true, sizeAttenuation: true });
+          const mesh = new THREE.Points(geom, mat);
+          intrusionPointsRef.current = mesh;
+          scene.add(mesh);
+        }
+      } else if (intrusionPointsRef.current) {
+        scene.remove(intrusionPointsRef.current);
+        intrusionPointsRef.current.geometry.dispose();
+        (intrusionPointsRef.current.material as THREE.Material).dispose();
+        intrusionPointsRef.current = null;
+      }
+      return;
+    }
+
+    // count===0 时保留上一帧点云，不卸载 mesh，避免 Worker 空窗导致闪黑
+    if (pointCloudBuffer != null && pointCloudBuffer.count === 0) {
+      return;
+    }
+
+    // 传统 points 数组路径
+    if (points.length === 0) {
       if (pointsRef.current) {
-        sceneRef.current?.remove(pointsRef.current);
+        scene.remove(pointsRef.current);
         pointsRef.current.geometry.dispose();
         (pointsRef.current.material as THREE.Material).dispose();
         pointsRef.current = null;
       }
-      // 清空建模连线
       if (modelingRef.current) {
-        sceneRef.current?.remove(modelingRef.current);
+        scene.remove(modelingRef.current);
         modelingRef.current.geometry.dispose();
         (modelingRef.current.material as THREE.Material).dispose();
         modelingRef.current = null;
@@ -319,9 +554,13 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       return;
     }
 
-    const scene = sceneRef.current;
-
-    // 1. 移除旧的对象
+    // 1. 移除旧的对象（传统路径下无 intrusionPointsRef，仅 buffer 路径使用）
+    if (intrusionPointsRef.current) {
+      scene.remove(intrusionPointsRef.current);
+      intrusionPointsRef.current.geometry.dispose();
+      (intrusionPointsRef.current.material as THREE.Material).dispose();
+      intrusionPointsRef.current = null;
+    }
     if (pointsRef.current) {
       scene.remove(pointsRef.current);
       pointsRef.current.geometry.dispose();
@@ -362,9 +601,9 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       const bgGeom = new THREE.BufferGeometry();
       const bgPos = new Float32Array(defenseBackgroundPoints.length * 3);
       defenseBackgroundPoints.forEach((p, i) => {
-        bgPos[i * 3] = p.x;     // Three.js X
-        bgPos[i * 3 + 1] = p.z; // Three.js Y (Height, 3.5m)
-        bgPos[i * 3 + 2] = p.y; // Three.js Z
+        bgPos[i * 3] = p.x;
+        bgPos[i * 3 + 1] = p.z;
+        bgPos[i * 3 + 2] = -p.y; // Z 轴取反与主点云一致
       });
       bgGeom.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
       const bgMat = new THREE.PointsMaterial({ size: 0.005, color: 0x333333, transparent: true, opacity: 0.3 });
@@ -415,10 +654,10 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
 
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
-      // 恢复正常坐标系映射：以 Z 为高度 (3.5m)，X/Y 为平铺坐标
+      // 恢复正常坐标系映射：以 Z 为高度 (3.5m)，X/Y 为平铺坐标；Z 取反与实际空间一致
       const tx = point.x;
       const ty = point.z; // 三维空间的高度 (Up)
-      const tz = point.y;
+      const tz = -point.y; // Z 轴取反，避免镜像
 
       positions[i * 3] = tx;
       positions[i * 3 + 1] = ty;
@@ -493,10 +732,10 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         // 在防区模式下，只对侵入目标（红色点）进行建模
         if (colorMode === 'defense' && !isIntruderArr[idx]) return;
 
-        // 统一映射逻辑：Radar.z -> Three.js Y (Height)
+        // 统一映射逻辑：Radar.z -> Three.js Y；Z 取反与主点云一致
         const tx = p.x;
         const ty = p.z;
-        const tz = p.y;
+        const tz = -p.y;
 
         const gx = Math.floor(tx / res);
         const gy = Math.floor(ty / res);
@@ -514,7 +753,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
 
         const tx = p.x;
         const ty = p.z;
-        const tz = p.y;
+        const tz = -p.y;
 
         const gx = Math.floor(tx / res);
         const gy = Math.floor(ty / res);
@@ -530,10 +769,9 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
                 cellPoints.forEach(j => {
                   if (i === j) return;
                   const dp = points[j];
-                  // 邻居也需要映射
                   const dtx = dp.x;
                   const dty = dp.z;
-                  const dtz = dp.y;
+                  const dtz = -dp.y; // Z 取反一致
 
                   const distSq = (tx - dtx) ** 2 + (ty - dty) ** 2 + (tz - dtz) ** 2;
                   if (distSq < maxDistSq) {
@@ -550,8 +788,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         neighbors.slice(0, modelingMaxConnections).forEach(n => {
           if (i < n.idx) { // 避免双向连线重复添加
             const p2 = points[n.idx];
-            // 写入映射后的坐标到连线缓存
-            linePositions.push(tx, ty, tz, p2.x, p2.z, p2.y);
+            // 写入映射后的坐标到连线缓存（Z 取反一致）
+            linePositions.push(tx, ty, tz, p2.x, p2.z, -p2.y);
             const r1 = colors[i * 3], g1 = colors[i * 3 + 1], b1 = colors[i * 3 + 2];
             const r2 = colors[n.idx * 3], g2 = colors[n.idx * 3 + 1], b2 = colors[n.idx * 3 + 2];
             lineColors.push(r1, g1, b1, r2, g2, b2);
@@ -595,10 +833,30 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         cameraInitializedRef.current = true;
       }
     }
-  }, [points, color, pointSize, colorMode, showModeling, modelingDistance, defenseBackgroundPoints, shrinkDistance]);
+  }, [points, pointCloudBuffer, color, pointSize, colorMode, showModeling, modelingDistance, defenseBackgroundPoints, shrinkDistance]);
 
   // 计算统计信息
   const statsInfo = useMemo(() => {
+    if (pointCloudBuffer != null && pointCloudBuffer.count > 0) {
+      const pos = pointCloudBuffer.positions;
+      const n = pointCloudBuffer.count;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (let i = 0; i < n; i++) {
+        const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+      }
+      const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1, rangeZ = maxZ - minZ || 1;
+      const scale = rangeX >= rangeZ ? (rangeX > rangeY ? rangeX : rangeY) : (rangeZ > rangeY ? rangeZ : rangeY);
+      return {
+        pointCount: n,
+        rangeX: (rangeX * scale).toFixed(1),
+        rangeY: (rangeY * scale).toFixed(1),
+        rangeZ: (rangeZ * scale).toFixed(1),
+        unit: 'm'
+      };
+    }
     if (points.length === 0) return null;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const point of points) {
@@ -617,7 +875,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       rangeZ: (rangeZ * scale).toFixed(1),
       unit
     };
-  }, [points]);
+  }, [points, pointCloudBuffer]);
 
   return (
     <div ref={containerRef} className="w-full h-full" style={{ position: 'relative' }}>
