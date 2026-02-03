@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -115,6 +116,18 @@ public class DeviceScanner {
                     hcNetSDK.NET_DVR_StopListen_V30(listenHandle);
                 }
                 listenHandle = -1;
+            }
+            if (scanExecutor != null && !scanExecutor.isShutdown()) {
+                scanExecutor.shutdown();
+                try {
+                    if (!scanExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                        scanExecutor.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    scanExecutor.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+                logger.info("设备扫描器线程池已关闭");
             }
             running = false;
             logger.info("设备扫描器已停止");
@@ -232,44 +245,51 @@ public class DeviceScanner {
     /**
      * SDK消息回调实现
      */
+    /**
+     * SDK 消息回调在 native 线程执行；pAlarmer/pAlarmInfo 可能为 null，且仅在回调内有效。
+     * 必须先判空并在访问 pAlarmer 字段前调用 pAlarmer.read()，回调内禁止调用任何海康 SDK 接口。
+     */
     private class DeviceMessageCallback implements HCNetSDK.FMSGCallBack {
         @Override
         public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen,
                 Pointer pUser) {
             try {
+                if (pAlarmer == null) {
+                    logger.debug("设备消息回调 pAlarmer 为 null, lCommand=0x{}", Integer.toHexString(lCommand));
+                    return;
+                }
+                pAlarmer.read();
                 if (lCommand == NET_DVR_DEVICE_ADD) {
                     // 设备上线
                     if (pAlarmInfo != null && dwBufLen > 0) {
-                        // 从消息中提取设备信息
-                        // 注意：实际的消息格式需要根据SDK文档来确定
-                        // 这里是一个简化的实现
                         byte[] buffer = pAlarmInfo.getByteArray(0, Math.min(dwBufLen, 256));
                         String message = new String(buffer, StandardCharsets.UTF_8).trim();
-
-                        // 解析设备信息（简化处理，实际需要根据SDK消息格式解析）
-                        // 通常消息包含IP、端口等信息
                         logger.debug("收到设备上线消息: {}", message);
-
-                        // 从pAlarmer中提取设备信息
-                        if (pAlarmer != null && pAlarmer.byDeviceIPValid == 1) {
-                            String deviceIP = new String(pAlarmer.sDeviceIP, StandardCharsets.UTF_8).trim();
-                            int port = deviceConfig.getDefaultPort();
-                            if (pAlarmer.byLinkPortValid == 1) {
-                                port = pAlarmer.wLinkPort;
+                    }
+                    if (pAlarmer.byDeviceIPValid == 1) {
+                        String deviceIP = new String(pAlarmer.sDeviceIP, StandardCharsets.UTF_8).trim();
+                        int nullIndex = deviceIP.indexOf('\0');
+                        if (nullIndex >= 0) {
+                            deviceIP = deviceIP.substring(0, nullIndex);
+                        }
+                        int port = deviceConfig.getDefaultPort();
+                        if (pAlarmer.byLinkPortValid == 1) {
+                            port = pAlarmer.wLinkPort & 0xFFFF;
+                        }
+                        String deviceName = null;
+                        if (pAlarmer.byDeviceNameValid == 1) {
+                            deviceName = new String(pAlarmer.sDeviceName, StandardCharsets.UTF_8).trim();
+                            int nn = deviceName.indexOf('\0');
+                            if (nn >= 0) {
+                                deviceName = deviceName.substring(0, nn);
                             }
-                            String deviceName = null;
-                            if (pAlarmer.byDeviceNameValid == 1) {
-                                deviceName = new String(pAlarmer.sDeviceName, StandardCharsets.UTF_8).trim();
-                            }
-                            if (!deviceIP.isEmpty()) {
-                                handleDeviceFound(deviceIP, port, deviceName);
-                            }
+                        }
+                        if (!deviceIP.isEmpty()) {
+                            handleDeviceFound(deviceIP, port, deviceName);
                         }
                     }
                 } else if (lCommand == NET_DVR_DEVICE_OFFLINE) {
-                    // 设备离线
                     logger.debug("收到设备离线消息");
-                    // 可以在这里更新设备状态为离线
                 }
             } catch (Exception e) {
                 logger.error("处理设备消息失败", e);

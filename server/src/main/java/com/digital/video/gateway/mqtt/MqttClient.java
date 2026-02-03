@@ -9,6 +9,9 @@ import org.slf4j.LoggerFactory;
 import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -28,7 +31,10 @@ public class MqttClient {
     /** 连接/重连成功后调用，用于重新订阅 mqtt_subscribe 主题等 */
     private volatile Runnable onConnectedCallback;
     private volatile boolean reconnecting = false;  // 重连锁，避免并发重连
-    private final Object reconnectLock = new Object();  // 重连同步锁
+    private volatile boolean closed = false;  // 关闭标志，重连循环据此退出
+    private final Object reconnectLock = new Object();
+    /** 单线程重连调度器，持续重试直至连接成功或 close() */
+    private volatile ScheduledExecutorService reconnectScheduler;
 
     public MqttClient(Config.MqttConfig config) {
         this.config = config;
@@ -281,8 +287,10 @@ public class MqttClient {
         this.onConnectedCallback = callback;
     }
 
+    private static final int RECONNECT_DELAY_SECONDS = 5;
+
     /**
-     * 重连
+     * 重连：使用单线程调度器持续重试，直至连接成功或 close() 被调用
      */
     private void reconnect() {
         synchronized (reconnectLock) {
@@ -292,43 +300,43 @@ public class MqttClient {
             }
             reconnecting = true;
         }
-        
-        // 在后台线程中执行重连，避免阻塞回调线程
-        new Thread(() -> {
-            try {
-                int maxRetries = 5;
-                int retryCount = 0;
-                while (retryCount < maxRetries && !connected) {
-                    try {
-                        Thread.sleep(5000); // 等待5秒后重连
-                        logger.info("尝试重连MQTT服务器 ({}/{})", retryCount + 1, maxRetries);
-                        if (connect()) {
-                            logger.info("MQTT重连成功");
-                            synchronized (reconnectLock) {
-                                reconnecting = false;
-                            }
-                            return;
-                        }
-                        retryCount++;
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        synchronized (reconnectLock) {
-                            reconnecting = false;
-                        }
-                        return;
-                    }
-                }
-                logger.error("MQTT重连失败，已达到最大重试次数");
-                synchronized (reconnectLock) {
-                    reconnecting = false;
-                }
-            } catch (Exception e) {
-                logger.error("MQTT重连过程异常", e);
-                synchronized (reconnectLock) {
-                    reconnecting = false;
-                }
+        if (closed) {
+            synchronized (reconnectLock) { reconnecting = false; }
+            return;
+        }
+        if (reconnectScheduler == null) {
+            reconnectScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "MQTT-Reconnect");
+                t.setDaemon(true);
+                return t;
+            });
+        }
+        reconnectScheduler.schedule(this::reconnectOnce, RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 执行一次重连尝试；若未关闭且未连接成功则再次调度自身
+     */
+    private void reconnectOnce() {
+        if (closed) {
+            synchronized (reconnectLock) { reconnecting = false; }
+            return;
+        }
+        try {
+            logger.info("尝试重连 MQTT 服务器");
+            if (connect()) {
+                logger.info("MQTT 重连成功");
+                synchronized (reconnectLock) { reconnecting = false; }
+                return;
             }
-        }, "MQTT Reconnect Thread").start();
+        } catch (Exception e) {
+            logger.warn("MQTT 重连尝试异常", e);
+        }
+        if (closed || reconnectScheduler == null) {
+            synchronized (reconnectLock) { reconnecting = false; }
+            return;
+        }
+        reconnectScheduler.schedule(this::reconnectOnce, RECONNECT_DELAY_SECONDS, TimeUnit.SECONDS);
     }
 
     /**
@@ -350,6 +358,15 @@ public class MqttClient {
      * 关闭客户端
      */
     public void close() {
+        closed = true;
+        if (reconnectScheduler != null) {
+            reconnectScheduler.shutdownNow();
+            try {
+                reconnectScheduler.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         disconnect();
         try {
             if (client != null) {

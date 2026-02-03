@@ -11,7 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Future;
 
 /**
@@ -22,9 +24,20 @@ public class FlowExecutor {
 
     private final Map<String, FlowNodeHandler> handlers = new HashMap<>();
     private int maxDepth = 50; // 防止循环
-    
-    // 用于并行执行多个分支
-    private static final ExecutorService branchExecutor = Executors.newCachedThreadPool();
+
+    /** 并行分支线程池：有界队列与固定上限，避免无界增长 */
+    private static final int BRANCH_POOL_SIZE = 16;
+    private static final int BRANCH_QUEUE_CAPACITY = 256;
+    private static final ExecutorService branchExecutor = new ThreadPoolExecutor(
+            BRANCH_POOL_SIZE, BRANCH_POOL_SIZE, 60L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(BRANCH_QUEUE_CAPACITY),
+            r -> {
+                Thread t = new Thread(r, "FlowBranch");
+                t.setDaemon(true);
+                return t;
+            },
+            (r, e) -> logger.warn("工作流分支队列已满，拒绝执行")
+    );
 
     public FlowExecutor() {
     }
@@ -432,6 +445,24 @@ public class FlowExecutor {
             for (FlowContext branchContext : branchContexts) {
                 collectTempFilePaths(branchContext, context);
             }
+        }
+    }
+
+    /**
+     * 关闭工作流分支线程池（用于进程优雅退出）
+     */
+    public static void shutdown() {
+        if (branchExecutor != null && !branchExecutor.isShutdown()) {
+            branchExecutor.shutdown();
+            try {
+                if (!branchExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    branchExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                branchExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("工作流分支线程池已关闭");
         }
     }
 }

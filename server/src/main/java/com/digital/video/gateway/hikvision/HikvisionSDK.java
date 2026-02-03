@@ -19,6 +19,12 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 海康威视SDK封装类
@@ -39,6 +45,13 @@ public class HikvisionSDK implements DeviceSDK {
     
     // 保持报警回调的强引用，防止被GC回收导致native回调失效
     private AlarmMessageCallback alarmCallback;
+
+    /** 海康 SDK 调用串行到单线程执行，避免多线程并发导致 native 崩溃；见 server/docs/hikvision-sdk-usage-and-thread-model.md */
+    private volatile ExecutorService hikvisionExecutor;
+
+    private static final int LOGIN_TIMEOUT_MS = 30_000;
+    private static final int CAPTURE_TIMEOUT_MS = 15_000;
+    private static final int DEFAULT_SDK_TIMEOUT_MS = 10_000;
 
     private HikvisionSDK() {
     }
@@ -102,12 +115,37 @@ public class HikvisionSDK implements DeviceSDK {
             }
 
             initialized = true;
+            hikvisionExecutor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "HikvisionSDK-Worker");
+                t.setDaemon(false);
+                return t;
+            });
             logger.info("海康SDK初始化成功");
             return true;
 
         } catch (Exception e) {
             logger.error("海康SDK初始化异常", e);
             return false;
+        }
+    }
+
+    /**
+     * 在海康专用单线程执行器上执行任务，带超时与异常隔离；避免多线程并发调用 SDK 导致 native 崩溃。
+     */
+    private <T> T runOnExecutor(long timeoutMs, Callable<T> task, T timeoutOrErrorFallback) {
+        if (hikvisionExecutor == null || hCNetSDK == null) {
+            logger.warn("海康SDK未初始化或执行器未就绪");
+            return timeoutOrErrorFallback;
+        }
+        Future<T> future = hikvisionExecutor.submit(task);
+        try {
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            logger.warn("海康SDK调用超时 ({}ms)", timeoutMs);
+            return timeoutOrErrorFallback;
+        } catch (Exception e) {
+            logger.error("海康SDK调用异常", e);
+            return timeoutOrErrorFallback;
         }
     }
 
@@ -319,6 +357,19 @@ public class HikvisionSDK implements DeviceSDK {
      */
     @Override
     public void cleanup() {
+        if (hikvisionExecutor != null) {
+            hikvisionExecutor.shutdown();
+            try {
+                if (!hikvisionExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    hikvisionExecutor.shutdownNow();
+                    hikvisionExecutor.awaitTermination(5, TimeUnit.SECONDS);
+                }
+            } catch (InterruptedException e) {
+                hikvisionExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            hikvisionExecutor = null;
+        }
         if (initialized && hCNetSDK != null) {
             hCNetSDK.NET_DVR_Cleanup();
             initialized = false;
@@ -386,7 +437,7 @@ public class HikvisionSDK implements DeviceSDK {
     }
 
     /**
-     * 登录设备
+     * 登录设备（经单线程执行器，带超时）
      */
     @Override
     public int login(String ip, int port, String username, String password) {
@@ -394,115 +445,86 @@ public class HikvisionSDK implements DeviceSDK {
             logger.error("SDK未初始化");
             return -1;
         }
-
-        HCNetSDK.NET_DVR_USER_LOGIN_INFO loginInfo = new HCNetSDK.NET_DVR_USER_LOGIN_INFO();
-        HCNetSDK.NET_DVR_DEVICEINFO_V40 deviceInfo = new HCNetSDK.NET_DVR_DEVICEINFO_V40();
-
-        // 设置设备IP地址（按照示例代码的方式）
-        byte[] deviceAddress = new byte[HCNetSDK.NET_DVR_DEV_ADDRESS_MAX_LEN];
-        byte[] ipBytes = ip.getBytes();
-        System.arraycopy(ipBytes, 0, deviceAddress, 0, Math.min(ipBytes.length, deviceAddress.length));
-        loginInfo.sDeviceAddress = deviceAddress;
-
-        // 设置用户名（按照示例代码的方式）
-        byte[] userName = new byte[HCNetSDK.NET_DVR_LOGIN_USERNAME_MAX_LEN];
-        byte[] userBytes = username.getBytes();
-        System.arraycopy(userBytes, 0, userName, 0, Math.min(userBytes.length, userName.length));
-        loginInfo.sUserName = userName;
-
-        // 设置密码（按照示例代码的方式）
-        byte[] passwordBytes = password.getBytes();
-        System.arraycopy(passwordBytes, 0, loginInfo.sPassword, 0,
-                Math.min(passwordBytes.length, loginInfo.sPassword.length));
-
-        // 设置端口和登录模式（注意：wPort是short类型，需要转换）
-        loginInfo.wPort = (short) port;
-        loginInfo.bUseAsynLogin = false; // 同步登录
-        loginInfo.byLoginMode = 0; // 使用SDK私有协议
-        loginInfo.byUseTransport = 0; // 不使用传输层协议
-        loginInfo.byProxyType = 0; // 不使用代理
-        loginInfo.byHttps = 0; // 不使用HTTPS
-
-        // 设置连接超时（可选，默认可能较短）
-        // NET_DVR_SetConnectTime(等待时间ms, 重试次数)
-        hCNetSDK.NET_DVR_SetConnectTime(10000, 3); // 等待10秒，重试3次
-
-        // 确保结构体数据同步到本地内存（JNA需要）
-        loginInfo.write();
-        deviceInfo.write();
-
-        // 执行登录
-        logger.info("开始登录设备: {}:{}, 用户: {}", ip, port, username);
-        logger.debug("登录参数详情: IP={}, Port={}, Username={}, Password长度={}, LoginMode={}",
-                ip, port, username, password != null ? password.length() : 0, loginInfo.byLoginMode);
-
-        int userID = hCNetSDK.NET_DVR_Login_V40(loginInfo, deviceInfo);
-
-        // 读取设备信息（登录成功后设备信息会被填充）
-        deviceInfo.read();
-
-        logger.debug("登录调用返回: userID={}", userID);
-
-        // 检查设备信息（登录成功后设备信息会被填充）
-        if (deviceInfo.struDeviceV30 != null) {
-            int chanNum = deviceInfo.struDeviceV30.byChanNum & 0xFF; // 转换为无符号
-            int startDChan = deviceInfo.struDeviceV30.byStartDChan & 0xFF;
-            logger.debug("设备信息: 通道数={}, 起始通道={}", chanNum, startDChan);
-        }
-
-        // 按照示例代码的逻辑：只要 userID != -1 就认为登录成功（包括 userID=0）
-        if (userID == -1) {
-            int errorCode = hCNetSDK.NET_DVR_GetLastError();
-            logger.error("登录失败，错误码: {} (IP: {}:{}, 用户: {})", errorCode, ip, port, username);
-
-            // 输出常见错误码的含义
-            if (errorCode == HCNetSDK.NET_DVR_PASSWORD_ERROR) {
-                logger.error("错误原因: 用户名或密码错误");
-            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_FAIL_CONNECT) {
-                logger.error("错误原因: 连接服务器失败 (错误码: 7)");
-                logger.error("可能原因: 1)设备不在线或网络不通 2)端口错误 3)防火墙阻止连接");
-                logger.error("         4)设备不是海康品牌，无法使用海康SDK连接 (如天地伟业、大华等品牌需要使用对应的SDK)");
-                logger.error("         5)设备不支持海康SDK的私有协议");
-            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_SEND_ERROR
-                    || errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_ERROR) {
-                logger.error("错误原因: 网络通信错误，请检查网络连接和端口");
-            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_TIMEOUT) {
-                logger.error("错误原因: 网络接收超时，设备可能未响应");
-            } else if (errorCode == 0) {
-                logger.warn("注意: 错误码为0，可能是设备未响应或连接超时");
-                logger.warn("可能原因: 1)设备不在线 2)端口错误 3)防火墙阻止 4)设备不支持该登录方式");
-            } else {
-                logger.warn("其他错误，错误码: {}", errorCode);
-            }
-        } else {
-            logger.info("设备登录成功: {}:{} (userId: {})", ip, port, userID);
-            
-            // 登录成功后自动布防，以接收报警事件
-            if (alarmService != null) {
-                int alarmHandle = setupAlarmChan(userID);
+        return runOnExecutor(LOGIN_TIMEOUT_MS, () -> {
+            int userID = loginImpl(ip, port, username, password);
+            if (userID >= 0 && alarmService != null) {
+                int alarmHandle = setupAlarmChanImpl(userID);
                 if (alarmHandle >= 0) {
                     logger.info("设备已自动布防: {}:{} (userId: {}, alarmHandle: {})", ip, port, userID, alarmHandle);
                 } else {
                     logger.warn("设备自动布防失败: {}:{} (userId: {})", ip, port, userID);
                 }
             }
-        }
+            return userID;
+        }, -1);
+    }
 
+    /** 仅在执行器线程内调用 */
+    private int loginImpl(String ip, int port, String username, String password) {
+        HCNetSDK.NET_DVR_USER_LOGIN_INFO loginInfo = new HCNetSDK.NET_DVR_USER_LOGIN_INFO();
+        HCNetSDK.NET_DVR_DEVICEINFO_V40 deviceInfo = new HCNetSDK.NET_DVR_DEVICEINFO_V40();
+        byte[] deviceAddress = new byte[HCNetSDK.NET_DVR_DEV_ADDRESS_MAX_LEN];
+        byte[] ipBytes = ip.getBytes();
+        System.arraycopy(ipBytes, 0, deviceAddress, 0, Math.min(ipBytes.length, deviceAddress.length));
+        loginInfo.sDeviceAddress = deviceAddress;
+        byte[] userName = new byte[HCNetSDK.NET_DVR_LOGIN_USERNAME_MAX_LEN];
+        byte[] userBytes = username.getBytes();
+        System.arraycopy(userBytes, 0, userName, 0, Math.min(userBytes.length, userName.length));
+        loginInfo.sUserName = userName;
+        byte[] passwordBytes = password.getBytes();
+        System.arraycopy(passwordBytes, 0, loginInfo.sPassword, 0,
+                Math.min(passwordBytes.length, loginInfo.sPassword.length));
+        loginInfo.wPort = (short) port;
+        loginInfo.bUseAsynLogin = false;
+        loginInfo.byLoginMode = 0;
+        loginInfo.byUseTransport = 0;
+        loginInfo.byProxyType = 0;
+        loginInfo.byHttps = 0;
+        hCNetSDK.NET_DVR_SetConnectTime(10000, 3);
+        loginInfo.write();
+        deviceInfo.write();
+        logger.info("开始登录设备: {}:{}, 用户: {}", ip, port, username);
+        int userID = hCNetSDK.NET_DVR_Login_V40(loginInfo, deviceInfo);
+        deviceInfo.read();
+        logger.debug("登录调用返回: userID={}", userID);
+        if (deviceInfo.struDeviceV30 != null) {
+            int chanNum = deviceInfo.struDeviceV30.byChanNum & 0xFF;
+            int startDChan = deviceInfo.struDeviceV30.byStartDChan & 0xFF;
+            logger.debug("设备信息: 通道数={}, 起始通道={}", chanNum, startDChan);
+        }
+        if (userID == -1) {
+            int errorCode = hCNetSDK.NET_DVR_GetLastError();
+            logger.error("登录失败，错误码: {} (IP: {}:{}, 用户: {})", errorCode, ip, port, username);
+            if (errorCode == HCNetSDK.NET_DVR_PASSWORD_ERROR) {
+                logger.error("错误原因: 用户名或密码错误");
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_FAIL_CONNECT) {
+                logger.error("错误原因: 连接服务器失败 (错误码: 7)");
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_SEND_ERROR
+                    || errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_ERROR) {
+                logger.error("错误原因: 网络通信错误，请检查网络连接和端口");
+            } else if (errorCode == HCNetSDK.NET_DVR_NETWORK_RECV_TIMEOUT) {
+                logger.error("错误原因: 网络接收超时，设备可能未响应");
+            }
+        } else {
+            logger.info("设备登录成功: {}:{} (userId: {})", ip, port, userID);
+        }
         return userID;
     }
 
     /**
-     * 登出设备
+     * 登出设备（经单线程执行器，带超时）
      */
     @Override
     public boolean logout(int userID) {
         if (!initialized || hCNetSDK == null) {
             return false;
         }
-        
-        // 先撤防
-        closeAlarmChan(userID);
-        
+        return Boolean.TRUE.equals(runOnExecutor(DEFAULT_SDK_TIMEOUT_MS, () -> logoutImpl(userID), false));
+    }
+
+    /** 仅在执行器线程内调用 */
+    private boolean logoutImpl(int userID) {
+        closeAlarmChanImpl(userID);
         boolean result = hCNetSDK.NET_DVR_Logout_V30(userID);
         if (result) {
             logger.info("设备登出成功: {}", userID);
@@ -593,8 +615,7 @@ public class HikvisionSDK implements DeviceSDK {
     }
     
     /**
-     * 对设备进行布防，建立报警通道
-     * 只有布防后，设备的报警事件才会推送到SDK的回调函数
+     * 对设备进行布防，建立报警通道（经单线程执行器，带超时）
      * @param userId 登录句柄
      * @return 布防句柄，失败返回-1
      */
@@ -603,41 +624,37 @@ public class HikvisionSDK implements DeviceSDK {
             logger.error("海康SDK未初始化，无法布防");
             return -1;
         }
-        
-        // 检查是否已经布防
+        return runOnExecutor(DEFAULT_SDK_TIMEOUT_MS, () -> setupAlarmChanImpl(userId), -1);
+    }
+
+    /** 仅在执行器线程内调用 */
+    private int setupAlarmChanImpl(int userId) {
         Integer existingHandle = alarmHandles.get(userId);
         if (existingHandle != null && existingHandle >= 0) {
             logger.debug("设备已布防: userId={}, alarmHandle={}", userId, existingHandle);
             return existingHandle;
         }
-        
         try {
-            // 使用V50版本的布防接口
             HCNetSDK.NET_DVR_SETUPALARM_PARAM_V50 setupParam = new HCNetSDK.NET_DVR_SETUPALARM_PARAM_V50();
             setupParam.dwSize = setupParam.size();
-            setupParam.byLevel = 1; // 二级优先级
-            setupParam.byAlarmInfoType = 1; // 新报警信息
-            setupParam.byRetAlarmTypeV40 = 1; // 返回V40报警信息
-            setupParam.byDeployType = 1; // 实时布防
+            setupParam.byLevel = 1;
+            setupParam.byAlarmInfoType = 1;
+            setupParam.byRetAlarmTypeV40 = 1;
+            setupParam.byDeployType = 1;
             setupParam.write();
-            
             int alarmHandle = hCNetSDK.NET_DVR_SetupAlarmChan_V50(userId, setupParam, null, 0);
             if (alarmHandle < 0) {
                 int errorCode = getLastError();
-                // 某些设备可能不支持V50，尝试V41
                 logger.warn("V50布防失败，尝试V41: userId={}, errorCode={}", userId, errorCode);
-                
                 HCNetSDK.NET_DVR_SETUPALARM_PARAM setupParamV41 = new HCNetSDK.NET_DVR_SETUPALARM_PARAM();
                 setupParamV41.dwSize = setupParamV41.size();
                 setupParamV41.byLevel = 1;
                 setupParamV41.byAlarmInfoType = 1;
                 setupParamV41.byDeployType = 1;
                 setupParamV41.write();
-                
                 alarmHandle = hCNetSDK.NET_DVR_SetupAlarmChan_V41(userId, setupParamV41);
                 if (alarmHandle < 0) {
                     errorCode = getLastError();
-                    // 再尝试V30
                     logger.warn("V41布防失败，尝试V30: userId={}, errorCode={}", userId, errorCode);
                     alarmHandle = hCNetSDK.NET_DVR_SetupAlarmChan_V30(userId);
                     if (alarmHandle < 0) {
@@ -646,7 +663,6 @@ public class HikvisionSDK implements DeviceSDK {
                     }
                 }
             }
-            
             alarmHandles.put(userId, alarmHandle);
             logger.info("设备布防成功: userId={}, alarmHandle={}", userId, alarmHandle);
             return alarmHandle;
@@ -655,18 +671,23 @@ public class HikvisionSDK implements DeviceSDK {
             return -1;
         }
     }
-    
+
     /**
-     * 撤防
-     * @param userId 登录句柄
-     * @return 是否成功
+     * 撤防（经单线程执行器，带超时）
      */
     public boolean closeAlarmChan(int userId) {
+        if (!initialized || hCNetSDK == null) {
+            return true;
+        }
+        return Boolean.TRUE.equals(runOnExecutor(DEFAULT_SDK_TIMEOUT_MS, () -> closeAlarmChanImpl(userId), true));
+    }
+
+    /** 仅在执行器线程内调用 */
+    private boolean closeAlarmChanImpl(int userId) {
         Integer alarmHandle = alarmHandles.remove(userId);
         if (alarmHandle == null || alarmHandle < 0) {
             return true;
         }
-        
         try {
             boolean result = hCNetSDK.NET_DVR_CloseAlarmChan_V30(alarmHandle);
             if (result) {
@@ -680,7 +701,7 @@ public class HikvisionSDK implements DeviceSDK {
             return false;
         }
     }
-    
+
     /**
      * 检查设备是否已布防
      */
@@ -690,36 +711,35 @@ public class HikvisionSDK implements DeviceSDK {
     }
 
     /**
-     * 海康SDK报警消息回调实现
+     * 海康SDK报警消息回调实现。回调在 SDK native 线程执行，pAlarmer/pAlarmInfo 可能为 null 且仅在回调内有效；
+     * 必须先判空、访问前 pAlarmer.read()，回调内禁止调用任何海康 SDK 接口。
      */
     class AlarmMessageCallback implements HCNetSDK.FMSGCallBack {
         @Override
         public void invoke(int lCommand, HCNetSDK.NET_DVR_ALARMER pAlarmer, Pointer pAlarmInfo, int dwBufLen,
                 Pointer pUser) {
             try {
-                // 记录所有收到的报警消息，便于调试
+                if (pAlarmer == null) {
+                    logger.debug("海康报警回调 pAlarmer 为 null, lCommand=0x{}", Integer.toHexString(lCommand));
+                    return;
+                }
                 logger.info("收到海康报警回调: lCommand=0x{}, dwBufLen={}", Integer.toHexString(lCommand), dwBufLen);
-                
-                // 从pAlarmer中提取设备信息
+                pAlarmer.read();
                 String deviceIP = null;
                 int userId = -1;
-                if (pAlarmer != null) {
-                    pAlarmer.read();
-                    if (pAlarmer.byDeviceIPValid == 1) {
-                        deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8).trim();
-                        // 移除末尾的空字符
-                        int nullIndex = deviceIP.indexOf('\0');
-                        if (nullIndex >= 0) {
-                            deviceIP = deviceIP.substring(0, nullIndex);
-                        }
+                if (pAlarmer.byDeviceIPValid == 1) {
+                    deviceIP = new String(pAlarmer.sDeviceIP, java.nio.charset.StandardCharsets.UTF_8).trim();
+                    int nullIndex = deviceIP.indexOf('\0');
+                    if (nullIndex >= 0) {
+                        deviceIP = deviceIP.substring(0, nullIndex);
                     }
-                    if (pAlarmer.byUserIDValid == 1) {
-                        userId = pAlarmer.lUserID;
-                    }
-                    logger.info("报警设备信息: IP={}, userId={}, byDeviceIPValid={}, byUserIDValid={}", 
-                            deviceIP, userId, pAlarmer.byDeviceIPValid, pAlarmer.byUserIDValid);
                 }
-                
+                if (pAlarmer.byUserIDValid == 1) {
+                    userId = pAlarmer.lUserID;
+                }
+                logger.info("报警设备信息: IP={}, userId={}, byDeviceIPValid={}, byUserIDValid={}", 
+                        deviceIP, userId, pAlarmer.byDeviceIPValid, pAlarmer.byUserIDValid);
+
                 // 处理报警消息 - 支持更多报警类型
                 // 常见的报警类型：
                 // COMM_ALARM (0x1100) - 普通报警
@@ -1140,17 +1160,18 @@ public class HikvisionSDK implements DeviceSDK {
             logger.error("海康SDK未初始化");
             return false;
         }
+        return Boolean.TRUE.equals(runOnExecutor(CAPTURE_TIMEOUT_MS,
+                () -> capturePictureImpl(connectId, userId, channel, filePath, pictureType), false));
+    }
 
+    /** 仅在执行器线程内调用 */
+    private boolean capturePictureImpl(int connectId, int userId, int channel, String filePath, int pictureType) {
         try {
-            // 确保目录存在
             File file = new File(filePath);
             File parentDir = file.getParentFile();
             if (parentDir != null && !parentDir.exists()) {
                 parentDir.mkdirs();
             }
-
-            // 使用绝对路径（海康SDK要求绝对路径）
-            // 规范化路径，移除 ./ 和 ../
             String absolutePath = file.getAbsolutePath();
             try {
                 absolutePath = new File(absolutePath).getCanonicalPath();
@@ -1159,43 +1180,29 @@ public class HikvisionSDK implements DeviceSDK {
             }
             logger.debug("海康抓图参数: userId={}, channel={}, filePath={}, absolutePath={}",
                     userId, channel, filePath, absolutePath);
-
-            // 参考DeviceController.java:448-518的实现
-            // 海康SDK的抓图使用NET_DVR_CaptureJPEGPicture，需要userId和channel，不需要connectId
             HCNetSDK.NET_DVR_JPEGPARA jpegPara = new HCNetSDK.NET_DVR_JPEGPARA();
-            jpegPara.wPicSize = 0; // 0=CIF, 使用当前分辨率
-            jpegPara.wPicQuality = 2; // 图片质量：0-最好 1-较好 2-一般
+            jpegPara.wPicSize = 0;
+            jpegPara.wPicQuality = 2;
             jpegPara.write();
-
-            // 海康SDK要求使用GBK编码（中文SDK）
-            // 如果使用UTF-8可能导致路径解析错误
             byte[] fileNameBytes;
             try {
                 fileNameBytes = absolutePath.getBytes("GBK");
             } catch (java.io.UnsupportedEncodingException e) {
-                // 如果GBK不支持，回退到UTF-8
                 logger.warn("GBK编码不支持，使用UTF-8: {}", e.getMessage());
                 fileNameBytes = absolutePath.getBytes("UTF-8");
             }
-
             byte[] fileNameArray = new byte[256];
             int copyLength = Math.min(fileNameBytes.length, fileNameArray.length - 1);
             System.arraycopy(fileNameBytes, 0, fileNameArray, 0, copyLength);
-            // 确保字符串以null结尾
             fileNameArray[copyLength] = 0;
-
-            // 海康SDK的通道号从1开始，确保channel >= 1
             int actualChannel = channel > 0 ? channel : 1;
-
             boolean result = hCNetSDK.NET_DVR_CaptureJPEGPicture(userId, actualChannel, jpegPara, fileNameArray);
             if (result) {
                 logger.info("海康抓图成功: userId={}, channel={}, filePath={}", userId, actualChannel, absolutePath);
                 return true;
             } else {
-                int errorCode = getLastError();
-                String errorMsg = getLastErrorString();
                 logger.error("海康抓图失败: userId={}, channel={}, filePath={}, 错误码={}, 错误信息={}",
-                        userId, actualChannel, absolutePath, errorCode, errorMsg);
+                        userId, actualChannel, absolutePath, getLastError(), getLastErrorString());
                 return false;
             }
         } catch (Exception e) {
@@ -1210,21 +1217,20 @@ public class HikvisionSDK implements DeviceSDK {
             logger.error("海康SDK未初始化");
             return false;
         }
+        return Boolean.TRUE.equals(runOnExecutor(DEFAULT_SDK_TIMEOUT_MS,
+                () -> ptzControlImpl(userId, channel, command, action, speed), false));
+    }
 
+    /** 仅在执行器线程内调用 */
+    private boolean ptzControlImpl(int userId, int channel, String command, String action, int speed) {
         try {
-            // 参考DeviceController.java:620-636的实现
             int commandCode = getPtzCommandCode(command);
             if (commandCode == -1) {
                 logger.error("未知的云台控制命令: {}", command);
                 return false;
             }
-
-            // action: start=0, stop=1
             int stopFlag = "stop".equalsIgnoreCase(action) ? 1 : 0;
-
-            // 使用带速度参数的接口，使speed参数生效
             boolean result = hCNetSDK.NET_DVR_PTZControlWithSpeed_Other(userId, channel, commandCode, stopFlag, speed);
-
             if (result) {
                 logger.info("海康云台控制成功: userId={}, channel={}, command={}, action={}, speed={}",
                         userId, channel, command, action, speed);

@@ -61,6 +61,24 @@ public class RadarWebSocketHandler {
     }
 
     /**
+     * 关闭 WebSocket 处理器，停止点云发送线程池（用于进程优雅退出）
+     */
+    public void shutdown() {
+        if (pointCloudSendExecutor != null && !pointCloudSendExecutor.isShutdown()) {
+            pointCloudSendExecutor.shutdown();
+            try {
+                if (!pointCloudSendExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    pointCloudSendExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                pointCloudSendExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("雷达 WebSocket 点云发送线程池已关闭");
+        }
+    }
+
+    /**
      * 添加WebSocket连接
      * 使用 CopyOnWriteArrayList 保证线程安全
      */

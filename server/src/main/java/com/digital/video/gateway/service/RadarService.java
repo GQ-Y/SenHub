@@ -466,6 +466,33 @@ public class RadarService {
             }
         }
 
+        // 关闭 WebSocket 点云发送线程池
+        if (webSocketHandler != null) {
+            webSocketHandler.shutdown();
+        }
+
+        // 关闭点云处理线程池
+        pointCloudExecutor.shutdown();
+        try {
+            if (!pointCloudExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                pointCloudExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            pointCloudExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        // 关闭静态 PTZ 抓拍调度器
+        ptzCaptureScheduler.shutdown();
+        try {
+            if (!ptzCaptureScheduler.awaitTermination(3, TimeUnit.SECONDS)) {
+                ptzCaptureScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            ptzCaptureScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
         livoxDriver.stop();
         logger.info("雷达监听服务已停止");
         if (statusMonitor != null) {

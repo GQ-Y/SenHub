@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 
 // Linux环境下，HWND使用Pointer代替（在Java中直接使用Pointer）
+// SDK 版本/约定：海康威视网络SDK Linux64 V6.1.9.48；结构体布局、回调与线程约定见 server/docs/hikvision-sdk-usage-and-thread-model.md
 
 //SDK接口说明,HCNetSDK.dll
 public interface HCNetSDK extends Library {

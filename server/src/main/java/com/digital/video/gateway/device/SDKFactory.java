@@ -16,24 +16,25 @@ import java.util.Map;
  */
 public class SDKFactory {
     private static final Logger logger = LoggerFactory.getLogger(SDKFactory.class);
-    
+
     private static HikvisionSDK hikvisionSDK;
     private static TiandySDK tiandySDK;
     private static DahuaSDK dahuaSDK;
-    
+
     private static boolean initialized = false;
-    
+    /** 海康延迟初始化：仅当首次 getSDK("hikvision") 时再初始化，避免启动早期崩溃 */
+    private static Config.SdkConfig sdkConfigForLazyInit;
+    private static boolean hikvisionAvailable;
+
     /**
-     * 初始化所有SDK
-     * 不管是否有设备，只要库文件存在且架构匹配，就尝试初始化
+     * 初始化所有SDK（海康采用延迟初始化，仅在首次使用时初始化）
      */
     public static void init(Config config) {
         if (initialized) {
             return;
         }
-        
+
         try {
-            // 创建默认SDK配置（如果config.getSdk()为null）
             Config.SdkConfig sdkConfig = config.getSdk();
             if (sdkConfig == null) {
                 sdkConfig = new Config.SdkConfig();
@@ -42,26 +43,19 @@ public class SDKFactory {
                 sdkConfig.setLogLevel(3);
                 logger.info("使用默认SDK配置");
             }
-            
+
             Map<String, Boolean> sdkAvailability = detectAvailableSDKs(sdkConfig);
-            
-            // 预先设置大华SDK库路径，避免NetSDKLib静态初始化时找不到库
-            // 必须在任何SDK初始化之前设置，因为NetSDKLib.NETSDK_INSTANCE是静态的
+            sdkConfigForLazyInit = sdkConfig;
+            hikvisionAvailable = Boolean.TRUE.equals(sdkAvailability.get("hikvision"));
+
             prepareDahuaLibPath(sdkConfig);
-            
-            // 初始化海康SDK（检测到库后再初始化）
-            if (Boolean.TRUE.equals(sdkAvailability.get("hikvision"))) {
-                logger.info("尝试初始化海康SDK...");
-                hikvisionSDK = HikvisionSDK.getInstance();
-                if (hikvisionSDK.init(sdkConfig)) {
-                    logger.info("✓ 海康SDK初始化成功");
-                } else {
-                    logger.warn("✗ 海康SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
-                }
+
+            if (hikvisionAvailable) {
+                logger.info("海康SDK库已检测到，将在首次使用时初始化（延迟初始化）");
             } else {
-                logger.info("跳过海康SDK初始化：未检测到可用库文件");
+                logger.info("跳过海康SDK：未检测到可用库文件");
             }
-            
+
             // 初始化天地伟业SDK（仅x86且检测到库后）
             if (Boolean.TRUE.equals(sdkAvailability.get("tiandy"))) {
                 logger.info("尝试初始化天地伟业SDK...");
@@ -158,19 +152,33 @@ public class SDKFactory {
     }
     
     /**
-     * 根据品牌获取SDK实例
-     * 只返回已初始化的SDK实例，未初始化的SDK返回null
+     * 根据品牌获取SDK实例；海康在首次请求时延迟初始化
      */
     public static DeviceSDK getSDK(String brand) {
         if (brand == null || brand.isEmpty() || "auto".equalsIgnoreCase(brand)) {
-            return null; // 需要自动检测
+            return null;
         }
-        
+
+        if ("hikvision".equalsIgnoreCase(brand)) {
+            if (hikvisionSDK == null && hikvisionAvailable && sdkConfigForLazyInit != null) {
+                synchronized (SDKFactory.class) {
+                    if (hikvisionSDK == null) {
+                        logger.info("首次使用海康SDK，执行延迟初始化...");
+                        hikvisionSDK = HikvisionSDK.getInstance();
+                        if (hikvisionSDK.init(sdkConfigForLazyInit)) {
+                            logger.info("✓ 海康SDK延迟初始化成功");
+                        } else {
+                            logger.warn("✗ 海康SDK延迟初始化失败");
+                            hikvisionSDK = null;
+                        }
+                    }
+                }
+            }
+            return hikvisionSDK != null && hikvisionSDK.isInitialized() ? hikvisionSDK : null;
+        }
+
         DeviceSDK sdk = null;
         switch (brand.toLowerCase()) {
-            case "hikvision":
-                sdk = hikvisionSDK;
-                break;
             case "tiandy":
                 sdk = tiandySDK;
                 break;

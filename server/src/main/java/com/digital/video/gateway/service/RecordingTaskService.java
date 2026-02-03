@@ -64,6 +64,32 @@ public class RecordingTaskService {
     }
 
     /**
+     * 关闭服务：停止调度器与任务线程池（用于进程优雅退出）
+     */
+    public void shutdown() {
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdownNow();
+            try {
+                scheduler.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (executorService != null && !executorService.isShutdown()) {
+            executorService.shutdown();
+            try {
+                if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        logger.info("录像任务服务已关闭");
+    }
+
+    /**
      * 启动进度轮询
      */
     private void startStatusPolling() {

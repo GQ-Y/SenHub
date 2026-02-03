@@ -48,7 +48,14 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/PtzMonitorService.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/RecordingTaskService.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/CaptureService.java" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/service/"
+
+sshpass -p "$SERVER_PASS" rsync -avz --progress \
+    -e "ssh -o StrictHostKeyChecking=no" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/workflow/FlowExecutor.java" \
+    "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/workflow/"
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \

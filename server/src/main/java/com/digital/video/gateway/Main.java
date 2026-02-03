@@ -57,8 +57,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -96,6 +99,8 @@ public class Main {
     private com.digital.video.gateway.api.FlowController flowController;
     private FlowExecutor flowExecutor;
     private ScheduledExecutorService statisticsScheduler;
+    /** MQTT 消息处理线程池，避免命令/工作流在 Paho 回调线程执行导致阻塞 */
+    private ExecutorService mqttMessageExecutor;
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
@@ -287,6 +292,17 @@ public class Main {
             recorder.start();
             logger.info("录制管理器初始化成功");
 
+            // 6.5. 初始化 MQTT 消息处理线程池（有界队列，避免回调线程被长时间占用）
+            mqttMessageExecutor = new ThreadPoolExecutor(4, 8, 60L, TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(256),
+                    r -> {
+                        Thread t = new Thread(r, "MqttMessageHandler");
+                        t.setDaemon(true);
+                        return t;
+                    },
+                    (r, e) -> logger.warn("MQTT 消息处理队列已满，丢弃本条消息")
+            );
+
             // 7. 初始化MQTT客户端（MQTT连接失败不应阻止服务启动）
             mqttClient = new MqttClient(config.getMqtt());
             setupMqttMessageHandler();
@@ -404,34 +420,38 @@ public class Main {
      * 设置按主题派发的 MQTT 处理器，并订阅工作流 mqtt_subscribe 节点配置的主题
      */
     private void setupMqttTopicHandler() {
-        if (mqttClient == null || flowExecutor == null || flowService == null) return;
+        if (mqttClient == null || flowExecutor == null || flowService == null || mqttMessageExecutor == null) return;
+        final String commandTopic = config.getMqtt().getCommandTopic();
         mqttClient.setTopicMessageHandler((topic, payload) -> {
-            try {
-                if (config.getMqtt().getCommandTopic().equals(topic)) {
-                    logger.info("收到MQTT命令: {}", payload);
-                    CommandResponse response = commandHandler.handleCommand(payload);
-                    String responseJson = objectMapper.writeValueAsString(response);
-                    if (mqttPublisher != null) mqttPublisher.publishResponse(responseJson);
-                    else if (mqttClient != null) mqttClient.publishResponse(responseJson);
-                    logger.info("命令响应已发送: {}", responseJson);
-                } else {
-                    for (FlowDefinition def : flowService.getFlowDefinitionsByMqttTopic(topic)) {
-                        try {
-                            FlowContext ctx = new FlowContext();
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> payloadMap = payload != null && !payload.isEmpty()
-                                    ? objectMapper.readValue(payload, Map.class)
-                                    : new HashMap<>();
-                            ctx.setPayload(payloadMap);
-                            flowExecutor.execute(def, ctx);
-                        } catch (Exception e) {
-                            logger.error("MQTT 工作流执行失败 topic={} flowId={}", topic, def.getFlowId(), e);
+            // 投递到独立线程池执行，避免阻塞 Paho 回调线程
+            mqttMessageExecutor.execute(() -> {
+                try {
+                    if (commandTopic.equals(topic)) {
+                        logger.info("收到MQTT命令: {}", payload);
+                        CommandResponse response = commandHandler.handleCommand(payload);
+                        String responseJson = objectMapper.writeValueAsString(response);
+                        if (mqttPublisher != null) mqttPublisher.publishResponse(responseJson);
+                        else if (mqttClient != null) mqttClient.publishResponse(responseJson);
+                        logger.info("命令响应已发送: {}", responseJson);
+                    } else {
+                        for (FlowDefinition def : flowService.getFlowDefinitionsByMqttTopic(topic)) {
+                            try {
+                                FlowContext ctx = new FlowContext();
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> payloadMap = payload != null && !payload.isEmpty()
+                                        ? objectMapper.readValue(payload, Map.class)
+                                        : new HashMap<>();
+                                ctx.setPayload(payloadMap);
+                                flowExecutor.execute(def, ctx);
+                            } catch (Exception e) {
+                                logger.error("MQTT 工作流执行失败 topic={} flowId={}", topic, def.getFlowId(), e);
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    logger.error("处理MQTT消息失败 topic={}", topic, e);
                 }
-            } catch (Exception e) {
-                logger.error("处理MQTT消息失败 topic={}", topic, e);
-            }
+            });
         });
         subscribeMqttWorkflowTopics();
         mqttClient.setOnConnectedCallback(this::subscribeMqttWorkflowTopics);
@@ -1015,6 +1035,16 @@ public class Main {
                 scanner.stop();
             }
 
+            // 停止 PTZ 监控服务
+            if (ptzMonitorService != null) {
+                ptzMonitorService.stop();
+            }
+
+            // 停止雷达服务（含点云线程池、WebSocket 发送池、PTZ 抓拍调度器）
+            if (radarService != null) {
+                radarService.stop();
+            }
+
             // 停止设备状态统计任务
             if (statisticsScheduler != null) {
                 statisticsScheduler.shutdown();
@@ -1024,6 +1054,26 @@ public class Main {
                     }
                 } catch (InterruptedException e) {
                     statisticsScheduler.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
+
+            // 关闭业务线程池（避免关闭后仍有任务访问数据库）
+            if (recordingTaskService != null) {
+                recordingTaskService.shutdown();
+            }
+            if (captureService != null) {
+                captureService.shutdown();
+            }
+            FlowExecutor.shutdown();
+            if (mqttMessageExecutor != null && !mqttMessageExecutor.isShutdown()) {
+                mqttMessageExecutor.shutdown();
+                try {
+                    if (!mqttMessageExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                        mqttMessageExecutor.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    mqttMessageExecutor.shutdownNow();
                     Thread.currentThread().interrupt();
                 }
             }

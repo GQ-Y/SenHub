@@ -95,6 +95,12 @@ public class Keeper {
             List<DeviceInfo> devices = deviceManager.getAllDevices();
             logger.debug("开始检查设备状态，设备数量: {}", devices.size());
 
+            // 清理已删除设备的失败计数，避免 failureCountMap 无限增长
+            java.util.Set<String> currentIds = devices.stream()
+                    .map(DeviceInfo::getDeviceId)
+                    .collect(java.util.stream.Collectors.toSet());
+            failureCountMap.keySet().removeIf(id -> !currentIds.contains(id));
+
             for (DeviceInfo device : devices) {
                 checkDevice(device);
             }

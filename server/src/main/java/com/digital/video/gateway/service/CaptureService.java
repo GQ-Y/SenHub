@@ -53,6 +53,24 @@ public class CaptureService {
             dir.mkdirs();
         }
     }
+
+    /**
+     * 关闭抓图线程池（用于进程优雅退出）
+     */
+    public void shutdown() {
+        if (captureExecutor != null && !captureExecutor.isShutdown()) {
+            captureExecutor.shutdown();
+            try {
+                if (!captureExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    captureExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                captureExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("抓图服务线程池已关闭");
+        }
+    }
     
     /**
      * 获取设备锁
