@@ -9,6 +9,7 @@ import com.digital.video.gateway.device.DeviceSDK;
 import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.mqtt.MqttClient;
 import com.sun.jna.Native;
+import com.sun.jna.NativeLibrary;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.IntByReference;
 import org.slf4j.Logger;
@@ -209,12 +210,8 @@ public class HikvisionSDK implements DeviceSDK {
                 return false;
             }
 
-            // 设置库路径到java.library.path（用于JNA查找库文件和依赖库）
-            // 使用LibraryPathHelper构建完整的库路径
+            // 设置库路径到java.library.path（用于JNA查找库文件和依赖库，含 HCNetSDKCom 等）
             String libDir = libFile.getParent();
-            String hcNetSDKComDir = libDir + "/HCNetSDKCom";
-
-            // 使用LibraryPathHelper构建完整的库路径
             String newLibPath = LibraryPathHelper.buildLibraryPath();
             System.setProperty("java.library.path", newLibPath);
             logger.debug("设置java.library.path: {}", newLibPath);
@@ -244,7 +241,8 @@ public class HikvisionSDK implements DeviceSDK {
                     libraryName = libraryName.substring(0, libraryName.indexOf("."));
                 }
                 logger.debug("尝试使用库名加载: {}", libraryName);
-                hCNetSDK = (HCNetSDK) Native.loadLibrary(libraryName, HCNetSDK.class);
+                NativeLibrary.addSearchPath(libraryName, libDir);
+                hCNetSDK = (HCNetSDK) Native.load(libraryName, HCNetSDK.class);
             }
             logger.info("SDK库加载成功: {} (系统架构: {}, 库文件名: {})", libFile.getAbsolutePath(), osArch, libFileName);
             return true;
@@ -552,6 +550,11 @@ public class HikvisionSDK implements DeviceSDK {
     /**
      * 设置报警服务（用于报警自动抓图）
      */
+    /** 供异常回调或外部获取 MQTT 客户端（如发布设备离线等状态） */
+    public MqttClient getMqttClient() {
+        return mqttClient;
+    }
+
     public void setAlarmService(com.digital.video.gateway.service.AlarmService alarmService) {
         this.alarmService = alarmService;
         // 设置报警回调

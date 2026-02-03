@@ -156,9 +156,6 @@ public class DeviceScanner {
         }
 
         try {
-            // 生成设备ID（使用IP地址）
-            String deviceId = ip;
-
             // 检查设备是否已存在（按 ip:port）
             DeviceInfo existingDevice = database.getDeviceByIpPort(ip, port);
             if (existingDevice != null) {
