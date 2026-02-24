@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, Radar, MapPin, Settings, Activity } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
@@ -462,14 +463,16 @@ export const RadarManagement: React.FC = () => {
           </div>
         )}
 
-        {/* 创建/编辑弹窗 */}
-        {(activeModal === 'CREATE' || activeModal === 'EDIT') && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-              onClick={handleCloseModal}
-            ></div>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 overflow-hidden">
+        {/* 创建/编辑弹窗 - 使用 Portal 挂载到 body，遮罩 fixed 覆盖完整视口 */}
+        {(activeModal === 'CREATE' || activeModal === 'EDIT') &&
+          createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" aria-modal="true" role="dialog">
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+                onClick={handleCloseModal}
+                aria-hidden="true"
+              />
+              <div className="relative z-10 bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                 <h3 className="text-lg font-bold text-gray-800">
                   {activeModal === 'CREATE' ? '添加雷达设备' : '编辑雷达设备'}
@@ -580,8 +583,9 @@ export const RadarManagement: React.FC = () => {
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          </div>,
+            document.body
+          )}
 
         {/* 删除确认弹窗 */}
         {activeModal === 'DELETE' && selectedDevice && (

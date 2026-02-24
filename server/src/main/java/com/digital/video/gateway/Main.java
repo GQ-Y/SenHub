@@ -270,13 +270,19 @@ public class Main {
                  */
                 logger.info("雷达服务已暂时禁用（已注释掉启动代码）");
 
+                // RadarTestService 不依赖 Livox SDK，可独立工作（UDP 连通性检测）
+                radarTestService = new RadarTestService(radarService);
+                logger.info("RadarTestService 已初始化（独立模式，不依赖 Livox SDK）");
+
             } catch (Throwable e) {
                 // 捕获所有异常和错误（包括NoClassDefFoundError等Error类型）
                 logger.error("雷达服务启动失败，将继续启动其他服务", e);
                 logger.warn("雷达服务不可用，可能是Livox SDK依赖问题，但不影响其他功能");
                 // 设置为null，避免后续调用时出现NPE
                 radarService = null;
-                radarTestService = null;
+                // RadarTestService 仍可独立初始化（UDP 检测不依赖 SDK）
+                radarTestService = new RadarTestService();
+                logger.info("RadarTestService 已初始化（降级模式，仅支持 UDP 探测）");
             }
 
             // 5.8. 启动PTZ监控服务

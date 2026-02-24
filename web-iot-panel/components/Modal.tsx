@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 
 export type ModalType = 'info' | 'success' | 'warning' | 'error';
@@ -82,16 +83,15 @@ export const Modal: React.FC<ModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center" aria-modal="true" role="dialog">
       {/* 背景遮罩 */}
       <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
-      
       {/* 弹窗内容 */}
-      <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[101] transform transition-all">
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-[201] transform transition-all">
         {/* 头部 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
@@ -131,7 +131,8 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

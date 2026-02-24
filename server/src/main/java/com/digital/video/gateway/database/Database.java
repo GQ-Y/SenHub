@@ -82,17 +82,17 @@ public class Database {
                 "user_id INTEGER DEFAULT -1, " +
                 "channel INTEGER DEFAULT 1, " +
                 "brand TEXT DEFAULT 'auto', " +
-                "last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "last_seen TIMESTAMP DEFAULT (datetime('now','localtime')), " +
+                "created_at TIMESTAMP DEFAULT (datetime('now','localtime')), " +
+                "updated_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createUsersTable = "CREATE TABLE IF NOT EXISTS users (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                 "username TEXT UNIQUE NOT NULL, " +
                 "password TEXT NOT NULL, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT (datetime('now','localtime')), " +
+                "updated_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createConfigsTable = "CREATE TABLE IF NOT EXISTS configs (" +
@@ -100,8 +100,8 @@ public class Database {
                 "config_key TEXT UNIQUE NOT NULL, " +
                 "config_value TEXT, " +
                 "config_type TEXT DEFAULT 'string', " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT (datetime('now','localtime')), " +
+                "updated_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createDriversTable = "CREATE TABLE IF NOT EXISTS drivers (" +
@@ -113,15 +113,15 @@ public class Database {
                 "log_path TEXT, " +
                 "log_level INTEGER DEFAULT 1, " +
                 "status TEXT DEFAULT 'INACTIVE', " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT (datetime('now','localtime')), " +
+                "updated_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createDeviceHistoryTable = "CREATE TABLE IF NOT EXISTS device_history (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                 "device_id TEXT NOT NULL, " +
                 "status INTEGER NOT NULL, " +
-                "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "recorded_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createAlarmHistoryTable = "CREATE TABLE IF NOT EXISTS alarm_history (" +
@@ -130,7 +130,7 @@ public class Database {
                 "alarm_type TEXT NOT NULL, " +
                 "alarm_level TEXT DEFAULT 'warning', " +
                 "message TEXT, " +
-                "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "recorded_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createNotificationsTable = "CREATE TABLE IF NOT EXISTS notifications (" +
@@ -139,7 +139,7 @@ public class Database {
                 "message TEXT NOT NULL, " +
                 "type TEXT DEFAULT 'info', " +
                 "read INTEGER DEFAULT 0, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createWorkflowExecutionHistoryTable = "CREATE TABLE IF NOT EXISTS workflow_execution_history (" +
@@ -147,7 +147,7 @@ public class Database {
                 "flow_id TEXT NOT NULL, " +
                 "rule_id TEXT, " +
                 "device_id TEXT, " +
-                "executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "executed_at TIMESTAMP DEFAULT (datetime('now','localtime'))" +
                 ")";
 
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id); " +
@@ -253,7 +253,7 @@ public class Database {
         String sql = "INSERT OR REPLACE INTO devices " +
                 "(device_id, ip, port, name, username, password, rtsp_url, status, user_id, channel, brand, camera_type, serial_number, last_seen, updated_at) "
                 +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
@@ -335,7 +335,10 @@ public class Database {
      * 更新设备状态
      */
     public boolean updateDeviceStatus(String deviceId, int status, int userId) {
-        String sql = "UPDATE devices SET status = ?, user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        // 设备在线时同步刷新 last_seen，保证"最后在线时间"准确
+        String sql = status == 1
+                ? "UPDATE devices SET status = ?, user_id = ?, last_seen = datetime('now','localtime'), updated_at = datetime('now','localtime') WHERE device_id = ?"
+                : "UPDATE devices SET status = ?, user_id = ?, updated_at = datetime('now','localtime') WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, status);
             pstmt.setInt(2, userId);
@@ -358,7 +361,7 @@ public class Database {
      * 更新设备最后发现时间
      */
     public boolean updateLastSeen(String deviceId) {
-        String sql = "UPDATE devices SET last_seen = CURRENT_TIMESTAMP WHERE device_id = ?";
+        String sql = "UPDATE devices SET last_seen = datetime('now','localtime') WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             pstmt.executeUpdate();
@@ -619,7 +622,7 @@ public class Database {
                 stmt.execute("PRAGMA foreign_keys = OFF");
             }
             try (PreparedStatement pstmt = connection.prepareStatement(
-                    "UPDATE devices SET device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?")) {
+                    "UPDATE devices SET device_id = ?, updated_at = datetime('now','localtime') WHERE device_id = ?")) {
                 pstmt.setString(1, newGbId);
                 pstmt.setString(2, currentDeviceId);
                 if (pstmt.executeUpdate() == 0) {
@@ -772,7 +775,7 @@ public class Database {
      * 更新用户密码
      */
     public boolean updateUserPassword(String username, String passwordHash) {
-        String sql = "UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?";
+        String sql = "UPDATE users SET password = ?, updated_at = datetime('now','localtime') WHERE username = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, passwordHash);
             pstmt.setString(2, username);
@@ -790,7 +793,7 @@ public class Database {
      * 保存或更新配置
      */
     public boolean saveOrUpdateConfig(String key, String value, String type) {
-        String sql = "INSERT OR REPLACE INTO configs (config_key, config_value, config_type, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)";
+        String sql = "INSERT OR REPLACE INTO configs (config_key, config_value, config_type, updated_at) VALUES (?, ?, ?, datetime('now','localtime'))";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, key);
             pstmt.setString(2, value);
@@ -862,7 +865,7 @@ public class Database {
             int logLevel, String status) {
         String sql = "INSERT OR REPLACE INTO drivers (driver_id, name, version, lib_path, log_path, log_level, status, updated_at) "
                 +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, driverId);
             pstmt.setString(2, name);
@@ -951,7 +954,7 @@ public class Database {
      * 记录设备状态历史
      */
     public boolean recordDeviceHistory(String deviceId, int status) {
-        String sql = "INSERT INTO device_history (device_id, status, recorded_at) VALUES (?, ?, CURRENT_TIMESTAMP)";
+        String sql = "INSERT INTO device_history (device_id, status, recorded_at) VALUES (?, ?, datetime('now','localtime'))";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             pstmt.setInt(2, status);
@@ -967,7 +970,7 @@ public class Database {
      * 记录告警历史
      */
     public boolean recordAlarm(String deviceId, String alarmType, String alarmLevel, String message) {
-        String sql = "INSERT INTO alarm_history (device_id, alarm_type, alarm_level, message, recorded_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)";
+        String sql = "INSERT INTO alarm_history (device_id, alarm_type, alarm_level, message, recorded_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             pstmt.setString(2, alarmType);
@@ -1155,7 +1158,7 @@ public class Database {
      * 记录工作流执行历史
      */
     public boolean recordWorkflowExecution(String flowId, String ruleId, String deviceId) {
-        String sql = "INSERT INTO workflow_execution_history (flow_id, rule_id, device_id, executed_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)";
+        String sql = "INSERT INTO workflow_execution_history (flow_id, rule_id, device_id, executed_at) VALUES (?, ?, ?, datetime('now','localtime'))";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, flowId);
             pstmt.setString(2, ruleId);
@@ -1249,7 +1252,7 @@ public class Database {
      * 创建通知
      */
     public boolean createNotification(String title, String message, String type) {
-        String sql = "INSERT INTO notifications (title, message, type, read, created_at) VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)";
+        String sql = "INSERT INTO notifications (title, message, type, read, created_at) VALUES (?, ?, ?, 0, datetime('now','localtime'))";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, title);
             pstmt.setString(2, message);
