@@ -822,8 +822,8 @@ export const FlowManagement: React.FC = () => {
 
     return (
       <div className="absolute top-4 right-4 w-64 max-h-[85vh] bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-20 flex flex-col">
-        <div className="flex items-center justify-between mb-3 flex-shrink-0">
-          <h4 className="font-semibold text-gray-800">{t('node_config')}</h4>
+        <div className="flex items-center justify-between gap-2 mb-3 flex-shrink-0">
+          <h4 className="font-semibold text-gray-800 truncate min-w-0" title={selectedNode.label}>{selectedNode.label}</h4>
           <button
             onClick={() => deleteNode(selectedNode.id)}
             className="text-red-500 hover:text-red-700"

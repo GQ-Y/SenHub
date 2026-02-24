@@ -110,7 +110,8 @@ export type ViewState =
   | 'ASSEMBLY_DETAIL'
   | 'ALARM_RULES'
   | 'RADAR'
-  | 'WORKFLOW';
+  | 'WORKFLOW'
+  | 'AI_ANALYSIS';
 
 export interface AppState {
   currentView: ViewState;

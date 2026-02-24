@@ -33,6 +33,11 @@ public class SystemController {
     private final MqttClient mqttClient;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private com.digital.video.gateway.service.AiAnalysisService aiAnalysisService;
+
+    public void setAiAnalysisService(com.digital.video.gateway.service.AiAnalysisService aiAnalysisService) {
+        this.aiAnalysisService = aiAnalysisService;
+    }
 
     public SystemController(ConfigService configService) {
         this.configService = configService;
@@ -769,6 +774,53 @@ public class SystemController {
         } catch (Exception e) {
             logger.error("创建错误响应失败", e);
             return "{\"code\":" + code + ",\"message\":\"" + message + "\",\"data\":null}";
+        }
+    }
+
+    private void resolveUrl(java.util.Map<String, Object> record, String field, String baseUrl) {
+        Object val = record.get(field);
+        if (val instanceof String) {
+            String s = (String) val;
+            if (s.startsWith("/")) {
+                record.put(field, baseUrl + s);
+            }
+        }
+    }
+
+    /**
+     * 获取 AI 分析记录列表
+     * GET /api/system/ai-analysis-records?limit=100&offset=0
+     */
+    public String getAiAnalysisRecords(Request request, Response response) {
+        try {
+            if (aiAnalysisService == null) {
+                response.status(200);
+                return createSuccessResponse(java.util.Collections.emptyList());
+            }
+            int limit = 100;
+            int offset = 0;
+            try {
+                String l = request.queryParams("limit");
+                if (l != null) limit = Integer.parseInt(l);
+                String o = request.queryParams("offset");
+                if (o != null) offset = Integer.parseInt(o);
+            } catch (NumberFormatException ignored) {}
+
+            java.util.List<java.util.Map<String, Object>> records = aiAnalysisService.getRecords(limit, offset);
+
+            // 将相对路径补全为完整 URL（voiceUrl、imageUrl）
+            String baseUrl = request.scheme() + "://" + request.host();
+            for (java.util.Map<String, Object> rec : records) {
+                resolveUrl(rec, "voiceUrl", baseUrl);
+                resolveUrl(rec, "imageUrl", baseUrl);
+            }
+
+            response.status(200);
+            return createSuccessResponse(records);
+        } catch (Exception e) {
+            logger.error("获取AI分析记录失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取AI分析记录失败: " + e.getMessage());
         }
     }
 }

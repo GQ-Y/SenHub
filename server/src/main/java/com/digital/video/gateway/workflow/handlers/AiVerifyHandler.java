@@ -1,5 +1,6 @@
 package com.digital.video.gateway.workflow.handlers;
 
+import com.digital.video.gateway.service.AiAnalysisService;
 import com.digital.video.gateway.service.AiGatewayClient;
 import com.digital.video.gateway.workflow.FlowContext;
 import com.digital.video.gateway.workflow.FlowNodeDefinition;
@@ -9,6 +10,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -25,9 +30,16 @@ public class AiVerifyHandler implements FlowNodeHandler {
     private static final String SKIP_REASON = "核验超时跳过";
 
     private final AiGatewayClient aiClient;
+    private final AiAnalysisService aiAnalysisService;
 
     public AiVerifyHandler(AiGatewayClient aiClient) {
         this.aiClient = aiClient;
+        this.aiAnalysisService = null;
+    }
+
+    public AiVerifyHandler(AiGatewayClient aiClient, AiAnalysisService aiAnalysisService) {
+        this.aiClient = aiClient;
+        this.aiAnalysisService = aiAnalysisService;
     }
 
     @Override
@@ -133,6 +145,65 @@ public class AiVerifyHandler implements FlowNodeHandler {
         context.putVariable("_last_node_branch", match ? "true" : "false");
         context.putVariable("ai_verify_match", match);
         context.putVariable("ai_verify_reason", reason);
+
+        if (aiAnalysisService != null) {
+            try {
+                String recordImageUrl = null;
+
+                // 优先使用 OSS URL
+                if (context.getVariables() != null) {
+                    Object ossUrl = context.getVariables().get("captureOssUrl");
+                    if (ossUrl instanceof String && !((String) ossUrl).isBlank()) {
+                        recordImageUrl = (String) ossUrl;
+                    }
+                    if (recordImageUrl == null) {
+                        ossUrl = context.getVariables().get("ossUrl");
+                        if (ossUrl instanceof String && !((String) ossUrl).isBlank()) {
+                            recordImageUrl = (String) ossUrl;
+                        }
+                    }
+                }
+
+                // 并行分支可能没有 OSS URL，从本地抓图文件生成静态文件 URL
+                if (recordImageUrl == null && context.getVariables() != null) {
+                    Object pathObj = context.getVariables().get("capturePath");
+                    if (pathObj instanceof String) {
+                        try {
+                            Path srcFile = java.nio.file.Paths.get((String) pathObj);
+                            if (Files.exists(srcFile)) {
+                                Path captureDir = Path.of("data", "captures");
+                                Files.createDirectories(captureDir);
+                                String ext = ".jpg";
+                                String srcName = srcFile.getFileName().toString().toLowerCase();
+                                if (srcName.endsWith(".png")) ext = ".png";
+                                else if (srcName.endsWith(".gif")) ext = ".gif";
+                                else if (srcName.endsWith(".webp")) ext = ".webp";
+                                String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));
+                                String destName = "capture_" + ts + ext;
+                                Path dest = captureDir.resolve(destName);
+                                Files.copy(srcFile, dest, StandardCopyOption.REPLACE_EXISTING);
+                                recordImageUrl = "/api/static/captures/" + destName;
+                                logger.info("抓图已复制到静态目录: {}", recordImageUrl);
+                            }
+                        } catch (Exception e) {
+                            logger.warn("复制抓图到静态目录失败: {}", e.getMessage());
+                        }
+                    }
+                }
+
+                String eventTitle = context.getAlarmType() != null ? context.getAlarmType() : "";
+                String eventName = "";
+                if (context.getVariables() != null) {
+                    Object zh = context.getVariables().get("eventNameZh");
+                    if (zh instanceof String) eventName = (String) zh;
+                }
+                String recordId = aiAnalysisService.createRecord(recordImageUrl, eventTitle, eventName, match, reason);
+                context.putVariable("_ai_analysis_record_id", recordId);
+            } catch (Exception e) {
+                logger.warn("创建AI分析记录失败: {}", e.getMessage());
+            }
+        }
+
         return true;
     }
 

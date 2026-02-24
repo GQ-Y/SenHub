@@ -16,6 +16,7 @@ import { RadarBackgroundCollection } from './components/RadarBackgroundCollectio
 import { RadarDefenseZone } from './components/RadarDefenseZone';
 import { RadarMonitoring } from './components/RadarMonitoring';
 import { FlowManagement } from './components/FlowManagement';
+import { AiAnalysisRecords } from './components/AiAnalysisRecords';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 
 // 路由守卫组件
@@ -44,6 +45,7 @@ const getViewFromPath = (pathname: string): string => {
   if (pathname === '/settings') return 'SYSTEM_CONFIG';
   if (pathname.startsWith('/radar')) return 'RADAR';
   if (pathname.startsWith('/flows')) return 'WORKFLOW';
+  if (pathname.startsWith('/ai-analysis')) return 'AI_ANALYSIS';
   return 'DASHBOARD';
 };
 
@@ -171,6 +173,14 @@ const AppContent: React.FC = () => {
           element={
             <ProtectedRoute>
               <FlowManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ai-analysis"
+          element={
+            <ProtectedRoute>
+              <AiAnalysisRecords />
             </ProtectedRoute>
           }
         />

@@ -16,7 +16,8 @@ import {
   Shield,
   Radar,
   Wifi,
-  Server
+  Server,
+  Brain
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useAppContext } from '../contexts/AppContext';
@@ -96,6 +97,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
         break;
       case 'WORKFLOW':
         navigate('/flows');
+        break;
+      case 'AI_ANALYSIS':
+        navigate('/ai-analysis');
         break;
       default:
         navigate('/');
@@ -245,6 +249,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               onClick={() => handleNavigate('WORKFLOW')}
             />
             <SidebarItem 
+              icon={Brain} 
+              label={t('ai_analysis_records')} 
+              isActive={currentView === 'AI_ANALYSIS'} 
+              onClick={() => handleNavigate('AI_ANALYSIS')}
+            />
+            <SidebarItem 
               icon={Settings} 
               label={t('system_config')} 
               isActive={currentView === 'SYSTEM_CONFIG'} 
@@ -283,6 +293,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
                 currentView === 'DRIVER_CONFIG' ? t('drivers') :
                 currentView === 'MQTT_CONFIG' ? t('mqtt_broker') :
                 currentView === 'ALARM_RULES' ? t('alarm_rules') :
+                currentView === 'AI_ANALYSIS' ? t('ai_analysis_records') :
                 t('system_config')}
             </h2>
           </div>
@@ -400,15 +411,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               )}
             </div>
             
-            <div className="flex items-center space-x-3 pl-2">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-semibold text-gray-800">{t('admin_user')}</p>
-                <p className="text-xs text-gray-500">{t('security_manager')}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold shadow-md">
-                AD
-              </div>
-            </div>
           </div>
         </header>
 

@@ -25,6 +25,11 @@ public class AuthFilter implements Filter {
         if (path != null && (path.startsWith("/api/auth/login") || path.equals("/api/auth/login"))) {
             return;
         }
+
+        // 允许静态文件访问（图片、音频、视频等，供前端直接播放/展示）
+        if (path != null && path.startsWith("/api/static/")) {
+            return;
+        }
         
         // 允许WebSocket升级请求（WebSocket连接不需要JWT认证）
         // WebSocket升级请求的路径通常是 /api/radar/stream

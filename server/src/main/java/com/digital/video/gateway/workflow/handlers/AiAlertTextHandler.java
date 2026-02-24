@@ -1,5 +1,6 @@
 package com.digital.video.gateway.workflow.handlers;
 
+import com.digital.video.gateway.service.AiAnalysisService;
 import com.digital.video.gateway.service.AiGatewayClient;
 import com.digital.video.gateway.workflow.FlowContext;
 import com.digital.video.gateway.workflow.FlowNodeDefinition;
@@ -19,9 +20,16 @@ public class AiAlertTextHandler implements FlowNodeHandler {
     private static final String SYSTEM_PROMPT = "你是一个安防播报助手。根据给定的报警事件信息，生成一句简洁的中文警示语播报文本，用于音柱播报。要求：不超过50字，直接输出文本，不要引号或多余说明。";
 
     private final AiGatewayClient aiClient;
+    private final AiAnalysisService aiAnalysisService;
 
     public AiAlertTextHandler(AiGatewayClient aiClient) {
         this.aiClient = aiClient;
+        this.aiAnalysisService = null;
+    }
+
+    public AiAlertTextHandler(AiGatewayClient aiClient, AiAnalysisService aiAnalysisService) {
+        this.aiClient = aiClient;
+        this.aiAnalysisService = aiAnalysisService;
     }
 
     @Override
@@ -68,18 +76,26 @@ public class AiAlertTextHandler implements FlowNodeHandler {
                 Map.<String, Object>of("role", "user", "content", userContent.toString())
         );
 
+        String alertText = "检测到" + alarmType + "，请注意。";
         try {
             String text = aiClient.chatCompletion(messages, model, 150);
             if (text != null && !text.isBlank()) {
-                context.putVariable("ai_alert_text", text.trim());
-                logger.info("ai_alert_text 生成: {}", text.trim());
-                return true;
+                alertText = text.trim();
+                logger.info("ai_alert_text 生成: {}", alertText);
             }
         } catch (Exception e) {
             logger.warn("ai_alert_text 调用失败: {}", e.getMessage());
         }
 
-        context.putVariable("ai_alert_text", "检测到" + alarmType + "，请注意。");
+        context.putVariable("ai_alert_text", alertText);
+
+        if (aiAnalysisService != null && context.getVariables() != null) {
+            Object recordId = context.getVariables().get("_ai_analysis_record_id");
+            if (recordId instanceof String) {
+                aiAnalysisService.updateField((String) recordId, "alertText", alertText);
+            }
+        }
+
         return true;
     }
 }

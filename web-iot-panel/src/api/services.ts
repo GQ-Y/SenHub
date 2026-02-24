@@ -1160,3 +1160,24 @@ export const notificationService = {
   },
 };
 
+// ==================== AI 分析记录（核验节点执行结果） ====================
+export interface AiAnalysisRecord {
+  id: string;
+  imageUrl?: string;
+  eventTitle: string;
+  eventName: string;
+  time: string;
+  verifyResult: 'pass' | 'fail' | 'skip';
+  verifyReason?: string;
+  alertText?: string;
+  voiceUrl?: string;
+}
+
+export const aiAnalysisService = {
+  async getRecords(params?: { limit?: number; offset?: number }): Promise<{ data: AiAnalysisRecord[] }> {
+    const response = await get<AiAnalysisRecord[] | { data: AiAnalysisRecord[] }>('/system/ai-analysis-records', params);
+    const data = Array.isArray(response.data) ? response.data : (response.data as any)?.data ?? [];
+    return { data };
+  },
+};
+

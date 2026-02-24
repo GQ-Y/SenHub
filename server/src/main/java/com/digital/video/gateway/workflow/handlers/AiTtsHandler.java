@@ -1,6 +1,7 @@
 package com.digital.video.gateway.workflow.handlers;
 
 import com.digital.video.gateway.config.Config;
+import com.digital.video.gateway.service.AiAnalysisService;
 import com.digital.video.gateway.service.ConfigService;
 import com.digital.video.gateway.workflow.FlowContext;
 import com.digital.video.gateway.workflow.FlowNodeDefinition;
@@ -15,7 +16,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * AI 语音合成节点：调用 MiniMax TTS API 将文本转为 MP3，保存到临时文件，路径写入 context.ai_tts_audio_path。
+ * AI 语音合成节点：调用 MiniMax TTS API 将文本转为 MP3，保存到 data/tts/ 目录，
+ * 通过静态文件服务 /api/static/tts/xxx.mp3 可访问。
  */
 public class AiTtsHandler implements FlowNodeHandler {
     private static final Logger logger = LoggerFactory.getLogger(AiTtsHandler.class);
@@ -23,9 +25,16 @@ public class AiTtsHandler implements FlowNodeHandler {
     private static final String TTS_URL = "https://api.minimaxi.com/v1/t2a_v2";
 
     private final ConfigService configService;
+    private final AiAnalysisService aiAnalysisService;
 
     public AiTtsHandler(ConfigService configService) {
         this.configService = configService;
+        this.aiAnalysisService = null;
+    }
+
+    public AiTtsHandler(ConfigService configService, AiAnalysisService aiAnalysisService) {
+        this.configService = configService;
+        this.aiAnalysisService = aiAnalysisService;
     }
 
     @Override
@@ -107,11 +116,10 @@ public class AiTtsHandler implements FlowNodeHandler {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) root.get("data");
             if (data == null) {
-                logger.warn("MiniMax TTS 响应无 data 字段, 响应keys={}, body(前500字)={}", root.keySet(),
-                        responseBody.length() > 500 ? responseBody.substring(0, 500) + "..." : responseBody);
+                logger.warn("MiniMax TTS 响应无 data 字段, 响应keys={}", root.keySet());
                 return true;
             }
-            // 根据 MiniMax T2A v2 官方文档: data.audio 直接是 hex 编码的音频字符串
+
             Object audioObj = data.get("audio");
             if (audioObj instanceof String) {
                 String hexData = (String) audioObj;
@@ -121,7 +129,7 @@ public class AiTtsHandler implements FlowNodeHandler {
                     Path ttsDir = Path.of("data", "tts");
                     Files.createDirectories(ttsDir);
                     String timestamp = java.time.LocalDateTime.now()
-                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));
                     String fileName = "tts_" + timestamp + ".mp3";
                     Path outputFile = ttsDir.resolve(fileName);
                     Files.write(outputFile, audioBytes);
@@ -129,7 +137,18 @@ public class AiTtsHandler implements FlowNodeHandler {
 
                     context.putVariable("ai_tts_audio_path", path);
                     context.putVariable("ai_tts_file_name", fileName);
-                    logger.info("ai_tts 合成成功: {} 字节, 文件={}", audioBytes.length, path);
+
+                    String voiceUrl = "/api/static/tts/" + fileName;
+                    context.putVariable("ai_tts_voice_url", voiceUrl);
+                    logger.info("ai_tts 合成成功: {} 字节, 文件={}, url={}", audioBytes.length, path, voiceUrl);
+
+                    if (aiAnalysisService != null && context.getVariables() != null) {
+                        Object recordId = context.getVariables().get("_ai_analysis_record_id");
+                        if (recordId instanceof String) {
+                            aiAnalysisService.updateField((String) recordId, "voiceUrl", voiceUrl);
+                        }
+                    }
+
                     return true;
                 }
             }

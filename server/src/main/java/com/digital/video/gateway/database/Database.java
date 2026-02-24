@@ -242,6 +242,9 @@ public class Database {
             // 创建设备PTZ扩展表
             DevicePtzExtensionTable.createTables(connection);
 
+            // 创建AI分析记录表
+            AiAnalysisRecordTable.createTables(connection);
+
             logger.info("数据库表创建成功");
         }
     }

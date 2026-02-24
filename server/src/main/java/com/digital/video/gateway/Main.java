@@ -98,6 +98,7 @@ public class Main {
     private com.digital.video.gateway.workflow.FlowService flowService;
     private com.digital.video.gateway.api.FlowController flowController;
     private FlowExecutor flowExecutor;
+    private AiAnalysisService aiAnalysisService;
     private ScheduledExecutorService statisticsScheduler;
     /** MQTT 消息处理线程池，避免命令/工作流在 Paho 回调线程执行导致阻塞 */
     private ExecutorService mqttMessageExecutor;
@@ -520,9 +521,10 @@ public class Main {
                 new com.digital.video.gateway.workflow.handlers.RadarZoneToggleHandler(database, radarService));
         executor.registerHandler("ai_inference", new com.digital.video.gateway.workflow.handlers.AiInferenceHandler());
         com.digital.video.gateway.service.AiGatewayClient aiClient = new com.digital.video.gateway.service.AiGatewayClient(configService);
-        executor.registerHandler("ai_verify", new com.digital.video.gateway.workflow.handlers.AiVerifyHandler(aiClient));
-        executor.registerHandler("ai_alert_text", new com.digital.video.gateway.workflow.handlers.AiAlertTextHandler(aiClient));
-        executor.registerHandler("ai_tts", new com.digital.video.gateway.workflow.handlers.AiTtsHandler(configService));
+        aiAnalysisService = new AiAnalysisService(database);
+        executor.registerHandler("ai_verify", new com.digital.video.gateway.workflow.handlers.AiVerifyHandler(aiClient, aiAnalysisService));
+        executor.registerHandler("ai_alert_text", new com.digital.video.gateway.workflow.handlers.AiAlertTextHandler(aiClient, aiAnalysisService));
+        executor.registerHandler("ai_tts", new com.digital.video.gateway.workflow.handlers.AiTtsHandler(configService, aiAnalysisService));
         return executor;
     }
 
@@ -858,6 +860,9 @@ public class Main {
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);
+        if (aiAnalysisService != null) {
+            systemController.setAiAnalysisService(aiAnalysisService);
+        }
         DashboardController dashboardController = new DashboardController(deviceManager, database, config);
         NotificationController notificationController = new NotificationController(database);
 
@@ -943,6 +948,7 @@ public class Main {
         Spark.get("/api/system/logs", systemController::getLogs);
         Spark.post("/api/system/notification/test", systemController::testNotification);
         Spark.post("/api/system/ai/test", systemController::testAiConnection);
+        Spark.get("/api/system/ai-analysis-records", systemController::getAiAnalysisRecords);
 
         // 仪表板路由
         Spark.get("/api/dashboard/stats", dashboardController::getStats);
@@ -1032,6 +1038,41 @@ public class Main {
         Spark.put("/api/flows/:flowId", flowController::updateFlow);
         Spark.delete("/api/flows/:flowId", flowController::deleteFlow);
         Spark.post("/api/flows/:flowId/test", flowController::testFlow);
+
+        // 静态文件服务：提供 data/ 目录下文件（TTS音频、图片等）的 HTTP 访问
+        Spark.get("/api/static/*", (request, res) -> {
+            String splat = request.splat()[0];
+            // 防止路径穿越
+            if (splat.contains("..")) {
+                res.status(403);
+                return "Forbidden";
+            }
+            java.io.File file = new java.io.File("data/" + splat);
+            if (!file.exists() || !file.isFile()) {
+                res.status(404);
+                return "Not found";
+            }
+            String name = file.getName().toLowerCase();
+            if (name.endsWith(".mp3")) res.type("audio/mpeg");
+            else if (name.endsWith(".wav")) res.type("audio/wav");
+            else if (name.endsWith(".jpg") || name.endsWith(".jpeg")) res.type("image/jpeg");
+            else if (name.endsWith(".png")) res.type("image/png");
+            else if (name.endsWith(".mp4")) res.type("video/mp4");
+            else if (name.endsWith(".webm")) res.type("video/webm");
+            else res.type("application/octet-stream");
+
+            res.header("Content-Length", String.valueOf(file.length()));
+            try (java.io.InputStream is = new java.io.FileInputStream(file)) {
+                byte[] buf = new byte[8192];
+                int n;
+                java.io.OutputStream os = res.raw().getOutputStream();
+                while ((n = is.read(buf)) != -1) {
+                    os.write(buf, 0, n);
+                }
+                os.flush();
+            }
+            return "";
+        });
 
         // 异常处理
         Spark.exception(Exception.class, (exception, request, response) -> {
