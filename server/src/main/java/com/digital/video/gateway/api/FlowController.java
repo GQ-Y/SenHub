@@ -160,14 +160,21 @@ public class FlowController {
             if (context.getVariables().get("ossUrl") != null) {
                 result.put("ossUrl", context.getVariables().get("ossUrl"));
             }
-            if (context.getVariables().get("ai_verify_result") != null) {
-                result.put("aiVerifyResult", context.getVariables().get("ai_verify_result"));
+            if (context.getVariables().get("ai_verify_match") != null) {
+                result.put("aiVerifyMatch", context.getVariables().get("ai_verify_match"));
+            }
+            if (context.getVariables().get("ai_verify_reason") != null) {
+                result.put("aiVerifyReason", context.getVariables().get("ai_verify_reason"));
             }
             if (context.getVariables().get("ai_alert_text") != null) {
                 result.put("aiAlertText", context.getVariables().get("ai_alert_text"));
+                logger.info("流程测试 - AI警示语: {}", context.getVariables().get("ai_alert_text"));
             }
             if (context.getVariables().get("ai_tts_audio_path") != null) {
                 result.put("aiTtsGenerated", true);
+                result.put("aiTtsAudioPath", context.getVariables().get("ai_tts_audio_path"));
+                result.put("aiTtsFileName", context.getVariables().get("ai_tts_file_name"));
+                logger.info("流程测试 - TTS音频文件: {}", context.getVariables().get("ai_tts_audio_path"));
             }
 
             response.status(200);

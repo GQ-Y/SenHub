@@ -36,6 +36,8 @@ public class AiTtsHandler implements FlowNodeHandler {
             return true;
         }
 
+        logger.info("ai_tts 播报文本: {}", text);
+
         Config config = configService != null ? configService.getConfig() : null;
         Config.AiConfig ai = config != null ? config.getAi() : null;
         if (ai == null || ai.getTtsApiKey() == null || ai.getTtsApiKey().isBlank()) {
@@ -88,29 +90,51 @@ public class AiTtsHandler implements FlowNodeHandler {
                 return true;
             }
 
+            String responseBody = response.body();
             @SuppressWarnings("unchecked")
-            Map<String, Object> root = mapper.readValue(response.body(), Map.class);
-            Map<String, Object> data = (Map<String, Object>) root.get("data");
-            if (data == null) {
-                logger.warn("MiniMax TTS 响应无 data");
-                return true;
-            }
-            Object audioObj = data.get("audio");
-            if (audioObj instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> audio = (Map<String, Object>) audioObj;
-                String hexData = (String) audio.get("data");
-                if (hexData != null && !hexData.isBlank()) {
-                    byte[] bytes = hexToBytes(hexData);
-                    Path tempFile = Files.createTempFile("tts_", ".mp3");
-                    Files.write(tempFile, bytes);
-                    String path = tempFile.toAbsolutePath().toString();
-                    context.putVariable("ai_tts_audio_path", path);
-                    logger.info("ai_tts 合成成功: {} 字节 -> {}", bytes.length, path);
+            Map<String, Object> root = mapper.readValue(responseBody, Map.class);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> baseResp = (Map<String, Object>) root.get("base_resp");
+            if (baseResp != null) {
+                Object statusCode = baseResp.get("status_code");
+                if (statusCode != null && !statusCode.equals(0)) {
+                    logger.warn("MiniMax TTS 业务错误: status_code={}, status_msg={}", statusCode, baseResp.get("status_msg"));
                     return true;
                 }
             }
-            logger.warn("MiniMax TTS 响应中未找到 audio.data");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) root.get("data");
+            if (data == null) {
+                logger.warn("MiniMax TTS 响应无 data 字段, 响应keys={}, body(前500字)={}", root.keySet(),
+                        responseBody.length() > 500 ? responseBody.substring(0, 500) + "..." : responseBody);
+                return true;
+            }
+            // 根据 MiniMax T2A v2 官方文档: data.audio 直接是 hex 编码的音频字符串
+            Object audioObj = data.get("audio");
+            if (audioObj instanceof String) {
+                String hexData = (String) audioObj;
+                if (!hexData.isBlank()) {
+                    byte[] audioBytes = hexToBytes(hexData);
+
+                    Path ttsDir = Path.of("data", "tts");
+                    Files.createDirectories(ttsDir);
+                    String timestamp = java.time.LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                    String fileName = "tts_" + timestamp + ".mp3";
+                    Path outputFile = ttsDir.resolve(fileName);
+                    Files.write(outputFile, audioBytes);
+                    String path = outputFile.toAbsolutePath().toString();
+
+                    context.putVariable("ai_tts_audio_path", path);
+                    context.putVariable("ai_tts_file_name", fileName);
+                    logger.info("ai_tts 合成成功: {} 字节, 文件={}", audioBytes.length, path);
+                    return true;
+                }
+            }
+            logger.warn("MiniMax TTS 响应中 data.audio 为空或类型异常, data.keys={}, audioType={}",
+                    data.keySet(), audioObj != null ? audioObj.getClass().getSimpleName() : "null");
         } catch (Exception e) {
             logger.warn("ai_tts 调用失败: {}", e.getMessage());
         }

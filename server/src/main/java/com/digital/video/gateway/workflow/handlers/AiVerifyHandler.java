@@ -14,35 +14,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AI 报警图片核验节点：使用 function call 约束模型输出，判断图片内容是否与报警事件一致。
- * 图片来源：captureOssUrl（优先）或 capturePath（转 base64）。最多重试 3 次，3 次失败则跳过（放行）。
+ * AI 报警图片核验节点：使用多模态 chat completion 判断图片内容是否与报警事件一致。
+ * 通过 prompt 约束输出 JSON 格式（不依赖 function call），兼容更多模型。
  */
 public class AiVerifyHandler implements FlowNodeHandler {
     private static final Logger logger = LoggerFactory.getLogger(AiVerifyHandler.class);
     private static final ObjectMapper mapper = new ObjectMapper();
-
-    private static final List<Map<String, Object>> VERIFY_TOOLS = List.of(
-            Map.<String, Object>of(
-                    "type", "function",
-                    "function", Map.of(
-                            "name", "report_verify_result",
-                            "description", "报告图片核验结果",
-                            "parameters", Map.of(
-                                    "type", "object",
-                                    "properties", Map.of(
-                                            "match", Map.of("type", "boolean", "description", "图片是否与报警事件一致"),
-                                            "reason", Map.of("type", "string", "description", "判定理由，简短说明")
-                                    ),
-                                    "required", List.of("match", "reason")
-                            )
-                    )
-            )
-    );
-
-    private static final Map<String, Object> TOOL_CHOICE = Map.of(
-            "type", "function",
-            "function", Map.of("name", "report_verify_result")
-    );
 
     private static final int MAX_RETRIES = 3;
     private static final String SKIP_REASON = "核验超时跳过";
@@ -106,7 +83,11 @@ public class AiVerifyHandler implements FlowNodeHandler {
         }
 
         String alarmType = context.getAlarmType() != null ? context.getAlarmType() : "未知";
-        String userText = "当前报警事件类型为：" + alarmType + "。请根据图片内容判断：图片中的场景是否与该报警事件一致（例如入侵报警则画面中应有人员/车辆等）。";
+        String userText = "当前报警事件类型为：" + alarmType + "。请根据图片内容判断：图片中的场景是否与该报警事件一致。\n"
+                + "你必须严格按照以下JSON格式回复，不要包含其他文字：\n"
+                + "{\"match\": true或false, \"reason\": \"判定理由\"}\n"
+                + "其中 match 为 true 表示图片内容与报警事件一致，false 表示不一致。";
+
         Map<String, Object> cfg = node.getConfig();
         if (cfg != null && cfg.get("prompt") instanceof String) {
             String extra = ((String) cfg.get("prompt")).trim();
@@ -123,46 +104,29 @@ public class AiVerifyHandler implements FlowNodeHandler {
             model = null;
         }
 
-        List<Map<String, Object>> messages;
-        if (imageUrl != null) {
-            messages = List.of(
-                    Map.<String, Object>of("role", "user", "content", List.of(
-                            Map.of("type", "text", "text", userText),
-                            Map.of("type", "image_url", "image_url", Map.of("url", imageUrl))
-                    ))
-            );
-        } else {
-            messages = List.of(
-                    Map.<String, Object>of("role", "user", "content", List.of(
-                            Map.of("type", "text", "text", userText),
-                            Map.of("type", "image_url", "image_url", Map.of("url", "data:" + mimeType + ";base64," + base64Data))
-                    ))
-            );
-        }
+        String imgDataUrl = imageUrl != null ? imageUrl : ("data:" + mimeType + ";base64," + base64Data);
 
         boolean match = true;
         String reason = SKIP_REASON;
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                String responseJson = aiClient.chatCompletionWithTools(messages, VERIFY_TOOLS, TOOL_CHOICE, model);
-                VerifyResult result = parseToolCallResult(responseJson);
+                String content = aiClient.chatCompletionWithImage(userText, imgDataUrl, model);
+                VerifyResult result = parseJsonResult(content);
                 if (result != null) {
                     match = result.match;
                     reason = result.reason != null ? result.reason : "";
                     logger.info("ai_verify 核验结果: match={}, reason={}", match, reason);
                     break;
+                } else {
+                    logger.warn("ai_verify 第 {} 次返回内容无法解析为JSON: {}", attempt,
+                            content != null && content.length() > 200 ? content.substring(0, 200) + "..." : content);
                 }
             } catch (Exception e) {
                 logger.warn("ai_verify 第 {} 次请求失败: {}", attempt, e.getMessage());
             }
             if (attempt < MAX_RETRIES) {
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+                try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             }
         }
 
@@ -172,35 +136,40 @@ public class AiVerifyHandler implements FlowNodeHandler {
         return true;
     }
 
-    private VerifyResult parseToolCallResult(String responseJson) {
+    /**
+     * 从模型回复中提取 JSON 结果（兼容带 markdown code block 的输出）
+     */
+    private VerifyResult parseJsonResult(String content) {
+        if (content == null || content.isBlank()) return null;
+        String json = content.trim();
+        // 去掉 markdown code block: ```json ... ``` 或 ``` ... ```
+        if (json.startsWith("```")) {
+            int start = json.indexOf('\n');
+            int end = json.lastIndexOf("```");
+            if (start > 0 && end > start) {
+                json = json.substring(start + 1, end).trim();
+            }
+        }
+        // 尝试提取 JSON 对象
+        int braceStart = json.indexOf('{');
+        int braceEnd = json.lastIndexOf('}');
+        if (braceStart >= 0 && braceEnd > braceStart) {
+            json = json.substring(braceStart, braceEnd + 1);
+        }
         try {
             @SuppressWarnings("unchecked")
-            Map<String, Object> root = mapper.readValue(responseJson, Map.class);
-            List<?> choices = (List<?>) root.get("choices");
-            if (choices == null || choices.isEmpty()) return null;
-            @SuppressWarnings("unchecked")
-            Map<String, Object> first = (Map<String, Object>) choices.get(0);
-            Map<String, Object> message = (Map<String, Object>) first.get("message");
-            if (message == null) return null;
-            List<?> toolCalls = (List<?>) message.get("tool_calls");
-            if (toolCalls == null || toolCalls.isEmpty()) return null;
-            @SuppressWarnings("unchecked")
-            Map<String, Object> tc = (Map<String, Object>) toolCalls.get(0);
-            Map<String, Object> fn = (Map<String, Object>) tc.get("function");
-            if (fn == null) return null;
-            String name = (String) fn.get("name");
-            if (!"report_verify_result".equals(name)) return null;
-            String arguments = (String) fn.get("arguments");
-            if (arguments == null || arguments.isBlank()) return null;
-            @SuppressWarnings("unchecked")
-            Map<String, Object> args = mapper.readValue(arguments, Map.class);
-            Boolean match = args.get("match") instanceof Boolean
-                    ? (Boolean) args.get("match")
-                    : Boolean.parseBoolean(String.valueOf(args.get("match")));
-            String reason = args.get("reason") != null ? args.get("reason").toString() : "";
-            return new VerifyResult(match, reason);
+            Map<String, Object> parsed = mapper.readValue(json, Map.class);
+            Object matchObj = parsed.get("match");
+            boolean m;
+            if (matchObj instanceof Boolean) {
+                m = (Boolean) matchObj;
+            } else {
+                m = Boolean.parseBoolean(String.valueOf(matchObj));
+            }
+            String r = parsed.get("reason") != null ? parsed.get("reason").toString() : "";
+            return new VerifyResult(m, r);
         } catch (Exception e) {
-            logger.debug("解析 tool_calls 失败: {}", e.getMessage());
+            logger.debug("JSON解析失败: {}", e.getMessage());
             return null;
         }
     }
@@ -208,7 +177,6 @@ public class AiVerifyHandler implements FlowNodeHandler {
     private static class VerifyResult {
         final boolean match;
         final String reason;
-
         VerifyResult(boolean match, String reason) {
             this.match = match;
             this.reason = reason;
