@@ -156,6 +156,20 @@ public class ConfigService {
                 saveConfig("ptz_monitor.interval", String.valueOf(config.getPtzMonitor().getInterval()));
             }
 
+            // AI 服务配置
+            if (config.getAi() != null) {
+                saveConfig("ai.enabled", String.valueOf(config.getAi().isEnabled()));
+                saveConfig("ai.provider", config.getAi().getProvider());
+                saveConfig("ai.base_url", config.getAi().getBaseUrl());
+                saveConfig("ai.api_key", config.getAi().getApiKey());
+                saveConfig("ai.default_model", config.getAi().getDefaultModel());
+                saveConfig("ai.tts_provider", config.getAi().getTtsProvider());
+                saveConfig("ai.tts_api_key", config.getAi().getTtsApiKey());
+                saveConfig("ai.tts_group_id", config.getAi().getTtsGroupId());
+                saveConfig("ai.tts_model", config.getAi().getTtsModel());
+                saveConfig("ai.tts_voice", config.getAi().getTtsVoice());
+            }
+
             logger.info("配置已保存到数据库");
         } catch (Exception e) {
             logger.error("保存配置到数据库失败", e);
@@ -305,6 +319,21 @@ public class ConfigService {
                 ptzMonitor.setInterval(getIntConfig(dbConfigs, "ptz_monitor.interval", defaultConfig.getPtzMonitor().getInterval()));
                 config.setPtzMonitor(ptzMonitor);
             }
+
+            // AI 服务配置（始终恢复，无默认时用 AiConfig 内置默认值）
+            Config.AiConfig defaultAi = defaultConfig.getAi();
+            Config.AiConfig ai = new Config.AiConfig();
+            ai.setEnabled(getBoolConfig(dbConfigs, "ai.enabled", defaultAi != null && defaultAi.isEnabled()));
+            ai.setProvider(getConfig(dbConfigs, "ai.provider", defaultAi != null ? defaultAi.getProvider() : "openrouter"));
+            ai.setBaseUrl(getConfig(dbConfigs, "ai.base_url", defaultAi != null ? defaultAi.getBaseUrl() : ""));
+            ai.setApiKey(getConfig(dbConfigs, "ai.api_key", defaultAi != null ? defaultAi.getApiKey() : ""));
+            ai.setDefaultModel(getConfig(dbConfigs, "ai.default_model", defaultAi != null ? defaultAi.getDefaultModel() : ""));
+            ai.setTtsProvider(getConfig(dbConfigs, "ai.tts_provider", defaultAi != null ? defaultAi.getTtsProvider() : "minimax"));
+            ai.setTtsApiKey(getConfig(dbConfigs, "ai.tts_api_key", defaultAi != null ? defaultAi.getTtsApiKey() : ""));
+            ai.setTtsGroupId(getConfig(dbConfigs, "ai.tts_group_id", defaultAi != null ? defaultAi.getTtsGroupId() : ""));
+            ai.setTtsModel(getConfig(dbConfigs, "ai.tts_model", defaultAi != null ? defaultAi.getTtsModel() : "speech-02-hd"));
+            ai.setTtsVoice(getConfig(dbConfigs, "ai.tts_voice", defaultAi != null ? defaultAi.getTtsVoice() : "male-qn-qingse"));
+            config.setAi(ai);
 
             return config;
         } catch (Exception e) {

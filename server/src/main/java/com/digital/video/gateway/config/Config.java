@@ -39,6 +39,9 @@ public class Config {
     @JsonProperty("ptz_monitor")
     private PtzMonitorConfig ptzMonitor;
 
+    @JsonProperty("ai")
+    private AiConfig ai = new AiConfig();
+
     // Getters and Setters
     public NotificationConfig getNotification() {
         return notification;
@@ -125,6 +128,14 @@ public class Config {
 
     public void setPtzMonitor(PtzMonitorConfig ptzMonitor) {
         this.ptzMonitor = ptzMonitor;
+    }
+
+    public AiConfig getAi() {
+        return ai;
+    }
+
+    public void setAi(AiConfig ai) {
+        this.ai = ai;
     }
 
     /**
@@ -777,5 +788,50 @@ public class Config {
         public void setInterval(int interval) {
             this.interval = interval;
         }
+    }
+
+    /**
+     * AI 服务配置（网关 + TTS）
+     * 网关支持 openrouter / oneapi / newapi；TTS 使用 MiniMax 独立 key
+     */
+    public static class AiConfig {
+        private boolean enabled = false;
+        private String provider = "openrouter";
+        private String baseUrl = "https://openrouter.ai/api/v1";
+        @JsonProperty("api_key")
+        private String apiKey = "";
+        @JsonProperty("default_model")
+        private String defaultModel = "google/gemini-2.0-flash-001";
+        @JsonProperty("tts_provider")
+        private String ttsProvider = "minimax";
+        @JsonProperty("tts_api_key")
+        private String ttsApiKey = "";
+        @JsonProperty("tts_group_id")
+        private String ttsGroupId = "";
+        @JsonProperty("tts_model")
+        private String ttsModel = "speech-02-hd";
+        @JsonProperty("tts_voice")
+        private String ttsVoice = "male-qn-qingse";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getProvider() { return provider; }
+        public void setProvider(String provider) { this.provider = provider; }
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+        public String getDefaultModel() { return defaultModel; }
+        public void setDefaultModel(String defaultModel) { this.defaultModel = defaultModel; }
+        public String getTtsProvider() { return ttsProvider; }
+        public void setTtsProvider(String ttsProvider) { this.ttsProvider = ttsProvider; }
+        public String getTtsApiKey() { return ttsApiKey; }
+        public void setTtsApiKey(String ttsApiKey) { this.ttsApiKey = ttsApiKey; }
+        public String getTtsGroupId() { return ttsGroupId; }
+        public void setTtsGroupId(String ttsGroupId) { this.ttsGroupId = ttsGroupId; }
+        public String getTtsModel() { return ttsModel; }
+        public void setTtsModel(String ttsModel) { this.ttsModel = ttsModel; }
+        public String getTtsVoice() { return ttsVoice; }
+        public void setTtsVoice(String ttsVoice) { this.ttsVoice = ttsVoice; }
     }
 }

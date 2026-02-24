@@ -11,6 +11,12 @@ import org.slf4j.LoggerFactory;
 import spark.Request;
 import spark.Response;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,10 +28,17 @@ import java.util.stream.Collectors;
 public class FlowController {
     private static final Logger logger = LoggerFactory.getLogger(FlowController.class);
     private final FlowService flowService;
+    private final FlowExecutor flowExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public FlowController(FlowService flowService) {
         this.flowService = flowService;
+        this.flowExecutor = null;
+    }
+
+    public FlowController(FlowService flowService, FlowExecutor flowExecutor) {
+        this.flowService = flowService;
+        this.flowExecutor = flowExecutor;
     }
 
     public String listFlows(Request request, Response response) {
@@ -115,7 +128,8 @@ public class FlowController {
     }
 
     /**
-     * 仅做语法验证的测试执行
+     * 真实执行流程测试：模拟一个「未穿反光衣」(VEST_DETECTION) 报警事件，
+     * 使用 test/fanguangyi.png 作为抓拍图片，走完所有节点。
      */
     public String testFlow(Request request, Response response) {
         try {
@@ -125,16 +139,122 @@ public class FlowController {
                 response.status(404);
                 return createError(404, "流程不存在");
             }
+            if (flowExecutor == null) {
+                response.status(500);
+                return createError(500, "流程执行器未初始化，无法测试");
+            }
+
             FlowDefinition definition = flowService.toDefinition(flow);
-            // 使用空执行器仅验证解析不会抛错
-            FlowExecutor executor = new FlowExecutor();
-            executor.execute(definition, new FlowContext());
+            FlowContext context = buildTestContext();
+
+            // 把测试图片复制到临时文件作为 capturePath（模拟抓图结果）
+            prepareTestImage(context);
+
+            logger.info("开始测试执行流程: flowId={}, alarmType={}", flowId, context.getAlarmType());
+            flowExecutor.execute(definition, context);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("message", "流程测试执行完成");
+            result.put("flowId", flowId);
+            result.put("alarmType", "VEST_DETECTION");
+            if (context.getVariables().get("ossUrl") != null) {
+                result.put("ossUrl", context.getVariables().get("ossUrl"));
+            }
+            if (context.getVariables().get("ai_verify_result") != null) {
+                result.put("aiVerifyResult", context.getVariables().get("ai_verify_result"));
+            }
+            if (context.getVariables().get("ai_alert_text") != null) {
+                result.put("aiAlertText", context.getVariables().get("ai_alert_text"));
+            }
+            if (context.getVariables().get("ai_tts_audio_path") != null) {
+                result.put("aiTtsGenerated", true);
+            }
+
             response.status(200);
-            return createSuccess("测试执行完成（未实际调用节点处理器）");
+            return createSuccess(result);
         } catch (Exception e) {
             logger.error("测试流程执行失败", e);
             response.status(500);
             return createError(500, "测试流程执行失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 构建模拟的报警上下文：未穿反光衣事件
+     */
+    private FlowContext buildTestContext() {
+        FlowContext ctx = new FlowContext();
+        ctx.setDeviceId("test-camera-001");
+        ctx.setAssemblyId("test-assembly");
+        ctx.setAlarmType("VEST_DETECTION");
+
+        ctx.putVariable("alarmType", "VEST_DETECTION");
+        ctx.putVariable("eventKey", "VEST_DETECTION");
+        ctx.putVariable("eventNameZh", "反光衣检测");
+        ctx.putVariable("eventNameEn", "Vest Detection");
+        ctx.putVariable("category", "vca");
+        ctx.putVariable("originalAlarmType", "VEST_DETECTION");
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("alarmMessage", "[测试] 检测到未穿反光衣");
+        payload.put("channel", 0);
+        payload.put("event_key", "VEST_DETECTION");
+        payload.put("event_id", 1231);
+        payload.put("event_name_zh", "反光衣检测");
+        payload.put("event_name_en", "Vest Detection");
+        payload.put("test", true);
+
+        String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        payload.put("timestamp", ts);
+
+        Map<String, Object> alarmData = new HashMap<>();
+        alarmData.put("deviceId", "test-camera-001");
+        alarmData.put("deviceName", "测试摄像头");
+        alarmData.put("deviceIp", "192.168.1.100");
+        alarmData.put("channel", 0);
+        alarmData.put("alarmType", "VEST_DETECTION");
+        alarmData.put("alarmMessage", "[测试] 检测到未穿反光衣");
+        alarmData.put("timestamp", ts);
+        alarmData.put("test", true);
+        payload.put("alarmData", alarmData);
+
+        ctx.setPayload(payload);
+        return ctx;
+    }
+
+    /**
+     * 将 test/fanguangyi.png 复制为临时文件，设置到 context 的 capturePath
+     */
+    private void prepareTestImage(FlowContext context) {
+        String[] searchPaths = {
+            "test/fanguangyi.png",
+            "server/test/fanguangyi.png",
+            "../test/fanguangyi.png",
+        };
+
+        File imageFile = null;
+        for (String p : searchPaths) {
+            File f = new File(p);
+            if (f.exists() && f.isFile()) {
+                imageFile = f;
+                break;
+            }
+        }
+
+        if (imageFile == null) {
+            logger.warn("测试图片 fanguangyi.png 未找到，抓拍节点将跳过");
+            return;
+        }
+
+        try {
+            Path tempFile = Files.createTempFile("test_capture_", ".png");
+            Files.copy(imageFile.toPath(), tempFile, StandardCopyOption.REPLACE_EXISTING);
+            String tempPath = tempFile.toAbsolutePath().toString();
+            context.putVariable("capturePath", tempPath);
+            context.putVariable("captureFileName", "test_vest_detection.png");
+            logger.info("测试图片已准备: {} -> {}", imageFile.getAbsolutePath(), tempPath);
+        } catch (Exception e) {
+            logger.warn("复制测试图片失败: {}", e.getMessage());
         }
     }
 
@@ -151,7 +271,6 @@ public class FlowController {
         flow.setDefault(body.get("isDefault") != null && (Boolean) body.get("isDefault"));
         flow.setEnabled(body.get("enabled") == null || (Boolean) body.get("enabled"));
 
-        // 序列化节点与连接
         flow.setNodes(objectMapper.writeValueAsString(body.get("nodes")));
         flow.setConnections(objectMapper.writeValueAsString(body.get("connections")));
         return flow;

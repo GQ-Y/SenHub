@@ -44,6 +44,12 @@ public class RecordHandler implements FlowNodeHandler {
             logger.warn("RecordingTaskService 未初始化，跳过录像任务创建");
             return true;
         }
+        // 测试模式下跳过录像（模拟设备不存在）
+        Map<String, Object> payload = context.getPayload();
+        if (payload != null && Boolean.TRUE.equals(payload.get("test"))) {
+            logger.info("测试模式，跳过录像节点: deviceId={}", context.getDeviceId());
+            return true;
+        }
         if (context.getDeviceId() == null) {
             logger.warn("缺少deviceId，无法创建录像任务");
             return false;

@@ -85,6 +85,18 @@ export interface SystemConfig {
     dingtalk: NotificationChannel;
     feishu: NotificationChannel;
   };
+  ai?: {
+    enabled: boolean;
+    provider: 'openrouter' | 'oneapi' | 'newapi';
+    baseUrl: string;
+    apiKey: string;
+    defaultModel: string;
+    ttsProvider: string;
+    ttsApiKey: string;
+    ttsGroupId: string;
+    ttsModel: string;
+    ttsVoice: string;
+  };
 }
 
 export type ViewState = 
@@ -283,6 +295,9 @@ export type FlowNodeType =
   | 'webhook'         // Webhook推送（企业微信等）
   | 'http_request'    // 通用 HTTP 请求
   | 'ai_inference'    // AI 推理
+  | 'ai_verify'       // AI 图片核验（分支）
+  | 'ai_alert_text'   // AI 警示语生成
+  | 'ai_tts'          // AI 语音合成
   | 'end';            // 结束节点
 
 // 画布节点（包含位置信息）

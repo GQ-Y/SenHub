@@ -543,6 +543,14 @@ export const systemService = {
     });
     return response;
   },
+
+  /**
+   * 测试 AI 连接（AI 网关 + TTS）
+   */
+  async testAiConnection() {
+    const response = await post<{ success: boolean; message: string }>('/system/ai/test');
+    return response;
+  },
 };
 
 // ==================== 仪表板服务 ====================

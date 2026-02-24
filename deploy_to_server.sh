@@ -4,8 +4,8 @@
 SERVER_IP="192.168.1.210"
 SERVER_USER="zyc"
 SERVER_PASS="admin"
-SERVER_DIR="/home/zyc/data/xwq/demo"
-LOCAL_DIR="/Users/hook/Downloads/demo"
+SERVER_DIR="/mnt/data/zyc/xwq/demo"
+LOCAL_DIR="/Users/hook/Downloads/项目资料/demo"
 
 echo "=========================================="
 echo "开始部署到服务器..."
@@ -22,6 +22,7 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/api/DeviceController.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/api/SystemController.java" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/api/"
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
@@ -50,6 +51,7 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/AlarmService.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/ConfigService.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/PtzMonitorService.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/RecordingTaskService.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/CaptureService.java" \
@@ -106,7 +108,7 @@ echo "✅ 文件同步完成"
 echo ""
 echo "[步骤2] 检查并杀掉旧进程..."
 sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
-cd /home/zyc/data/xwq/demo
+cd /mnt/data/zyc/xwq/demo
 echo "查找运行中的进程..."
 PIDS=$(ps aux | grep -E 'java.*gateway|gateway.*jar' | grep -v grep | awk '{print $2}')
 if [ -z "$PIDS" ]; then
@@ -127,7 +129,7 @@ fi
 echo ""
 echo "[步骤3] 在服务器上重新编译..."
 sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
-cd /home/zyc/data/xwq/demo/server
+cd /mnt/data/zyc/xwq/demo/server
 echo "开始编译..."
 mvn clean compile package -DskipTests 2>&1 | tail -50
 if [ ${PIPESTATUS[0]} -eq 0 ]; then
@@ -148,14 +150,14 @@ fi
 echo ""
 echo "[步骤4] 检查 Livox SDK 官方包和库文件..."
 sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
-cd /home/zyc/data/xwq/demo
+cd /mnt/data/zyc/xwq/demo
 
 echo "检查 Livox SDK 官方包..."
 SDK_PATHS=(
-    "/home/zyc/data/xwq/demo/livox-sdk2-official"
-    "/home/zyc/data/xwq/livox-demo/livox-sdk2-official"
-    "/home/zyc/data/xwq/demo/server/../livox-sdk2-official"
-    "$(find /home/zyc/data/xwq -type d -name "livox-sdk2-official" 2>/dev/null | head -1)"
+    "/mnt/data/zyc/xwq/demo/livox-sdk2-official"
+    "/mnt/data/zyc/xwq/livox-demo/livox-sdk2-official"
+    "/mnt/data/zyc/xwq/demo/server/../livox-sdk2-official"
+    "$(find /mnt/data/zyc/xwq -type d -name "livox-sdk2-official" 2>/dev/null | head -1)"
 )
 
 FOUND_SDK=""
@@ -223,7 +225,7 @@ EOF
 echo ""
 echo "[步骤5] 启动服务..."
 sshpass -p "$SERVER_PASS" ssh -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" << 'EOF'
-cd /home/zyc/data/xwq/demo/server
+cd /mnt/data/zyc/xwq/demo/server
 # 优先使用主jar文件（shaded版本），排除original、sources、javadoc
 JAR_FILE=$(find target -name "video-gateway-service-*.jar" -not -name "*original*" -not -name "*sources*" -not -name "*javadoc*" 2>/dev/null | head -1)
 if [ -z "$JAR_FILE" ]; then

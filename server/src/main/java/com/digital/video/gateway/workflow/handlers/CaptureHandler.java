@@ -29,6 +29,17 @@ public class CaptureHandler implements FlowNodeHandler {
 
     @Override
     public boolean execute(FlowNodeDefinition node, FlowContext context) throws Exception {
+        // 如果 capturePath 已由外部预设（如流程测试），跳过实际抓图
+        // 因为 isAsync()=true，FlowExecutor 不会自动继续后续节点，需手动触发回调
+        Object existingCapture = context.getVariables().get("capturePath");
+        if (existingCapture instanceof String && !((String) existingCapture).isBlank()) {
+            logger.info("capturePath 已预设({}), 跳过实际抓图", existingCapture);
+            if (context.getExecutor() != null) {
+                context.getExecutor().continueFromAsync(context, true);
+            }
+            return true;
+        }
+
         if (captureService == null) {
             logger.warn("CaptureService 未初始化，跳过抓图");
             return false;

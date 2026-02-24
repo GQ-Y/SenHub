@@ -519,6 +519,10 @@ public class Main {
         executor.registerHandler("radar_zone_toggle",
                 new com.digital.video.gateway.workflow.handlers.RadarZoneToggleHandler(database, radarService));
         executor.registerHandler("ai_inference", new com.digital.video.gateway.workflow.handlers.AiInferenceHandler());
+        com.digital.video.gateway.service.AiGatewayClient aiClient = new com.digital.video.gateway.service.AiGatewayClient(configService);
+        executor.registerHandler("ai_verify", new com.digital.video.gateway.workflow.handlers.AiVerifyHandler(aiClient));
+        executor.registerHandler("ai_alert_text", new com.digital.video.gateway.workflow.handlers.AiAlertTextHandler(aiClient));
+        executor.registerHandler("ai_tts", new com.digital.video.gateway.workflow.handlers.AiTtsHandler(configService));
         return executor;
     }
 
@@ -863,7 +867,7 @@ public class Main {
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
-        flowController = new FlowController(flowService);
+        flowController = new FlowController(flowService, flowExecutor);
 
         // 初始化雷达相关服务
         BackgroundModelService backgroundModelService = new BackgroundModelService(database);
@@ -938,6 +942,7 @@ public class Main {
         Spark.post("/api/system/mqtt/restart", systemController::restartMqtt);
         Spark.get("/api/system/logs", systemController::getLogs);
         Spark.post("/api/system/notification/test", systemController::testNotification);
+        Spark.post("/api/system/ai/test", systemController::testAiConnection);
 
         // 仪表板路由
         Spark.get("/api/dashboard/stats", dashboardController::getStats);

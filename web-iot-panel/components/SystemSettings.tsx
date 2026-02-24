@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Eye, Cloud, Activity, FileText, CheckCircle2, Download, Bell, Send } from 'lucide-react';
+import { Shield, Eye, Cloud, Activity, FileText, CheckCircle2, Download, Bell, Send, Brain } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { systemService } from '../src/api/services';
 import { SystemConfig } from '../types';
@@ -18,6 +18,26 @@ const DEFAULT_NOTIFICATION = {
   wechat: { enabled: false, webhookUrl: '' },
   dingtalk: { enabled: false, webhookUrl: '', secret: '' },
   feishu: { enabled: false, webhookUrl: '' },
+};
+
+// 默认 AI 配置（网关 + TTS）
+const DEFAULT_AI = {
+  enabled: false,
+  provider: 'openrouter' as const,
+  baseUrl: 'https://openrouter.ai/api/v1',
+  apiKey: '',
+  defaultModel: '',
+  ttsProvider: 'minimax',
+  ttsApiKey: '',
+  ttsGroupId: '',
+  ttsModel: 'speech-02-hd',
+  ttsVoice: 'male-qn-qingse',
+};
+
+const AI_PROVIDER_URLS: Record<string, string> = {
+  openrouter: 'https://openrouter.ai/api/v1',
+  oneapi: 'http://localhost:3000/v1',
+  newapi: 'http://localhost:3000/v1',
 };
 
 export const SystemSettings: React.FC = () => {
@@ -54,6 +74,7 @@ export const SystemSettings: React.FC = () => {
     },
     log: { level: 'info', retentionDays: 30 },
     notification: DEFAULT_NOTIFICATION,
+    ai: DEFAULT_AI,
   });
 
   // 加载系统配置
@@ -62,18 +83,19 @@ export const SystemSettings: React.FC = () => {
       setIsLoading(true);
       try {
         const response = await systemService.getConfig();
-        // 合并默认值，防止缺失字段
-        const data = response.data;
-        setConfig({
-          ...config,
+        // 合并默认值，防止缺失字段（response.data 为后端返回的 config 对象）
+        const data = response?.data ?? {};
+        setConfig((prev) => ({
+          ...prev,
           ...data,
           auth: {
-            ...config.auth,
+            ...prev.auth,
             ...data.auth,
             presets: { ...DEFAULT_PRESETS, ...data.auth?.presets },
           },
           notification: { ...DEFAULT_NOTIFICATION, ...data.notification },
-        });
+          ai: data.ai != null ? { ...DEFAULT_AI, ...data.ai } : (prev.ai ?? DEFAULT_AI),
+        }));
       } catch (err) {
         console.error('加载系统配置失败:', err);
       } finally {
@@ -132,6 +154,7 @@ export const SystemSettings: React.FC = () => {
     { id: 'oss', label: t('oss'), icon: Cloud },
     { id: 'notification', label: t('notifications'), icon: Bell },
     { id: 'log', label: t('logs'), icon: FileText },
+    { id: 'ai', label: t('ai_service'), icon: Brain },
   ];
 
   // 更新品牌预设
@@ -156,6 +179,23 @@ export const SystemSettings: React.FC = () => {
         ...config.notification,
         [channel]: { ...config.notification[channel], [field]: value },
       },
+    });
+  };
+
+  const ai = config.ai ?? DEFAULT_AI;
+
+  const updateAi = (field: string, value: any) => {
+    setConfig({
+      ...config,
+      ai: { ...ai, [field]: value },
+    });
+  };
+
+  const onAiProviderChange = (provider: 'openrouter' | 'oneapi' | 'newapi') => {
+    const baseUrl = AI_PROVIDER_URLS[provider] ?? '';
+    setConfig({
+      ...config,
+      ai: { ...ai, provider, baseUrl },
     });
   };
 
@@ -718,6 +758,159 @@ export const SystemSettings: React.FC = () => {
                   <button className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium">
                     <Download size={18} />
                     <span>{t('download_logs')}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* AI Service Tab */}
+            {activeTab === 'ai' && (
+              <div className="space-y-8 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">{t('ai_gateway')}</h3>
+                    <p className="text-gray-500 text-sm">{t('ai_gateway_desc')}</p>
+                  </div>
+                  <label className="relative inline-block w-12 h-6 align-middle select-none cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ai.enabled}
+                      onChange={(e) => updateAi('enabled', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <span
+                      className={`block h-6 w-12 rounded-full transition-colors peer-checked:bg-blue-600 bg-gray-200`}
+                      style={{ padding: '2px' }}
+                    >
+                      <span
+                        className={`block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                          ai.enabled ? 'translate-x-6' : 'translate-x-0'
+                        }`}
+                      />
+                    </span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_provider')}</label>
+                    <select
+                      value={ai.provider}
+                      onChange={(e) => onAiProviderChange(e.target.value as 'openrouter' | 'oneapi' | 'newapi')}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="openrouter">{t('ai_provider_openrouter')}</option>
+                      <option value="oneapi">{t('ai_provider_oneapi')}</option>
+                      <option value="newapi">{t('ai_provider_newapi')}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_base_url')}</label>
+                    <input
+                      type="url"
+                      value={ai.baseUrl}
+                      onChange={(e) => updateAi('baseUrl', e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="https://openrouter.ai/api/v1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_api_key')}</label>
+                    <input
+                      type="password"
+                      value={ai.apiKey}
+                      onChange={(e) => updateAi('apiKey', e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="sk-..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_default_model')}</label>
+                    <input
+                      type="text"
+                      value={ai.defaultModel}
+                      onChange={(e) => updateAi('defaultModel', e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder={t('ai_default_model_placeholder')}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-gray-200">
+                  <h4 className="text-base font-semibold text-gray-800 mb-2">{t('ai_tts_config')}</h4>
+                  <p className="text-gray-500 text-sm mb-4">{t('ai_tts_desc')}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_tts_api_key')}</label>
+                      <input
+                        type="password"
+                        value={ai.ttsApiKey}
+                        onChange={(e) => updateAi('ttsApiKey', e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_tts_group_id')}</label>
+                      <input
+                        type="text"
+                        value={ai.ttsGroupId}
+                        onChange={(e) => updateAi('ttsGroupId', e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_tts_model')}</label>
+                      <input
+                        type="text"
+                        value={ai.ttsModel}
+                        onChange={(e) => updateAi('ttsModel', e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="speech-02-hd"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t('ai_tts_voice')}</label>
+                      <select
+                        value={ai.ttsVoice}
+                        onChange={(e) => updateAi('ttsVoice', e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="male-qn-qingse">male-qn-qingse</option>
+                        <option value="female-shaonv">female-shaonv</option>
+                        <option value="male-qn-jingying">male-qn-jingying</option>
+                        <option value="female-yujie">female-yujie</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    disabled={testingChannel === 'ai'}
+                    onClick={async () => {
+                      setTestingChannel('ai');
+                      try {
+                        const res = await systemService.testAiConnection();
+                        if (res.data?.success !== false && res.data?.message) {
+                          showToastMsg(res.data.message);
+                        } else {
+                          showToastMsg(res.data?.message || t('test_failed') || '测试失败');
+                        }
+                      } catch (e: any) {
+                        const msg = e?.message || (t('test_failed') || '测试失败');
+                        showToastMsg(msg);
+                      } finally {
+                        setTestingChannel(null);
+                      }
+                    }}
+                    className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                  >
+                    {testingChannel === 'ai' ? (
+                      <div className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
+                    ) : (
+                      <Send size={18} />
+                    )}
+                    <span>{t('ai_test_connection')}</span>
                   </button>
                 </div>
               </div>

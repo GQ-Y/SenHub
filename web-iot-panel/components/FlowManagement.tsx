@@ -5,7 +5,8 @@ import { useAppContext } from '../contexts/AppContext';
 import {
   Plus, Trash2, RefreshCw, Save, X, Download, Upload, ZoomIn, ZoomOut,
   Play, Square, GitBranch, Camera, Video, Radio, Cloud, Volume2, Send, Zap, Settings, Move,
-  Maximize2, Minimize2, ChevronDown, ChevronRight, Check, Clock, Power, MapPin, Globe, Brain
+  Maximize2, Minimize2, ChevronDown, ChevronRight, Check, Clock, Power, MapPin, Globe, Brain,
+  LayoutGrid, ShieldCheck, MessageSquare, Mic
 } from 'lucide-react';
 
 // 内置组件定义
@@ -26,11 +27,14 @@ const FLOW_COMPONENTS: FlowComponentDefinition[] = [
   { type: 'webhook', label: 'node_webhook', icon: 'Send', category: 'output', defaultConfig: { url: '', method: 'POST' } },
   { type: 'http_request', label: 'node_http_request', icon: 'Globe', category: 'output', defaultConfig: { url: '', method: 'POST' } },
   { type: 'ai_inference', label: 'node_ai_inference', icon: 'Brain', category: 'output', defaultConfig: { apiUrl: '', requestBody: '{"image_url":"{captureUrl}"}', outputVariablePrefix: 'ai_', timeoutSeconds: 30 } },
+  { type: 'ai_verify', label: 'node_ai_verify', icon: 'ShieldCheck', category: 'logic', hasConditionPorts: true, defaultConfig: { model: '', prompt: '' } },
+  { type: 'ai_alert_text', label: 'node_ai_alert_text', icon: 'MessageSquare', category: 'action', defaultConfig: { model: '', prompt: '' } },
+  { type: 'ai_tts', label: 'node_ai_tts', icon: 'Mic', category: 'action', defaultConfig: { text: '{ai_alert_text}', voice: '' } },
   { type: 'end', label: 'node_end', icon: 'Square', category: 'logic', defaultConfig: {} },
 ];
 
 const ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
-  Zap, GitBranch, Camera, Video, Move, Radio, Cloud, Volume2, Send, Square, Settings, Play, Clock, Power, MapPin, Globe, Brain
+  Zap, GitBranch, Camera, Video, Move, Radio, Cloud, Volume2, Send, Square, Settings, Play, Clock, Power, MapPin, Globe, Brain, ShieldCheck, MessageSquare, Mic
 };
 
 const CATEGORY_ORDER = ['trigger', 'logic', 'action', 'output'] as const;
@@ -38,6 +42,10 @@ const CATEGORY_ORDER = ['trigger', 'logic', 'action', 'output'] as const;
 const NODE_WIDTH = 160;
 const NODE_HEIGHT = 72;
 const PORT_RADIUS = 8;
+const LAYOUT_GAP_X = 100;
+const LAYOUT_GAP_Y = 36;
+const LAYOUT_START_X = 48;
+const LAYOUT_START_Y = 48;
 
 // 生成唯一ID
 const genId = () => `node_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -47,8 +55,8 @@ const genConnId = () => `conn_${Date.now()}_${Math.random().toString(36).slice(2
 const getNodeColor = (type: FlowNodeType) => {
   switch (type) {
     case 'event_trigger': case 'mqtt_subscribe': return { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-700' };
-    case 'condition': case 'delay': return { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-700' };
-    case 'capture': case 'record': case 'ptz_control': case 'ptz_goto': case 'device_reboot': case 'radar_zone_toggle': return { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700' };
+    case 'condition': case 'delay': case 'ai_verify': return { bg: 'bg-purple-50', border: 'border-purple-400', text: 'text-purple-700' };
+    case 'capture': case 'record': case 'ptz_control': case 'ptz_goto': case 'device_reboot': case 'radar_zone_toggle': case 'ai_alert_text': case 'ai_tts': return { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700' };
     case 'mqtt_publish': case 'oss_upload': case 'speaker_play': case 'webhook': case 'http_request': case 'ai_inference': return { bg: 'bg-green-50', border: 'border-green-400', text: 'text-green-700' };
     case 'end': return { bg: 'bg-gray-50', border: 'border-gray-400', text: 'text-gray-700' };
     default: return { bg: 'bg-gray-50', border: 'border-gray-300', text: 'text-gray-700' };
@@ -291,13 +299,28 @@ export const FlowManagement: React.FC = () => {
     }
   };
 
-  // 测试流程
+  // 测试流程（模拟未穿反光衣报警事件，真实执行所有节点）
+  const [testingFlowId, setTestingFlowId] = useState<string | null>(null);
   const handleTest = async (flowId: string) => {
+    if (testingFlowId) return;
+    setTestingFlowId(flowId);
     try {
-      await flowService.testFlow(flowId);
-      alert(t('flow_test_success'));
+      const res = await flowService.testFlow(flowId);
+      const data = res?.data;
+      let msg = t('flow_test_success') || '流程测试执行完成';
+      if (data && typeof data === 'object') {
+        const parts: string[] = [msg];
+        if (data.aiVerifyResult) parts.push(`AI复核: ${data.aiVerifyResult}`);
+        if (data.aiAlertText) parts.push(`警示语: ${data.aiAlertText}`);
+        if (data.aiTtsGenerated) parts.push('TTS: 已生成');
+        if (data.ossUrl) parts.push(`OSS: ${data.ossUrl}`);
+        msg = parts.join('\n');
+      }
+      alert(msg);
     } catch (e: any) {
       alert(e?.message || 'Test failed');
+    } finally {
+      setTestingFlowId(null);
     }
   };
 
@@ -510,6 +533,38 @@ export const FlowManagement: React.FC = () => {
     }
   };
 
+  // 按执行顺序自动规范排版（从左到右按连接层级排列）
+  const autoLayout = useCallback(() => {
+    if (nodes.length === 0) return;
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const levelById: Record<string, number> = {};
+    nodes.forEach(n => { levelById[n.id] = 0; });
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const c of connections) {
+        if (!nodeIds.has(c.fromNodeId) || !nodeIds.has(c.toNodeId)) continue;
+        const nextLevel = levelById[c.fromNodeId] + 1;
+        if (nextLevel > levelById[c.toNodeId]) {
+          levelById[c.toNodeId] = nextLevel;
+          changed = true;
+        }
+      }
+    }
+    const maxLevel = Math.max(0, ...Object.values(levelById));
+    const byLevel: Record<number, string[]> = {};
+    for (let l = 0; l <= maxLevel; l++) byLevel[l] = [];
+    nodes.forEach(n => byLevel[levelById[n.id]].push(n.id));
+    const newNodes = nodes.map(n => {
+      const level = levelById[n.id];
+      const indexInLevel = byLevel[level].indexOf(n.id);
+      const x = LAYOUT_START_X + level * (NODE_WIDTH + LAYOUT_GAP_X);
+      const y = LAYOUT_START_Y + indexInLevel * (NODE_HEIGHT + LAYOUT_GAP_Y);
+      return { ...n, x, y };
+    });
+    setNodes(newNodes);
+  }, [nodes, connections]);
+
   // 导入JSON
   const handleImport = () => {
     try {
@@ -681,7 +736,7 @@ export const FlowManagement: React.FC = () => {
     );
   };
 
-  // 渲染节点
+  // 渲染节点（图标为主，悬停显示名称）
   const renderNode = (node: CanvasNode) => {
     const comp = FLOW_COMPONENTS.find(c => c.type === node.type);
     const colors = getNodeColor(node.type);
@@ -692,7 +747,8 @@ export const FlowManagement: React.FC = () => {
     return (
       <div
         key={node.id}
-        className={`absolute rounded-lg border-2 shadow-md cursor-move select-none transition-shadow ${colors.bg} ${colors.border} ${isSelected ? 'ring-2 ring-blue-500 shadow-lg' : ''}`}
+        title={node.label}
+        className={`absolute rounded-xl border-2 shadow-md cursor-move select-none transition-all duration-200 hover:shadow-lg ${colors.bg} ${colors.border} ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 shadow-lg' : ''}`}
         style={{
           left: node.x,
           top: node.y,
@@ -713,12 +769,9 @@ export const FlowManagement: React.FC = () => {
           />
         )}
 
-        {/* 节点内容 */}
-        <div className="flex flex-col items-center justify-center h-full px-2">
-          <IconComp size={20} className={colors.text} />
-          <div className={`text-xs font-medium mt-1 text-center truncate w-full ${colors.text}`}>
-            {node.label}
-          </div>
+        {/* 节点内容：仅图标，名称通过 title 悬停显示 */}
+        <div className="flex items-center justify-center h-full px-2">
+          <IconComp size={32} className={colors.text} strokeWidth={2} />
         </div>
 
         {/* 输出端口 */}
@@ -1117,6 +1170,80 @@ export const FlowManagement: React.FC = () => {
             </div>
           )}
 
+          {selectedNode.type === 'ai_verify' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_verify_model')}</label>
+                <input
+                  value={selectedNode.config?.model ?? ''}
+                  onChange={e => updateNodeConfig('model', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="默认使用系统配置"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_verify_prompt')}</label>
+                <textarea
+                  value={selectedNode.config?.prompt ?? ''}
+                  onChange={e => updateNodeConfig('prompt', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 text-sm min-h-[50px]"
+                  placeholder="附加判定说明（可选）"
+                />
+              </div>
+            </div>
+          )}
+
+          {selectedNode.type === 'ai_alert_text' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_alert_text_model')}</label>
+                <input
+                  value={selectedNode.config?.model ?? ''}
+                  onChange={e => updateNodeConfig('model', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="默认使用系统配置"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_alert_text_prompt')}</label>
+                <textarea
+                  value={selectedNode.config?.prompt ?? ''}
+                  onChange={e => updateNodeConfig('prompt', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500 text-sm min-h-[50px]"
+                  placeholder="附加生成要求（可选）"
+                />
+              </div>
+            </div>
+          )}
+
+          {selectedNode.type === 'ai_tts' && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_tts_text')}</label>
+                <input
+                  value={selectedNode.config?.text ?? '{ai_alert_text}'}
+                  onChange={e => updateNodeConfig('text', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                  placeholder="{ai_alert_text}"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 mb-1">{t('config_ai_tts_voice')}</label>
+                <select
+                  value={selectedNode.config?.voice ?? ''}
+                  onChange={e => updateNodeConfig('voice', e.target.value)}
+                  className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">默认（系统配置）</option>
+                  <option value="male-qn-qingse">male-qn-qingse</option>
+                  <option value="female-shaonv">female-shaonv</option>
+                  <option value="male-qn-jingying">male-qn-jingying</option>
+                  <option value="female-yujie">female-yujie</option>
+                </select>
+              </div>
+            </div>
+          )}
+
           {selectedNode.type === 'event_trigger' && (
             <>
               <div>
@@ -1236,23 +1363,30 @@ export const FlowManagement: React.FC = () => {
 
   const formValid = useMemo(() => form.name.trim().length > 0, [form.name]);
 
+  const categoryStyle: Record<string, { border: string; bg: string; icon: string }> = {
+    trigger: { border: 'border-l-amber-400', bg: 'bg-amber-50/50', icon: 'text-amber-600' },
+    logic: { border: 'border-l-purple-400', bg: 'bg-purple-50/50', icon: 'text-purple-600' },
+    action: { border: 'border-l-blue-400', bg: 'bg-blue-50/50', icon: 'text-blue-600' },
+    output: { border: 'border-l-green-400', bg: 'bg-green-50/50', icon: 'text-green-600' },
+  };
+
   return (
     <div 
       ref={containerRef}
-      className={`flex ${isFullscreen ? 'fixed inset-0 z-50 bg-gray-50' : 'h-full min-h-[calc(100vh-10rem)]'}`}
-      style={{ height: isFullscreen ? '100vh' : '100%' }}
+      className={`flex min-h-0 ${isFullscreen ? 'fixed inset-0 z-50 bg-gray-50' : 'h-full w-full'}`}
+      style={{ height: isFullscreen ? '100vh' : '100%', minHeight: isFullscreen ? undefined : 'calc(100vh - 4rem)' }}
     >
-      {/* 左侧流程列表 - 全屏时隐藏 */}
-      <div className={`w-64 bg-white border-r border-gray-200 flex flex-col ${isFullscreen ? 'hidden' : ''}`}>
-        <div className="p-3 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-gray-800">{t('flow_list')}</h3>
-            <div className="flex space-x-1">
-              <button onClick={loadData} className="p-1 text-gray-500 hover:text-gray-700" title={t('refresh')}>
-                <RefreshCw size={16} />
+      {/* 左侧流程列表 - 收窄，全屏时隐藏 */}
+      <div className={`w-52 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col ${isFullscreen ? 'hidden' : ''}`}>
+        <div className="p-2.5 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-800 text-sm">{t('flow_list')}</h3>
+            <div className="flex space-x-0.5">
+              <button onClick={loadData} className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100" title={t('refresh')}>
+                <RefreshCw size={14} />
               </button>
-              <button onClick={openCreate} className="p-1 text-blue-500 hover:text-blue-700" title={t('create_flow')}>
-                <Plus size={16} />
+              <button onClick={openCreate} className="p-1.5 text-blue-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" title={t('create_flow')}>
+                <Plus size={14} />
               </button>
             </div>
           </div>
@@ -1260,38 +1394,43 @@ export const FlowManagement: React.FC = () => {
 
         <div className="flex-1 overflow-auto p-2 space-y-2">
           {loading ? (
-            <div className="text-center text-gray-500 py-4">{t('loading')}</div>
+            <div className="text-center text-gray-500 py-6 text-sm">{t('loading')}</div>
           ) : flows.length === 0 ? (
-            <div className="text-center text-gray-500 py-4">{t('no_data')}</div>
+            <div className="text-center text-gray-500 py-6 text-sm">{t('no_data')}</div>
           ) : (
             flows.map(flow => (
               <div
                 key={flow.flowId}
                 onClick={() => openEdit(flow)}
-                className={`p-2 rounded-lg border cursor-pointer transition ${
-                  selected === flow.flowId ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
+                className={`rounded-xl border cursor-pointer transition-all duration-200 overflow-hidden ${
+                  selected === flow.flowId
+                    ? 'border-blue-400 bg-gradient-to-br from-blue-50 to-white shadow-md shadow-blue-100/50 ring-1 ring-blue-200/60'
+                    : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50/80 hover:shadow-sm'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="font-medium text-gray-800 text-sm truncate">{flow.name}</div>
-                  <span className={`px-1.5 py-0.5 rounded text-xs ${flow.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {flow.enabled ? t('enabled') : t('disabled')}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-500 mt-1 truncate">{flow.description || flow.flowId}</div>
-                <div className="flex space-x-2 mt-2">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleTest(flow.flowId); }}
-                    className="text-emerald-600 text-xs hover:underline"
-                  >
-                    {t('test')}
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(flow.flowId); }}
-                    className="text-red-500 text-xs hover:underline"
-                  >
-                    {t('delete')}
-                  </button>
+                <div className="p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-semibold text-gray-800 text-sm truncate min-w-0 leading-tight">{flow.name}</div>
+                    <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${flow.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>
+                      {flow.enabled ? t('enabled') : t('disabled')}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-gray-500 mt-1 truncate leading-snug">{flow.description || flow.flowId}</div>
+                  <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-100">
+                    <button
+                      disabled={testingFlowId === flow.flowId}
+                      onClick={(e) => { e.stopPropagation(); handleTest(flow.flowId); }}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-medium text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                    >
+                      {testingFlowId === flow.flowId ? '...' : t('test')}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(flow.flowId); }}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                    >
+                      {t('delete')}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))
@@ -1301,81 +1440,99 @@ export const FlowManagement: React.FC = () => {
 
       {/* 主内容区 */}
       <div className="flex-1 flex flex-col bg-gray-50">
-        {/* 顶部工具栏 */}
-        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <input
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              placeholder={t('flow_name')}
-            />
-            <input
-              value={form.description || ''}
-              onChange={e => setForm({ ...form, description: e.target.value })}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none w-48"
-              placeholder={t('description')}
-            />
-            <label className="flex items-center space-x-1 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={e => setForm({ ...form, enabled: e.target.checked })}
-                className="rounded text-blue-600"
-              />
-              <span>{t('enabled')}</span>
-            </label>
-          </div>
+        {/* 顶部工具栏 - 美化分组 */}
+        <div className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+            {/* 左侧：流程信息 */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <input
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-800 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow w-40"
+                  placeholder={t('flow_name')}
+                />
+                <input
+                  value={form.description || ''}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none w-44 hidden sm:block"
+                  placeholder={t('description')}
+                />
+              </div>
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={e => setForm({ ...form, enabled: e.target.checked })}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">{t('enabled')}</span>
+              </label>
+            </div>
 
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-              title={t('import_flow')}
-            >
-              <Upload size={16} className="text-gray-600" />
-            </button>
-            <button
-              onClick={() => setShowExportModal(true)}
-              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-              title={t('export_flow')}
-            >
-              <Download size={16} className="text-gray-600" />
-            </button>
-            <button
-              onClick={clearCanvas}
-              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-              title={t('clear_canvas')}
-            >
-              <Trash2 size={16} className="text-red-500" />
-            </button>
-            <div className="h-5 w-px bg-gray-300" />
-            <button onClick={() => setScale(s => Math.max(s - 0.1, 0.3))} className="p-1 text-gray-500 hover:text-gray-700" title={t('zoom_out')}>
-              <ZoomOut size={18} />
-            </button>
-            <span className="text-sm text-gray-600 w-12 text-center">{Math.round(scale * 100)}%</span>
-            <button onClick={() => setScale(s => Math.min(s + 0.1, 2))} className="p-1 text-gray-500 hover:text-gray-700" title={t('zoom_in')}>
-              <ZoomIn size={18} />
-            </button>
-            <button onClick={fitView} className="px-2 py-1 text-sm text-gray-600 hover:text-gray-800">
-              {t('zoom_fit')}
-            </button>
-            <div className="h-5 w-px bg-gray-300" />
-            <button
-              onClick={toggleFullscreen}
-              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-              title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
-            >
-              {isFullscreen ? <Minimize2 size={16} className="text-gray-600" /> : <Maximize2 size={16} className="text-gray-600" />}
-            </button>
-            <button
-              disabled={!formValid || saving}
-              onClick={handleSubmit}
-              className={`inline-flex items-center px-4 py-1.5 rounded-lg text-white ${formValid ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
-            >
-              <Save size={14} className="mr-1" />
-              {saving ? t('saving') : t('save')}
-            </button>
+            {/* 右侧：操作与缩放 */}
+            <div className="flex items-center gap-1 flex-wrap">
+              <div className="flex items-center rounded-xl border border-gray-200 bg-gray-50/80 p-1">
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-white hover:shadow-sm transition-all"
+                  title={t('import_flow')}
+                >
+                  <Upload size={16} />
+                </button>
+                <button
+                  onClick={() => setShowExportModal(true)}
+                  className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-white hover:shadow-sm transition-all"
+                  title={t('export_flow')}
+                >
+                  <Download size={16} />
+                </button>
+                <button
+                  onClick={clearCanvas}
+                  className="p-2 rounded-lg text-gray-500 hover:text-red-600 hover:bg-white hover:shadow-sm transition-all"
+                  title={t('clear_canvas')}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <div className="h-6 w-px bg-gray-200 mx-1" />
+              <div className="flex items-center rounded-xl border border-gray-200 bg-gray-50/80 px-2 py-1">
+                <button onClick={() => setScale(s => Math.max(s - 0.1, 0.3))} className="p-2 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-white transition-colors" title={t('zoom_out')}>
+                  <ZoomOut size={18} />
+                </button>
+                <span className="text-xs font-semibold text-gray-600 tabular-nums min-w-[2.5rem] text-center">{Math.round(scale * 100)}%</span>
+                <button onClick={() => setScale(s => Math.min(s + 0.1, 2))} className="p-2 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-white transition-colors" title={t('zoom_in')}>
+                  <ZoomIn size={18} />
+                </button>
+                <button onClick={fitView} className="px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-blue-600 hover:bg-white rounded-lg transition-colors" title={t('zoom_fit')}>
+                  {t('zoom_fit')}
+                </button>
+              </div>
+              <div className="h-6 w-px bg-gray-200 mx-1" />
+              <button
+                onClick={autoLayout}
+                className="p-2 rounded-xl border border-gray-200 bg-gray-50/80 text-gray-500 hover:text-blue-600 hover:bg-white hover:border-blue-200 hover:shadow-sm transition-all"
+                title={t('auto_layout')}
+              >
+                <LayoutGrid size={18} />
+              </button>
+              <button
+                onClick={toggleFullscreen}
+                className="p-2 rounded-xl border border-gray-200 bg-gray-50/80 text-gray-500 hover:text-gray-800 hover:bg-white hover:shadow-sm transition-all"
+                title={isFullscreen ? t('exit_fullscreen') : t('fullscreen')}
+              >
+                {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+              <div className="h-6 w-px bg-gray-200 mx-1" />
+              <button
+                disabled={!formValid || saving}
+                onClick={handleSubmit}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm shadow-sm transition-all ${formValid ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+              >
+                <Save size={16} />
+                {saving ? t('saving') : t('save')}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1390,8 +1547,15 @@ export const FlowManagement: React.FC = () => {
           {/* 画布 */}
           <div
             ref={canvasRef}
-            className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
-            style={{ background: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}
+            className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-[#f8fafc]"
+            style={{
+              backgroundImage: `
+                radial-gradient(circle at 1px 1px, rgba(148,163,184,0.35) 1px, transparent 0),
+                linear-gradient(180deg, rgba(241,245,249,0.6) 0%, transparent 50%)
+              `,
+              backgroundSize: '24px 24px',
+              backgroundPosition: '0 0',
+            }}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
             onMouseLeave={handleCanvasMouseUp}
@@ -1399,6 +1563,12 @@ export const FlowManagement: React.FC = () => {
             onDrop={handleDrop}
             onDragOver={handleDragOver}
           >
+            {/* 画布左下角水印 */}
+            <div className="absolute bottom-3 left-3 z-10 pointer-events-none select-none flex items-center gap-1.5 text-gray-400/80 text-xs font-medium">
+              <span className="tracking-wide">Hook.Design</span>
+              <span className="text-gray-300">·</span>
+              <span>原创设计工作流引擎</span>
+            </div>
             <div
               style={{
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
@@ -1457,34 +1627,48 @@ export const FlowManagement: React.FC = () => {
             )}
           </div>
 
-          {/* 组件面板 - 右侧边栏 */}
-          <div className="w-48 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-            <div className="px-3 py-2 border-b border-gray-100 bg-white">
-              <h4 className="font-semibold text-gray-800 text-sm">{t('flow_components')}</h4>
-              <p className="text-xs text-gray-500">{t('drag_hint')}</p>
-            </div>
-            <div className="flex-1 overflow-auto p-2 space-y-2">
-              {CATEGORY_ORDER.map(cat => (
-                <div key={cat}>
-                  <div className="text-xs font-medium text-gray-500 uppercase mb-1">{t(`category_${cat}`)}</div>
-                  <div className="space-y-1">
-                    {groupedComponents[cat].map(comp => {
-                      const IconComp = ICON_MAP[comp.icon] || Settings;
-                      return (
-                        <div
-                          key={comp.type}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, comp)}
-                          className="flex items-center space-x-2 px-2 py-1.5 rounded border border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 cursor-grab active:cursor-grabbing transition"
-                        >
-                          <IconComp size={14} className="text-gray-600" />
-                          <span className="text-xs text-gray-700">{t(comp.label)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+          {/* 组件库 - 右侧边栏，加强并美化 */}
+          <div className="w-56 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden shadow-sm">
+            <div className="px-3 py-3 border-b border-gray-100 bg-gradient-to-b from-gray-50/80 to-white">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <Settings size={16} className="text-blue-600" />
                 </div>
-              ))}
+                <div>
+                  <h4 className="font-semibold text-gray-800 text-sm">{t('flow_components')}</h4>
+                  <p className="text-[11px] text-gray-500">{t('drag_hint')}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-2 space-y-4">
+              {CATEGORY_ORDER.map(cat => {
+                const style = categoryStyle[cat] || { border: 'border-l-gray-400', bg: 'bg-gray-50/50', icon: 'text-gray-600' };
+                return (
+                  <div key={cat} className="space-y-1.5">
+                    <div className={`text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-2 py-1 border-l-2 ${style.border} ${style.bg} rounded-r`}>
+                      {t(`category_${cat}`)}
+                    </div>
+                    <div className="space-y-1">
+                      {groupedComponents[cat].map(comp => {
+                        const IconComp = ICON_MAP[comp.icon] || Settings;
+                        return (
+                          <div
+                            key={comp.type}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, comp)}
+                            className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border border-gray-200 bg-white hover:bg-white hover:border-blue-300 hover:shadow-md cursor-grab active:cursor-grabbing transition-all duration-200 ${style.border} border-l-4`}
+                          >
+                            <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${style.bg}`}>
+                              <IconComp size={14} className={style.icon} />
+                            </div>
+                            <span className="text-xs text-gray-700 font-medium truncate">{t(comp.label)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

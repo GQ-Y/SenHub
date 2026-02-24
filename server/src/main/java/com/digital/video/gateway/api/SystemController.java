@@ -14,6 +14,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -163,6 +168,23 @@ public class SystemController {
                 }
                 
                 systemConfig.put("notification", notification);
+            }
+
+            // AI 服务配置（apiKey/ttsApiKey 脱敏返回）
+            if (config.getAi() != null) {
+                Config.AiConfig ai = config.getAi();
+                Map<String, Object> aiMap = new HashMap<>();
+                aiMap.put("enabled", ai.isEnabled());
+                aiMap.put("provider", ai.getProvider());
+                aiMap.put("baseUrl", ai.getBaseUrl());
+                aiMap.put("apiKey", maskApiKey(ai.getApiKey()));
+                aiMap.put("defaultModel", ai.getDefaultModel());
+                aiMap.put("ttsProvider", ai.getTtsProvider());
+                aiMap.put("ttsApiKey", maskApiKey(ai.getTtsApiKey()));
+                aiMap.put("ttsGroupId", ai.getTtsGroupId());
+                aiMap.put("ttsModel", ai.getTtsModel());
+                aiMap.put("ttsVoice", ai.getTtsVoice());
+                systemConfig.put("ai", aiMap);
             }
             
             response.status(200);
@@ -353,6 +375,48 @@ public class SystemController {
                     if (feishuData.containsKey("webhookUrl")) feishu.setWebhookUrl((String) feishuData.get("webhookUrl"));
                 }
             }
+
+            // 更新 AI 服务配置（空或脱敏值不覆盖原 apiKey/ttsApiKey）
+            if (body.containsKey("ai")) {
+                Map<String, Object> aiData = (Map<String, Object>) body.get("ai");
+                Config.AiConfig ai = config.getAi();
+                if (ai == null) {
+                    ai = new Config.AiConfig();
+                    config.setAi(ai);
+                }
+                if (aiData.containsKey("enabled")) {
+                    ai.setEnabled(Boolean.TRUE.equals(aiData.get("enabled")));
+                }
+                if (aiData.containsKey("provider")) {
+                    ai.setProvider((String) aiData.get("provider"));
+                }
+                if (aiData.containsKey("baseUrl")) {
+                    ai.setBaseUrl((String) aiData.get("baseUrl"));
+                }
+                String apiKeyVal = (String) aiData.get("apiKey");
+                if (apiKeyVal != null && !apiKeyVal.isEmpty() && !apiKeyVal.endsWith("****")) {
+                    ai.setApiKey(apiKeyVal);
+                }
+                if (aiData.containsKey("defaultModel")) {
+                    ai.setDefaultModel((String) aiData.get("defaultModel"));
+                }
+                if (aiData.containsKey("ttsProvider")) {
+                    ai.setTtsProvider((String) aiData.get("ttsProvider"));
+                }
+                String ttsApiKeyVal = (String) aiData.get("ttsApiKey");
+                if (ttsApiKeyVal != null && !ttsApiKeyVal.isEmpty() && !ttsApiKeyVal.endsWith("****")) {
+                    ai.setTtsApiKey(ttsApiKeyVal);
+                }
+                if (aiData.containsKey("ttsGroupId")) {
+                    ai.setTtsGroupId((String) aiData.get("ttsGroupId"));
+                }
+                if (aiData.containsKey("ttsModel")) {
+                    ai.setTtsModel((String) aiData.get("ttsModel"));
+                }
+                if (aiData.containsKey("ttsVoice")) {
+                    ai.setTtsVoice((String) aiData.get("ttsVoice"));
+                }
+            }
             
             // 保存配置
             configService.updateConfig(config);
@@ -365,6 +429,12 @@ public class SystemController {
             response.status(500);
             return createErrorResponse(500, "更新系统配置失败: " + e.getMessage());
         }
+    }
+
+    private static String maskApiKey(String key) {
+        if (key == null || key.isEmpty()) return "";
+        if (key.length() <= 4) return "****";
+        return key.substring(0, 4) + "****";
     }
 
     private String createSuccessResponse(Object data) {
@@ -498,6 +568,113 @@ public class SystemController {
             logger.error("测试通知发送失败", e);
             response.status(500);
             return createErrorResponse(500, "测试通知发送失败: " + e.getMessage());
+        }
+    }
+
+    private static final String TTS_TEST_URL = "https://api.minimaxi.com/v1/t2a_v2";
+
+    /**
+     * 测试 AI 连接：验证 AI 网关（chat）和/或 MiniMax TTS 是否可用。
+     * POST /api/system/ai/test
+     */
+    @SuppressWarnings("unchecked")
+    public String testAiConnection(Request request, Response response) {
+        try {
+            Config config = configService.getConfig();
+            Config.AiConfig ai = config != null ? config.getAi() : null;
+            if (ai == null) {
+                response.status(400);
+                return createErrorResponse(400, "未配置 AI 选项");
+            }
+            List<String> ok = new ArrayList<>();
+            List<String> err = new ArrayList<>();
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+
+            // 1) 若启用了 AI 且配置了 baseUrl + apiKey，测试 chat/completions
+            if (ai.isEnabled() && ai.getBaseUrl() != null && !ai.getBaseUrl().isBlank()
+                    && ai.getApiKey() != null && !ai.getApiKey().isBlank()) {
+                try {
+                    String baseUrl = ai.getBaseUrl().endsWith("/") ? ai.getBaseUrl() : ai.getBaseUrl() + "/";
+                    String url = baseUrl + "chat/completions";
+                    String model = (ai.getDefaultModel() != null && !ai.getDefaultModel().isBlank())
+                            ? ai.getDefaultModel() : "google/gemini-2.0-flash-001";
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("model", model);
+                    body.put("max_tokens", 10);
+                    body.put("messages", List.of(Map.of("role", "user", "content", "测试")));
+                    String bodyJson = objectMapper.writeValueAsString(body);
+                    HttpRequest req = HttpRequest.newBuilder()
+                            .uri(URI.create(url))
+                            .header("Content-Type", "application/json")
+                            .header("Authorization", "Bearer " + ai.getApiKey())
+                            .timeout(Duration.ofSeconds(30))
+                            .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
+                            .build();
+                    HttpResponse<String> res = client.send(req, HttpResponse.BodyHandlers.ofString());
+                    if (res.statusCode() >= 200 && res.statusCode() < 300) {
+                        ok.add("AI 网关连接成功");
+                    } else {
+                        err.add("AI 网关: HTTP " + res.statusCode() + " " + (res.body() != null && res.body().length() > 200 ? res.body().substring(0, 200) + "..." : res.body()));
+                    }
+                } catch (Exception e) {
+                    err.add("AI 网关: " + e.getMessage());
+                }
+            }
+
+            // 2) 若配置了 TTS API Key，测试 MiniMax TTS
+            if (ai.getTtsApiKey() != null && !ai.getTtsApiKey().isBlank()) {
+                try {
+                    String model = (ai.getTtsModel() != null && !ai.getTtsModel().isBlank()) ? ai.getTtsModel() : "speech-02-hd";
+                    String voice = (ai.getTtsVoice() != null && !ai.getTtsVoice().isBlank()) ? ai.getTtsVoice() : "male-qn-qingse";
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("model", model);
+                    body.put("text", "测试");
+                    body.put("stream", false);
+                    body.put("voice_setting", Map.of("voice_id", voice, "speed", 1, "vol", 1, "pitch", 0));
+                    body.put("audio_setting", Map.of("sample_rate", 32000, "bitrate", 128000, "format", "mp3", "channel", 1));
+                    String bodyJson = objectMapper.writeValueAsString(body);
+                    HttpRequest req = HttpRequest.newBuilder()
+                            .uri(URI.create(TTS_TEST_URL))
+                            .header("Content-Type", "application/json")
+                            .header("Authorization", "Bearer " + ai.getTtsApiKey())
+                            .timeout(Duration.ofSeconds(30))
+                            .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
+                            .build();
+                    HttpResponse<String> res = client.send(req, HttpResponse.BodyHandlers.ofString());
+                    if (res.statusCode() == 200) {
+                        Map<String, Object> root = objectMapper.readValue(res.body(), Map.class);
+                        Map<String, Object> data = (Map<String, Object>) root.get("data");
+                        if (data != null && data.get("audio") != null) {
+                            ok.add("TTS 连接成功");
+                        } else {
+                            err.add("TTS 响应格式异常");
+                        }
+                    } else {
+                        err.add("TTS: HTTP " + res.statusCode() + " " + (res.body() != null && res.body().length() > 200 ? res.body().substring(0, 200) + "..." : res.body()));
+                    }
+                } catch (Exception e) {
+                    err.add("TTS: " + e.getMessage());
+                }
+            }
+
+            if (ok.isEmpty() && err.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "请先配置 AI 网关（baseUrl + apiKey）或 TTS API Key");
+            }
+            if (!err.isEmpty()) {
+                response.status(500);
+                return createErrorResponse(500, String.join("；", err));
+            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", String.join("；", ok));
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(result);
+        } catch (Exception e) {
+            logger.error("测试 AI 连接失败", e);
+            response.status(500);
+            return createErrorResponse(500, "测试失败: " + e.getMessage());
         }
     }
 
