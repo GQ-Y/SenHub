@@ -1,8 +1,8 @@
 export const translations = {
   en: {
-    app_name: "AI Smart Driver Gateway Management Platform",
+    app_name: "SenHub",
     login_title: "Security Management System",
-    login_subtitle: "Sign in to access your dashboard",
+    login_subtitle: "AI multimodal vision security hub & smart gateway",
     username: "Username",
     password: "Password",
     sign_in: "Sign In",
@@ -346,9 +346,9 @@ export const translations = {
     no_event_selected: "No event types selected"
   },
   zh: {
-    app_name: "AI智能驱动网关管理平台",
+    app_name: "SenHub",
     login_title: "安防设备管理系统",
-    login_subtitle: "登录以访问管理面板",
+    login_subtitle: "AI多模态视觉安防中枢智能网关系统",
     username: "用户名",
     password: "密码",
     sign_in: "登 录",

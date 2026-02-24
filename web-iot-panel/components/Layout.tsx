@@ -182,10 +182,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
       <aside className="w-64 bg-[#1e293b] flex-shrink-0 flex flex-col justify-between transition-all duration-300 z-20 shadow-xl">
         <div className="p-6">
           <div className="flex items-center space-x-3 mb-10">
-            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <Camera className="text-white" size={18} />
-            </div>
-            <h1 className="text-xl font-bold text-white tracking-tight">AI智能<span className="text-blue-400">管理系统</span></h1>
+            <img src="/logo.svg" alt="SenHub" className="w-8 h-8 flex-shrink-0 object-contain" />
+            <h1 className="text-xl font-bold text-white tracking-tight">SenHub</h1>
           </div>
 
           <nav className="space-y-2">

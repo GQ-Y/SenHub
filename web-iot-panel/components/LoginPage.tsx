@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Camera, Lock, User, ArrowRight } from 'lucide-react';
+import { Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { authService } from '../src/api/services';
+
+// CDN 背景图（Unsplash），AI 相关主题，自动轮播
+const LOGIN_BG_IMAGES = [
+  'https://images.unsplash.com/photo-1677442136019-0f110b4b2531?w=1920&q=80', // AI / 神经网络
+  'https://images.unsplash.com/photo-1531746795393-6cde5e4b2eed?w=1920&q=80', // 机器人 / 人机协作
+  'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=1920&q=80', // 芯片 / 电路 / 算力
+  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1920&q=80',   // 数据可视化 / 智能分析
+];
 
 export const LoginPage: React.FC = () => {
   const { login, t, setLanguage, language } = useAppContext();
@@ -12,6 +20,15 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('123456');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [bgIndex, setBgIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setBgIndex((i) => (i + 1) % LOGIN_BG_IMAGES.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,20 +49,33 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Decor */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-200/30 rounded-full blur-[100px]"></div>
-          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-cyan-200/30 rounded-full blur-[100px]"></div>
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* CDN 图片背景轮播 + 遮罩 */}
+      <div className="absolute inset-0 z-0">
+        {LOGIN_BG_IMAGES.map((src, i) => (
+          <div
+            key={src}
+            className="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
+            style={{
+              backgroundImage: `url(${src})`,
+              opacity: i === bgIndex ? 1 : 0,
+            }}
+          />
+        ))}
+        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(15,23,42,0.7)_100%)]" />
       </div>
 
-      <div className="bg-white/80 backdrop-blur-xl w-full max-w-md rounded-3xl shadow-2xl p-8 z-10 border border-white">
+      <div className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-3xl shadow-2xl p-8 z-10 border border-white/80">
         <div className="text-center mb-10">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/30 mx-auto mb-6 transform rotate-3">
-                <Camera className="text-white" size={32} />
-            </div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">{t('app_name')}</h1>
-            <p className="text-gray-500">{t('login_subtitle')}</p>
+            <img src="/logo.svg" alt="SenHub" className="w-16 h-16 mx-auto mb-5 object-contain drop-shadow-lg" />
+            <h1
+              className="text-3xl font-bold text-gray-800 mb-2 tracking-tight transition-all duration-300 cursor-default select-none hover:scale-105 hover:text-[#0066FF] hover:tracking-wider"
+              style={{ fontFamily: "'Orbitron', sans-serif" }}
+            >
+              {t('app_name')}
+            </h1>
+            <p className="text-gray-500 text-sm">{t('login_subtitle')}</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
@@ -68,12 +98,21 @@ export const LoginPage: React.FC = () => {
                 <div className="relative">
                     <Lock className="absolute left-4 top-3.5 text-gray-400" size={20} />
                     <input 
-                        type="password" 
+                        type={showPassword ? 'text' : 'password'}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                        className="w-full pl-12 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
                         placeholder="••••••"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200/80 transition-colors"
+                      title={showPassword ? t('password') : t('password')}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
                 </div>
             </div>
 
