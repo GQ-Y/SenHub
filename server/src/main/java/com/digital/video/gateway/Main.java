@@ -104,6 +104,8 @@ public class Main {
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
+        Thread.setDefaultUncaughtExceptionHandler((t, e) ->
+                LoggerFactory.getLogger(Main.class).error("未捕获异常 [thread={}]", t.getName(), e));
         Main main = new Main();
         main.start();
     }

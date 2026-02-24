@@ -435,6 +435,13 @@ public class HikvisionSDK implements DeviceSDK {
     }
 
     /**
+     * 健康探针：执行器是否存活（用于 Keeper/SDK 健康检查）
+     */
+    public boolean isExecutorAlive() {
+        return hikvisionExecutor != null && !hikvisionExecutor.isShutdown();
+    }
+
+    /**
      * 登录设备（经单线程执行器，带超时）
      */
     @Override

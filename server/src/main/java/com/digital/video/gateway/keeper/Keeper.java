@@ -2,6 +2,7 @@ package com.digital.video.gateway.keeper;
 
 import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.device.DeviceManager;
+import com.digital.video.gateway.device.SDKFactory;
 import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.recorder.Recorder;
 import org.slf4j.Logger;
@@ -88,10 +89,16 @@ public class Keeper {
     }
 
     /**
-     * 检查所有设备状态
+     * 检查所有设备状态（先做 SDK 健康检查，再检查设备）
      */
     private void checkDevices() {
         try {
+            // 先检查各品牌 SDK 健康，再检查设备
+            for (String brand : new String[] { "tiandy", "hikvision", "dahua" }) {
+                if (!SDKFactory.checkSDKHealth(brand)) {
+                    logger.debug("SDK 健康检查未通过: {}（可能未初始化或未使用）", brand);
+                }
+            }
             List<DeviceInfo> devices = deviceManager.getAllDevices();
             logger.debug("开始检查设备状态，设备数量: {}", devices.size());
 

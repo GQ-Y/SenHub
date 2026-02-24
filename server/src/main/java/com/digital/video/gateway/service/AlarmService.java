@@ -21,6 +21,8 @@ import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 报警服务
@@ -49,6 +51,12 @@ public class AlarmService {
     private FlowExecutor flowExecutor;
     private boolean enabled = true;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** 报警工作流专用线程池，避免在 SDK 回调线程上同步执行工作流导致阻塞 */
+    private final ExecutorService alarmWorkflowExecutor = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "AlarmWorkflow");
+        t.setDaemon(false);
+        return t;
+    });
     
     public AlarmService(DeviceManager deviceManager, CaptureService captureService, OssService ossService) {
         this.deviceManager = deviceManager;
@@ -198,21 +206,48 @@ public class AlarmService {
             logger.warn("eventResolver为null，无法解析事件类型");
         }
         
-        // 报警防抖检查：同一设备同一类型报警在防抖间隔内只处理一次
-        // 使用eventKey（如果可用）作为防抖key，确保相同标准事件不会重复触发
+        // 报警防抖检查：同一设备同一类型报警在防抖间隔内只处理一次（原子化，避免竞态）
+        // 使用 eventKey（如果可用）作为防抖 key，确保相同标准事件不会重复触发
         String debounceKey = deviceId + ":" + (eventKey != null ? eventKey : alarmType);
         long now = System.currentTimeMillis();
-        Long lastTime = lastAlarmTime.get(debounceKey);
-        if (lastTime != null && (now - lastTime) < alarmDebounceIntervalMs) {
-            logger.debug("报警防抖，跳过处理: deviceId={}, eventKey={}, alarmType={}, 距上次处理: {}ms, 防抖间隔: {}ms", 
-                    deviceId, eventKey, alarmType, now - lastTime, alarmDebounceIntervalMs);
+        Long previousTime = lastAlarmTime.compute(debounceKey, (k, lastTime) -> {
+            if (lastTime != null && (now - lastTime) < alarmDebounceIntervalMs) {
+                return lastTime; // 仍在防抖期内，保留原值，不更新
+            }
+            return now; // 超过防抖期或首次，更新为当前时间
+        });
+        boolean shouldProcess = (previousTime == null || (now - previousTime) >= alarmDebounceIntervalMs);
+        if (!shouldProcess) {
+            logger.debug("报警防抖，跳过处理: deviceId={}, eventKey={}, alarmType={}, 防抖间隔: {}ms",
+                    deviceId, eventKey, alarmType, alarmDebounceIntervalMs);
             return;
         }
-        lastAlarmTime.put(debounceKey, now);
         
         logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, eventKey={}, message={}", 
             deviceId, channel, alarmTypeDisplay, eventKey, alarmMessage);
         
+        // 工作流执行提交到专用线程池，避免阻塞 SDK 回调线程
+        final String fDeviceId = deviceId;
+        final int fChannel = channel;
+        final String fAlarmType = alarmType;
+        final String fAlarmMessage = alarmMessage;
+        final Map<String, Object> fAlarmData = alarmData != null ? new HashMap<>(alarmData) : null;
+        final String fEventKey = eventKey;
+        final String fEventNameZh = eventNameZh;
+        final String fEventNameEn = eventNameEn;
+        final String fCategory = category;
+        final String fAlarmTypeDisplay = alarmTypeDisplay;
+        final String fAlarmTypeName = alarmTypeName;
+        alarmWorkflowExecutor.submit(() -> runAlarmWorkflow(fDeviceId, fChannel, fAlarmType, fAlarmMessage, fAlarmData,
+                fEventKey, fEventNameZh, fEventNameEn, fCategory, fAlarmTypeDisplay, fAlarmTypeName));
+    }
+    
+    /**
+     * 在报警工作流线程池中执行：获取设备、匹配规则、执行工作流、写报警记录（不阻塞 SDK 回调）
+     */
+    private void runAlarmWorkflow(String deviceId, int channel, String alarmType, String alarmMessage,
+            Map<String, Object> alarmData, String eventKey, String eventNameZh, String eventNameEn, String category,
+            String alarmTypeDisplay, String alarmTypeName) {
         try {
             // 获取设备信息
             DeviceInfo device = deviceManager.getDevice(deviceId);
@@ -239,12 +274,11 @@ public class AlarmService {
             // 获取装置ID（如果有）
             String assemblyId = null;
             if (alarmRuleService != null && database != null) {
-                // 从装置设备关联表查询
                 com.digital.video.gateway.service.AssemblyService assemblyService = 
                     new com.digital.video.gateway.service.AssemblyService(database);
                 List<com.digital.video.gateway.database.Assembly> assemblies = assemblyService.getAssembliesByDevice(deviceId);
                 if (!assemblies.isEmpty()) {
-                    assemblyId = assemblies.get(0).getAssemblyId(); // 取第一个装置
+                    assemblyId = assemblies.get(0).getAssemblyId();
                 }
             }
             
@@ -257,11 +291,10 @@ public class AlarmService {
                         matchedRules.size(), deviceId, eventKey, alarmTypeDisplay);
             }
             
-            // 创建报警记录
             AlarmRecord alarmRecord = new AlarmRecord();
             alarmRecord.setDeviceId(deviceId);
             alarmRecord.setAssemblyId(assemblyId);
-            alarmRecord.setAlarmType(eventKey != null ? eventKey : alarmType); // 优先使用eventKey
+            alarmRecord.setAlarmType(eventKey != null ? eventKey : alarmType);
             alarmRecord.setAlarmLevel("warning");
             alarmRecord.setChannel(channel);
             if (alarmData != null) {
@@ -277,7 +310,6 @@ public class AlarmService {
             String videoUrl = null;
             FlowContext baseContext = buildFlowContext(deviceId, assemblyId, eventKey != null ? eventKey : alarmType, 
                     alarmMessage, channel, alarmData);
-            // 将标准事件信息放入context，供WebhookHandler使用
             if (eventKey != null) {
                 baseContext.putVariable("eventKey", eventKey);
                 baseContext.putVariable("eventNameZh", eventNameZh);
@@ -292,9 +324,6 @@ public class AlarmService {
                 logger.info("已设置alarmTypeName到context: {} (原始: {})", alarmTypeName, alarmType);
             }
             
-            // 执行规则动作
-            // 规则按优先级排序：设备级 > 装置级 > 全局
-            // 去重：多条规则关联同一工作流时只执行一次（优先执行设备级规则的工作流）
             if (!matchedRules.isEmpty()) {
                 Set<String> executedFlows = new HashSet<>();
                 for (int i = 0; i < matchedRules.size(); i++) {
@@ -304,16 +333,12 @@ public class AlarmService {
                         logger.warn("规则未关联流程: ruleId={}, ruleName={}", rule.getRuleId(), rule.getName());
                         continue;
                     }
-                    
-                    // 同一工作流只执行一次
                     if (executedFlows.contains(flowId)) {
                         logger.info("工作流已执行，跳过重复: flowId={}, 被跳过规则={} (scope={})", 
                                 flowId, rule.getName(), rule.getScope());
                         continue;
                     }
-                    
                     logger.info("执行规则[{}]: {} (scope={}, flowId={})", i + 1, rule.getName(), rule.getScope(), flowId);
-                    
                     FlowContext ctx = cloneFlowContext(baseContext);
                     boolean flowExecuted = executeFlowIfAvailable(rule, ctx);
                     if (flowExecuted) {
@@ -325,20 +350,15 @@ public class AlarmService {
                     }
                 }
             } else {
-                // 没有匹配的规则，不执行任何工作流
-                // 只记录报警，不触发工作流执行
                 logger.info("无匹配规则，跳过工作流执行: deviceId={}, alarmType={}", deviceId, alarmTypeDisplay);
             }
             
-            // 更新报警记录
             alarmRecord.setCaptureUrl(captureUrl);
             alarmRecord.setVideoUrl(videoUrl);
             alarmRecord.setStatus("processed");
-            
             if (alarmRecordService != null) {
                 alarmRecordService.createAlarmRecord(alarmRecord);
             }
-            
         } catch (Exception e) {
             logger.error("处理报警事件异常: deviceId={}, alarmType={}", deviceId, alarmType, e);
         }

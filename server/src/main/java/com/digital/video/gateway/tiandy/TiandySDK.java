@@ -674,20 +674,19 @@ public class TiandySDK implements DeviceSDK {
     @Override
     public int startRealPlay(int userId, int channel, int streamType) {
         if (!initialized || nvssdkLibrary == null) {
-            System.out.println(
-                    System.currentTimeMillis() + " DEBUG: TiandySDK.startRealPlay check initialized=" + initialized);
+            logger.debug("TiandySDK.startRealPlay check initialized={}", initialized);
             logger.error("天地伟业SDK未初始化");
             return -1;
         }
 
         boolean locked = false;
         try {
-            System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK start locking");
+            logger.debug("TiandySDK start locking");
             logger.info("天地伟业预览启动: 准备获取锁 userId={}, channel={}", userId, channel);
             // 使用 tryLock 避免死锁，等待时间需大于 SyncRealPlay 的超时时间(60s)
             locked = startRealPlayLock.tryLock(65, java.util.concurrent.TimeUnit.SECONDS);
         } catch (InterruptedException e) {
-            System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK lock interrupted");
+            logger.debug("TiandySDK lock interrupted");
             e.printStackTrace();
             logger.error("天地伟业预览启动: 获取锁被中断 userId={}, channel={}", userId, channel);
             Thread.currentThread().interrupt();
@@ -695,20 +694,20 @@ public class TiandySDK implements DeviceSDK {
         }
 
         if (!locked) {
-            System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK lock result=false");
+            logger.debug("TiandySDK lock result=false");
             logger.error("天地伟业预览启动: 获取锁超时(65s), 可能存在死锁 userId={}, channel={}", userId, channel);
             return -1;
         }
-        System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK lock result=true");
+        logger.debug("TiandySDK lock result=true");
         logger.info("天地伟业预览启动: 获取锁成功, 开始执行 userId={}, channel={}", userId, channel);
 
         try {
             // 参考Channel.java:245-318的实现（官方示例在 SyncRealPlay 前不调用 GetLogonStatus，此处仅做快速校验）
-            System.out.println(System.currentTimeMillis() + " DEBUG: Calling GetLogonStatus userId=" + userId);
+            logger.debug("Calling GetLogonStatus userId={}", userId);
             int logonStatus = nvssdkLibrary.NetClient_GetLogonStatus(userId);
-            System.out.println(System.currentTimeMillis() + " DEBUG: LogonStatus=" + logonStatus);
+            logger.debug("LogonStatus={}", logonStatus);
             if (logonStatus != NvssdkLibrary.LOGON_SUCCESS) { // 0表示登录成功
-                System.out.println(System.currentTimeMillis() + " DEBUG: LogonStatus invalid");
+                logger.debug("LogonStatus invalid");
                 logger.error("设备登录状态无效: userId={}, logonStatus={}（0=成功, 4=失败, 5=超时），无法启动预览",
                         userId, logonStatus);
                 return -1;
@@ -723,11 +722,11 @@ public class TiandySDK implements DeviceSDK {
 
             // 参考Channel.java:253-277，必须验证通道号是否有效
             IntByReference piDigitalChanCount = new IntByReference();
-            System.out.println(System.currentTimeMillis() + " DEBUG: Calling GetDigitalChannelNum");
+            logger.debug("Calling GetDigitalChannelNum");
             int ret = nvssdkLibrary.NetClient_GetDigitalChannelNum(userId, piDigitalChanCount);
-            System.out.println(System.currentTimeMillis() + " DEBUG: GetDigitalChannelNum ret=" + ret);
+            logger.debug("GetDigitalChannelNum ret={}", ret);
             if (ret != NvssdkLibrary.RET_SUCCESS) {
-                System.out.println(System.currentTimeMillis() + " DEBUG: GetDigitalChannelNum failed");
+                logger.debug("GetDigitalChannelNum failed");
                 logger.error("获取数字通道数失败: userId={}, 错误码={}", userId, ret);
                 return -1;
             }
@@ -735,11 +734,11 @@ public class TiandySDK implements DeviceSDK {
 
             // 获取总通道数
             IntByReference piChanTotalCount = new IntByReference();
-            System.out.println(System.currentTimeMillis() + " DEBUG: Calling GetChannelNum");
+            logger.debug("Calling GetChannelNum");
             ret = nvssdkLibrary.NetClient_GetChannelNum(userId, piChanTotalCount);
-            System.out.println(System.currentTimeMillis() + " DEBUG: GetChannelNum ret=" + ret);
+            logger.debug("GetChannelNum ret={}", ret);
             if (ret != NvssdkLibrary.RET_SUCCESS) {
-                System.out.println(System.currentTimeMillis() + " DEBUG: GetChannelNum failed");
+                logger.debug("GetChannelNum failed");
                 logger.error("获取总通道数失败: userId={}, 错误码={}", userId, ret);
                 return -1;
             }
@@ -749,8 +748,7 @@ public class TiandySDK implements DeviceSDK {
             if (digitalChanCount == 0) {
                 digitalChanCount = chanTotalCount;
             }
-            System.out.println(System.currentTimeMillis() + " DEBUG: Channel counts digital=" + digitalChanCount
-                    + " total=" + chanTotalCount);
+            logger.debug("Channel counts digital={} total={}", digitalChanCount, chanTotalCount);
 
             logger.info("天地伟业预览启动: 通道数获取完成 总通道={}, 数字通道={}, 请求通道0-based={}",
                     chanTotalCount, digitalChanCount, channelNo);
@@ -771,10 +769,9 @@ public class TiandySDK implements DeviceSDK {
             tVideoPara.tCltInfo.m_iNetMode = 1; // UDP（与 TiandyCaptureDemo 一致，mode 4 RTSP 不被 SDK V5.5 支持）
             tVideoPara.tCltInfo.m_iTimeout = 20; // 20s 超时
 
-            System.out.println(System.currentTimeMillis() + " DEBUG: VideoPara streamType="
-                    + tVideoPara.tCltInfo.m_iStreamNO + " netMode=" + tVideoPara.tCltInfo.m_iNetMode + " timeout="
-                    + tVideoPara.tCltInfo.m_iTimeout + " channelNo=" + channelNo + " cltInfoSize="
-                    + tVideoPara.tCltInfo.size());
+            logger.debug("VideoPara streamType={} netMode={} timeout={} channelNo={} cltInfoSize={}",
+                    tVideoPara.tCltInfo.m_iStreamNO, tVideoPara.tCltInfo.m_iNetMode, tVideoPara.tCltInfo.m_iTimeout,
+                    channelNo, tVideoPara.tCltInfo.size());
 
             // 采用 SDK 默认缓冲区参数
             /*
@@ -800,7 +797,7 @@ public class TiandySDK implements DeviceSDK {
             tVideoPara.write();
 
             IntByReference piConnectID = new IntByReference();
-            System.out.println(System.currentTimeMillis() + " DEBUG: Calling SyncRealPlay");
+            logger.debug("Calling SyncRealPlay");
             logger.info("天地伟业预览启动: 即将调用 NetClient_SyncRealPlay（可能阻塞至超时）");
 
             final int SYNC_REALPLAY_HARD_TIMEOUT_SEC = 90;
@@ -820,7 +817,7 @@ public class TiandySDK implements DeviceSDK {
                 iRet = future.get(SYNC_REALPLAY_HARD_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS);
             } catch (java.util.concurrent.TimeoutException te) {
                 long elapsed = System.currentTimeMillis() - startTime;
-                System.out.println(System.currentTimeMillis() + " DEBUG: SyncRealPlay HARD TIMEOUT after " + elapsed + "ms");
+                logger.debug("SyncRealPlay HARD TIMEOUT after {}ms", elapsed);
                 logger.error("天地伟业预览启动: SyncRealPlay Java层硬超时({}s), userId={}, channel={}",
                         SYNC_REALPLAY_HARD_TIMEOUT_SEC, userId, channel);
                 executor.shutdownNow();
@@ -833,8 +830,7 @@ public class TiandySDK implements DeviceSDK {
                 executor.shutdownNow();
             }
             long endTime = System.currentTimeMillis();
-            System.out.println(
-                    endTime + " DEBUG: SyncRealPlay returns " + iRet + " (took " + (endTime - startTime) + "ms)");
+            logger.debug("SyncRealPlay returns {} (took {}ms)", iRet, endTime - startTime);
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 int connectID = piConnectID.getValue();
@@ -855,7 +851,7 @@ public class TiandySDK implements DeviceSDK {
         } finally {
             if (locked) {
                 startRealPlayLock.unlock();
-                System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK unlocked");
+                logger.debug("TiandySDK unlocked");
                 logger.info("天地伟业预览启动: 释放锁 userId={}, channel={}", userId, channel);
             }
         }

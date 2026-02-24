@@ -38,12 +38,10 @@ public class RecorderService {
             logger.debug("录制功能已禁用");
             return false;
         }
-        
         if (recordingSessions.containsKey(deviceId)) {
             logger.debug("设备 {} 已在录制中", deviceId);
             return true;
         }
-        
         DeviceInfo device = deviceManager.getDevice(deviceId);
         if (device == null) {
             logger.warn("设备不存在，无法启动录制: {}", deviceId);
@@ -92,7 +90,13 @@ public class RecorderService {
             boolean result = sdk.startRecording(connectId, filePath);
             if (result) {
                 RecordingSession session = new RecordingSession(deviceId, userId, connectId, filePath);
-                recordingSessions.put(deviceId, session);
+                RecordingSession existing = recordingSessions.putIfAbsent(deviceId, session);
+                if (existing != null) {
+                    sdk.stopRecording(connectId);
+                    sdk.stopRealPlay(connectId);
+                    logger.debug("设备 {} 已在录制中（并发竞争已忽略本次启动）", deviceId);
+                    return true;
+                }
                 logger.info("设备 {} 录制已启动: {}", deviceId, filePath);
                 return true;
             } else {

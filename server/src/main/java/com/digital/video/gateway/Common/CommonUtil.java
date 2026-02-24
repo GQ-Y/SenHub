@@ -1,6 +1,11 @@
 package com.digital.video.gateway.Common;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class CommonUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(CommonUtil.class);
 
     //SDK时间解析
     public static String parseTime(int time)
@@ -18,7 +23,7 @@ public class CommonUtil {
                 String.format("%02d", dwHour) +
                 String.format("%02d", dwMinute) +
                 String.format("%02d", dwSecond);
-//        System.out.println(sTime);
+        logger.debug("parseTime: {}", sTime);
         return sTime;
     }
 

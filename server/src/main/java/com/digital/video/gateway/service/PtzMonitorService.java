@@ -26,7 +26,7 @@ public class PtzMonitorService {
     private final Config config;
     
     private ScheduledExecutorService scheduler;
-    private boolean running = false;
+    private volatile boolean running = false;
 
     public PtzMonitorService(Database database, DeviceManager deviceManager, Config config) {
         this.database = database;

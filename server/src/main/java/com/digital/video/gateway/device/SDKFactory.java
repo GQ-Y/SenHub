@@ -209,6 +209,36 @@ public class SDKFactory {
         DeviceSDK sdk = getSDK(brand);
         return sdk != null && sdk.isInitialized();
     }
+
+    /**
+     * SDK 健康探针：验证指定品牌 SDK 的初始化状态与基本可用性。
+     * 用于 Keeper 周期中先检查 SDK 再检查设备。
+     *
+     * @param brand 品牌：hikvision / tiandy / dahua
+     * @return 该品牌 SDK 是否健康可用
+     */
+    public static boolean checkSDKHealth(String brand) {
+        if (brand == null || brand.isEmpty()) {
+            return false;
+        }
+        switch (brand.toLowerCase()) {
+            case "tiandy":
+                return tiandySDK != null && tiandySDK.isInitialized();
+            case "hikvision":
+                DeviceSDK hik = getSDK("hikvision");
+                if (hik == null) {
+                    return false;
+                }
+                if (hik instanceof HikvisionSDK) {
+                    return ((HikvisionSDK) hik).isExecutorAlive();
+                }
+                return hik.isInitialized();
+            case "dahua":
+                return dahuaSDK != null && dahuaSDK.isInitialized();
+            default:
+                return false;
+        }
+    }
     
     /**
      * 获取所有已初始化的SDK状态信息
