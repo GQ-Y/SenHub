@@ -91,24 +91,29 @@ public class PtzMonitorService {
 
     /**
      * 轮询所有启用PTZ监控的设备，获取PTZ位置
+     * 仅轮询 devices 表中存在的设备；对 PTZ 扩展表中存在但设备已不存在的脏数据自动关闭监控并只打一次日志。
      */
     private void pollPtzPositions() {
         try {
-            // 获取所有启用PTZ监控的设备
             List<DevicePtzExtensionTable.PtzExtension> enabledDevices = database.getAllEnabledPtzDevices();
-            
+
             if (enabledDevices.isEmpty()) {
                 logger.trace("没有启用PTZ监控的设备");
                 return;
             }
 
-            logger.debug("开始轮询PTZ位置，共{}个设备", enabledDevices.size());
-
             for (DevicePtzExtensionTable.PtzExtension ptzExt : enabledDevices) {
+                String deviceId = ptzExt.getDeviceId();
+                if (deviceManager.getDevice(deviceId) == null) {
+                    // 设备表中不存在该 device_id，属脏数据，关闭其 PTZ 监控并只打一次日志
+                    database.setPtzMonitorEnabled(deviceId, false);
+                    logger.info("PTZ扩展表存在无效设备ID（设备表中无此设备），已自动关闭其PTZ监控: {}", deviceId);
+                    continue;
+                }
                 try {
-                    refreshPtzPosition(ptzExt.getDeviceId());
+                    refreshPtzPosition(deviceId);
                 } catch (Exception e) {
-                    logger.error("获取设备PTZ位置失败: {}", ptzExt.getDeviceId(), e);
+                    logger.error("获取设备PTZ位置失败: {}", deviceId, e);
                 }
             }
         } catch (Exception e) {
@@ -125,7 +130,7 @@ public class PtzMonitorService {
     public boolean refreshPtzPosition(String deviceId) {
         DeviceInfo device = deviceManager.getDevice(deviceId);
         if (device == null) {
-            logger.warn("设备不存在: {}", deviceId);
+            logger.debug("设备不存在，跳过PTZ刷新: {}", deviceId);
             return false;
         }
 

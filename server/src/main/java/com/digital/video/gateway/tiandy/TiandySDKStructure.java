@@ -75,6 +75,7 @@ public class TiandySDKStructure {
         public int m_iChannelNo;
         public byte[] m_cNetFile = new byte[255];
         public byte[] m_cRemoteIP = new byte[16];
+        public byte padding; // 64位对齐补位(255+16=271, 补1字节到272以对齐int)
         public int m_iNetMode;
         public int m_iTimeout;
         public int m_iTTL;
@@ -88,7 +89,7 @@ public class TiandySDKStructure {
 
         @Override
         protected List<String> getFieldOrder() {
-            return Arrays.asList("m_iServerID", "m_iChannelNo", "m_cNetFile", "m_cRemoteIP",
+            return Arrays.asList("m_iServerID", "m_iChannelNo", "m_cNetFile", "m_cRemoteIP", "padding",
                     "m_iNetMode", "m_iTimeout", "m_iTTL", "m_iBufferCount",
                     "m_iDelayNum", "m_iDelayTime", "m_iStreamNO", "m_iFlag",
                     "m_iPosition", "m_iSpeed");
@@ -107,8 +108,8 @@ public class TiandySDKStructure {
         public int iChannel; // 通道号
         public int iState; // 报警状态 1-报警，0-消警
         public int iEventType; // 事件类型 0-单绊线越界 1-双绊线越界 2-周界检测 3-徘徊 4-停车 5-奔跑
-                              // 6-区域人员密度 7-物品遗留 8-物品丢失 9-人脸识别 10-视频诊断
-                              // 11-智能跟踪 12-流量统计 13-人群聚集 14-离岗检测 15-音频诊断
+                               // 6-区域人员密度 7-物品遗留 8-物品丢失 9-人脸识别 10-视频诊断
+                               // 11-智能跟踪 12-流量统计 13-人群聚集 14-离岗检测 15-音频诊断
         public int iRuleID; // 规则ID
         public int uiTargetID; // 目标ID
 
@@ -426,17 +427,33 @@ public class TiandySDKStructure {
     }
 
     /**
+     * SDK 日志级别结构体（NetClientTypes.h tagSdkLogLevel）
+     * 用于 NetClient_SetSDKInitConfig(INIT_CONFIG_SET_LOG_LEVEL) 抑制终端/文件噪音
+     * iTerminalOutputLevel: 0=不输出 100=ERROR 200=MSG 300=DEBUG
+     */
+    public static class SdkLogLevel extends Structure {
+        public int iTerminalOutputLevel;
+        public int iIsWriteFile;
+        public int iLogFileWriteLevel;
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("iTerminalOutputLevel", "iIsWriteFile", "iLogFileWriteLevel");
+        }
+    }
+
+    /**
      * PTZ绝对坐标结构体
      * 用于COMMAND_ID_SYNC_SETPTZ/GETPTZ设置或获取球机绝对坐标
      */
     public static class PTZ_ABSOLUTE_POS extends Structure {
-        public int iSize;       // 结构体大小
-        public int iChannelNo;  // 通道号（0-based）
-        public int iPan;        // 水平角度 * 100（0-36000，表示0-360°）
-        public int iTilt;       // 垂直角度 * 100（-9000到9000，表示-90°到90°）
-        public int iZoom;       // 变倍 * 100（100-4000，表示1x-40x）
-        public int iReserved1;  // 保留字段
-        public int iReserved2;  // 保留字段
+        public int iSize; // 结构体大小
+        public int iChannelNo; // 通道号（0-based）
+        public int iPan; // 水平角度 * 100（0-36000，表示0-360°）
+        public int iTilt; // 垂直角度 * 100（-9000到9000，表示-90°到90°）
+        public int iZoom; // 变倍 * 100（100-4000，表示1x-40x）
+        public int iReserved1; // 保留字段
+        public int iReserved2; // 保留字段
 
         @Override
         protected List<String> getFieldOrder() {
@@ -449,19 +466,19 @@ public class TiandySDKStructure {
      * 对应PARA_GET_PTZ (473)参数变化回调
      */
     public static class PTZ_POSITION_INFO extends Structure {
-        public int iSize;           // 结构体大小
-        public int iChannelNo;      // 通道号
-        public int iPan;            // 水平角度 * 100
-        public int iTilt;           // 垂直角度 * 100
-        public int iZoom;           // 变倍 * 100
-        public int iNorthAngle;     // 北偏角 * 100
-        public int iFov;            // 视场角 * 100
+        public int iSize; // 结构体大小
+        public int iChannelNo; // 通道号
+        public int iPan; // 水平角度 * 100
+        public int iTilt; // 垂直角度 * 100
+        public int iZoom; // 变倍 * 100
+        public int iNorthAngle; // 北偏角 * 100
+        public int iFov; // 视场角 * 100
         public int iReserved1;
         public int iReserved2;
 
         @Override
         protected List<String> getFieldOrder() {
-            return Arrays.asList("iSize", "iChannelNo", "iPan", "iTilt", "iZoom", 
+            return Arrays.asList("iSize", "iChannelNo", "iPan", "iTilt", "iZoom",
                     "iNorthAngle", "iFov", "iReserved1", "iReserved2");
         }
     }

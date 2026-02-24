@@ -142,14 +142,14 @@ public class Main {
     public void start() {
         // 打印启动横幅
         printStartupBanner();
-        
+
         logger.info("启动综合性数字视频监控网关预警系统...");
 
         try {
             // 0. 清理旧日志（在logback初始化之前清理，避免删除正在使用的日志文件）
             // 注意：logback在类加载时就会初始化，所以这里只清理旧的滚动日志文件
             int cleanedCount = LogCleaner.cleanAllLogs("./logs", "./sdkLog");
-            
+
             // 1. 加载配置
             config = ConfigLoader.load("config.yaml");
             if (config == null) {
@@ -157,7 +157,7 @@ public class Main {
                 System.exit(1);
             }
             logger.info("配置文件加载成功");
-            
+
             // 1.5. 如果配置中的日志路径与默认路径不同，也清理配置中的路径
             if (config.getLog() != null && config.getSdk() != null) {
                 String logFile = config.getLog().getFile();
@@ -169,14 +169,14 @@ public class Main {
                         cleanedCount += additionalCleaned;
                     }
                 }
-                
+
                 String sdkLogDir = config.getSdk().getLogPath();
                 if (sdkLogDir != null && !sdkLogDir.equals("./sdkLog") && !sdkLogDir.equals("sdkLog")) {
                     int additionalCleaned = LogCleaner.cleanSdkLogDirectory(sdkLogDir);
                     cleanedCount += additionalCleaned;
                 }
             }
-            
+
             if (cleanedCount > 0) {
                 logger.info("已清理 {} 个旧日志文件", cleanedCount);
             }
@@ -237,7 +237,7 @@ public class Main {
             alarmRecordService = new AlarmRecordService(database);
             speakerService = new SpeakerService(database);
             recordingTaskService = new RecordingTaskService(database, deviceManager, ossService);
-            recordingTaskService.setConfigService(configService);  // 注入ConfigService用于Webhook通知
+            recordingTaskService.setConfigService(configService); // 注入ConfigService用于Webhook通知
             flowService = new com.digital.video.gateway.workflow.FlowService(database);
             // 确保默认报警流程存在
             flowService.ensureDefaultAlarmFlow();
@@ -256,13 +256,18 @@ public class Main {
                 if (config.getLog() != null) {
                     radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
                 }
-                radarService.start();
-                RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
-                List<com.digital.video.gateway.database.RadarDevice> radarDevices = radarDeviceDAO.getAll();
-                logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
+                /*
+                 * radarService.start();
+                 * RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+                 * List<com.digital.video.gateway.database.RadarDevice> radarDevices =
+                 * radarDeviceDAO.getAll();
+                 * logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
+                 * 
+                 * radarTestService = new RadarTestService(radarService);
+                 * logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
+                 */
+                logger.info("雷达服务已暂时禁用（已注释掉启动代码）");
 
-                radarTestService = new RadarTestService(radarService);
-                logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
             } catch (Throwable e) {
                 // 捕获所有异常和错误（包括NoClassDefFoundError等Error类型）
                 logger.error("雷达服务启动失败，将继续启动其他服务", e);
@@ -300,8 +305,7 @@ public class Main {
                         t.setDaemon(true);
                         return t;
                     },
-                    (r, e) -> logger.warn("MQTT 消息处理队列已满，丢弃本条消息")
-            );
+                    (r, e) -> logger.warn("MQTT 消息处理队列已满，丢弃本条消息"));
 
             // 7. 初始化MQTT客户端（MQTT连接失败不应阻止服务启动）
             mqttClient = new MqttClient(config.getMqtt());
@@ -342,12 +346,12 @@ public class Main {
                 dahuaSDK.setStatusCallbacks(deviceManager, mqttClient);
                 logger.info("大华SDK状态回调已设置");
             }
-            
+
             // 7.8. 设置天地伟业SDK报警回调
             com.digital.video.gateway.tiandy.TiandySDK tiandySDK = (com.digital.video.gateway.tiandy.TiandySDK) SDKFactory
                     .getSDK("tiandy");
             if (tiandySDK != null) {
-                tiandySDK.setDeviceManager(deviceManager);  // 先设置设备管理器，用于查找设备ID
+                tiandySDK.setDeviceManager(deviceManager); // 先设置设备管理器，用于查找设备ID
                 tiandySDK.setAlarmService(alarmService);
                 logger.info("天地伟业SDK报警回调已设置");
             }
@@ -420,7 +424,8 @@ public class Main {
      * 设置按主题派发的 MQTT 处理器，并订阅工作流 mqtt_subscribe 节点配置的主题
      */
     private void setupMqttTopicHandler() {
-        if (mqttClient == null || flowExecutor == null || flowService == null || mqttMessageExecutor == null) return;
+        if (mqttClient == null || flowExecutor == null || flowService == null || mqttMessageExecutor == null)
+            return;
         final String commandTopic = config.getMqtt().getCommandTopic();
         mqttClient.setTopicMessageHandler((topic, payload) -> {
             // 投递到独立线程池执行，避免阻塞 Paho 回调线程
@@ -430,8 +435,10 @@ public class Main {
                         logger.info("收到MQTT命令: {}", payload);
                         CommandResponse response = commandHandler.handleCommand(payload);
                         String responseJson = objectMapper.writeValueAsString(response);
-                        if (mqttPublisher != null) mqttPublisher.publishResponse(responseJson);
-                        else if (mqttClient != null) mqttClient.publishResponse(responseJson);
+                        if (mqttPublisher != null)
+                            mqttPublisher.publishResponse(responseJson);
+                        else if (mqttClient != null)
+                            mqttClient.publishResponse(responseJson);
                         logger.info("命令响应已发送: {}", responseJson);
                     } else {
                         for (FlowDefinition def : flowService.getFlowDefinitionsByMqttTopic(topic)) {
@@ -461,7 +468,8 @@ public class Main {
      * 订阅工作流 mqtt_subscribe 节点配置的主题（连接/重连后调用）
      */
     private void subscribeMqttWorkflowTopics() {
-        if (mqttClient == null || flowService == null) return;
+        if (mqttClient == null || flowService == null)
+            return;
         for (String topic : flowService.getMqttSubscribeTopics()) {
             mqttClient.subscribe(topic);
             logger.info("已订阅工作流主题: {}", topic);
@@ -474,18 +482,21 @@ public class Main {
     private FlowExecutor createFlowExecutor() {
         FlowExecutor executor = new FlowExecutor();
         // 事件触发器：支持防抖间隔配置
-        executor.registerHandler("event_trigger", new com.digital.video.gateway.workflow.handlers.EventTriggerHandler());
+        executor.registerHandler("event_trigger",
+                new com.digital.video.gateway.workflow.handlers.EventTriggerHandler());
         executor.registerHandler("capture", new CaptureHandler(captureService));
-        executor.registerHandler("mqtt_publish", new MqttPublishHandler(mqttPublisher != null ? mqttPublisher : new FallbackMqttPublisher()));
-        executor.registerHandler("mqtt_subscribe", new com.digital.video.gateway.workflow.handlers.MqttSubscribeHandler());
-        
+        executor.registerHandler("mqtt_publish",
+                new MqttPublishHandler(mqttPublisher != null ? mqttPublisher : new FallbackMqttPublisher()));
+        executor.registerHandler("mqtt_subscribe",
+                new com.digital.video.gateway.workflow.handlers.MqttSubscribeHandler());
+
         // OssService 设置 ConfigService 以支持动态配置
         if (ossService != null) {
             ossService.setConfigService(configService);
         }
         executor.registerHandler("oss_upload", new OssUploadHandler(ossService));
         executor.registerHandler("speaker_play", new SpeakerPlayHandler(speakerService));
-        
+
         // WebhookHandler 传入 ConfigService，从数据库读取全局通知配置
         executor.registerHandler("webhook", new WebhookHandler(configService));
         executor.registerHandler("record", new RecordHandler(recordingTaskService));
@@ -493,9 +504,12 @@ public class Main {
         executor.registerHandler("delay", new com.digital.video.gateway.workflow.handlers.DelayHandler());
         executor.registerHandler("condition", new com.digital.video.gateway.workflow.handlers.ConditionHandler());
         executor.registerHandler("http_request", new com.digital.video.gateway.workflow.handlers.HttpRequestHandler());
-        executor.registerHandler("ptz_goto", new com.digital.video.gateway.workflow.handlers.PtzGotoHandler(ptzService));
-        executor.registerHandler("device_reboot", new com.digital.video.gateway.workflow.handlers.DeviceRebootHandler(deviceManager));
-        executor.registerHandler("radar_zone_toggle", new com.digital.video.gateway.workflow.handlers.RadarZoneToggleHandler(database, radarService));
+        executor.registerHandler("ptz_goto",
+                new com.digital.video.gateway.workflow.handlers.PtzGotoHandler(ptzService));
+        executor.registerHandler("device_reboot",
+                new com.digital.video.gateway.workflow.handlers.DeviceRebootHandler(deviceManager));
+        executor.registerHandler("radar_zone_toggle",
+                new com.digital.video.gateway.workflow.handlers.RadarZoneToggleHandler(database, radarService));
         executor.registerHandler("ai_inference", new com.digital.video.gateway.workflow.handlers.AiInferenceHandler());
         return executor;
     }
@@ -618,7 +632,8 @@ public class Main {
     }
 
     /**
-     * 发布设备状态到 senhub/device/status（entity_type=camera、device_id、type、device_info 含 camera_type）
+     * 发布设备状态到 senhub/device/status（entity_type=camera、device_id、type、device_info 含
+     * camera_type）
      */
     private void publishDeviceStatus(DeviceInfo device, int status) {
         try {
@@ -639,10 +654,12 @@ public class Main {
                 deviceInfo.put("serial_number", device.getSerialNumber());
             }
             statusMessage.put("device_info", deviceInfo);
-            if (status != 1) statusMessage.put("reason", "disconnected");
+            if (status != 1)
+                statusMessage.put("reason", "disconnected");
 
             String messageJson = objectMapper.writeValueAsString(statusMessage);
-            if (mqttPublisher != null) mqttPublisher.publishStatus(messageJson);
+            if (mqttPublisher != null)
+                mqttPublisher.publishStatus(messageJson);
             logger.debug("设备状态已发布: {}", messageJson);
         } catch (Exception e) {
             logger.error("发布设备状态失败", e);
@@ -653,7 +670,8 @@ public class Main {
      * 发布雷达状态到 senhub/device/status（entity_type=radar、device_id、radar_info）
      */
     private void publishRadarStatus(RadarDevice device, int status) {
-        if (mqttPublisher == null) return;
+        if (mqttPublisher == null)
+            return;
         try {
             Map<String, Object> msg = new HashMap<>();
             msg.put("entity_type", "radar");
@@ -667,7 +685,8 @@ public class Main {
             radarInfo.put("radar_serial", device.getRadarSerial());
             radarInfo.put("status", status);
             msg.put("radar_info", radarInfo);
-            if (status != 1) msg.put("reason", "disconnected");
+            if (status != 1)
+                msg.put("reason", "disconnected");
             String json = objectMapper.writeValueAsString(msg);
             mqttPublisher.publish(config.getMqtt().getStatusTopic(), json);
             logger.debug("雷达状态已发布: {}", device.getDeviceId());
@@ -680,7 +699,8 @@ public class Main {
      * 发布装置状态到 senhub/assembly/{assemblyId}/status（含 longitude、latitude、device_ids）
      */
     private void publishAssemblyStatus(Assembly assembly, String type) {
-        if (mqttPublisher == null) return;
+        if (mqttPublisher == null)
+            return;
         try {
             String topic = "senhub/assembly/" + assembly.getAssemblyId() + "/status";
             Map<String, Object> msg = new HashMap<>();
@@ -690,8 +710,10 @@ public class Main {
             Map<String, Object> info = new HashMap<>();
             info.put("name", assembly.getName());
             info.put("location", assembly.getLocation());
-            if (assembly.getLongitude() != null) info.put("longitude", assembly.getLongitude());
-            if (assembly.getLatitude() != null) info.put("latitude", assembly.getLatitude());
+            if (assembly.getLongitude() != null)
+                info.put("longitude", assembly.getLongitude());
+            if (assembly.getLatitude() != null)
+                info.put("latitude", assembly.getLatitude());
             List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assembly.getAssemblyId());
             List<String> deviceIds = devices.stream().map(AssemblyDevice::getDeviceId).collect(Collectors.toList());
             info.put("device_count", deviceIds.size());
@@ -731,8 +753,7 @@ public class Main {
                 this::recordDeviceStatusSnapshot,
                 delayToNextHour + 3600, // 第一次执行后，再等1小时
                 3600, // 每小时执行一次
-                TimeUnit.SECONDS
-        );
+                TimeUnit.SECONDS);
 
         logger.info("设备状态统计任务已启动，将在{}秒后首次执行，之后每小时执行一次", delayToNextHour);
     }
@@ -745,13 +766,13 @@ public class Main {
         try {
             List<DeviceInfo> devices = deviceManager.getAllDevices();
             int recordedCount = 0;
-            
+
             for (DeviceInfo device : devices) {
                 // 记录当前设备状态（即使状态未变化，也要记录用于统计）
                 database.recordDeviceHistory(device.getDeviceId(), device.getStatus());
                 recordedCount++;
             }
-            
+
             logger.debug("设备状态快照已记录: {} 个设备", recordedCount);
         } catch (Exception e) {
             logger.error("记录设备状态快照失败", e);

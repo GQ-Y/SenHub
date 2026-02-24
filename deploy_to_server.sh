@@ -32,12 +32,14 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/database/Database.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/database/DeviceInfo.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/database/DevicePtzExtensionTable.java" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/database/"
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/device/DeviceSDK.java" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/device/DeviceManager.java" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/device/"
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
@@ -47,6 +49,7 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
 
 sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/AlarmService.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/PtzMonitorService.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/RecordingTaskService.java" \
     "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/service/CaptureService.java" \
@@ -86,6 +89,12 @@ sshpass -p "$SERVER_PASS" rsync -avz --progress \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$LOCAL_DIR/server/src/main/resources/config.yaml" \
     "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/resources/"
+
+# 同步测试用例（摄像头登录、抓拍、录像、云台等核心功能测试）
+sshpass -p "$SERVER_PASS" rsync -avz --progress \
+    -e "ssh -o StrictHostKeyChecking=no" \
+    "$LOCAL_DIR/server/src/main/java/com/digital/video/gateway/test/" \
+    "$SERVER_USER@$SERVER_IP:$SERVER_DIR/server/src/main/java/com/digital/video/gateway/test/"
 
 if [ $? -ne 0 ]; then
     echo "❌ 文件同步失败"
@@ -239,10 +248,18 @@ if [ ! -f "lib/linux/liblivox_lidar_sdk_shared.so" ]; then
     echo "   请确保依赖库文件在 lib/linux/ 目录中"
 fi
 
-# 设置库路径并启动服务
+# 设置库路径并启动服务（天地伟业需 tiandy 与 tiandy/lib 以加载 ffmpeg，与 TiandyCaptureDemo 一致）
+TIANDY_LIB="$(pwd)/lib/x86/tiandy"
+TIANDY_LIB_SUB="$TIANDY_LIB/lib"
+if [ -d "$TIANDY_LIB" ]; then
+  export LD_LIBRARY_PATH="$TIANDY_LIB:$TIANDY_LIB_SUB:$(pwd)/lib/linux:${LD_LIBRARY_PATH}"
+  export JAVA_LIB_PATH="$TIANDY_LIB:$TIANDY_LIB_SUB:$(pwd)/lib/linux"
+else
+  export LD_LIBRARY_PATH="$(pwd)/lib/linux:${LD_LIBRARY_PATH}"
+  export JAVA_LIB_PATH="$(pwd)/lib/linux"
+fi
 echo "启动服务: $JAR_FILE"
-export LD_LIBRARY_PATH="$(pwd)/lib/linux:${LD_LIBRARY_PATH}"
-nohup java -Djava.library.path="$(pwd)/lib/linux" -jar "$JAR_FILE" > server.log 2>&1 &
+nohup java -Djava.library.path="$JAVA_LIB_PATH" -jar "$JAR_FILE" > server.log 2>&1 &
 sleep 3
 
 # 检查进程是否启动

@@ -32,6 +32,10 @@ public class DeviceManager {
     private final Map<String, DeviceSDK> deviceSDKMap = new ConcurrentHashMap<>();
     // 设备登录锁：deviceId -> 锁对象，防止同一设备并发登录
     private final Map<String, Object> deviceLoginLocks = new ConcurrentHashMap<>();
+    /** 天地伟业预览连接复用：deviceId -> 预览 connectID，登录成功后启动、登出时停止 */
+    private final Map<String, Integer> tiandyPreviewConnectMap = new ConcurrentHashMap<>();
+    /** 设备健康状态（天地伟业：仅 HEALTHY 时处理事件/抓图） */
+    private final Map<String, DeviceInfo.HealthStatus> deviceHealthStatusMap = new ConcurrentHashMap<>();
 
     public DeviceManager(Database database, Config.DeviceConfig config) {
         this.database = database;
@@ -55,7 +59,8 @@ public class DeviceManager {
 
     /**
      * 登录设备（线程安全，防止同一设备并发登录）
-     * @param device 设备信息
+     * 
+     * @param device         设备信息
      * @param saveToDatabase 是否保存到数据库
      */
     private boolean loginDevice(DeviceInfo device, boolean saveToDatabase) {
@@ -198,6 +203,42 @@ public class DeviceManager {
                     database.updateDeviceStatus(deviceId, 1, userId);
                     database.saveOrUpdateDevice(device); // 保存设备信息包括品牌和通道号
                 }
+
+                // 天地伟业：登录成功后立即启动预览
+                if ("tiandy".equalsIgnoreCase(detectedBrand) && sdk instanceof TiandySDK) {
+                    final int channel = device.getChannel() > 0 ? device.getChannel() : 1;
+                    final String finalDeviceId = deviceId;
+                    final int finalUserId = userId;
+                    final TiandySDK finalSdk = (TiandySDK) sdk;
+
+                    new Thread(() -> {
+                        try {
+                            logger.info("天地伟业设备登录成功,启动预览: deviceId={}, userId={}", finalDeviceId, finalUserId);
+
+                            if (!isDeviceLoggedIn(finalDeviceId)) {
+                                logger.warn("天地伟业设备已离线,取消预览启动: deviceId={}", finalDeviceId);
+                                return;
+                            }
+
+                            int connectId = finalSdk.startRealPlay(finalUserId, channel, 0);
+                            if (connectId >= 0) {
+                                tiandyPreviewConnectMap.put(finalDeviceId, connectId);
+                                deviceHealthStatusMap.put(finalDeviceId, DeviceInfo.HealthStatus.HEALTHY);
+                                logger.info("天地伟业预览已启动: deviceId={}, connectId={}, channel={}", finalDeviceId,
+                                        connectId, channel);
+                            } else {
+                                deviceHealthStatusMap.put(finalDeviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+                                logger.warn("天地伟业预览启动失败: deviceId={}, userId={}", finalDeviceId, finalUserId);
+                            }
+                        } catch (Exception e) {
+                            logger.error("天地伟业预览启动异常: deviceId={}", finalDeviceId, e);
+                        }
+                    }, "TiandyPreviewStarter-" + deviceId).start();
+
+                    // 登录时先标记为预览不可用,等待延迟启动完成
+                    deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+                }
+
                 logger.info("设备登录成功: {} (品牌: {}, userId: {}, channel: {}{})",
                         deviceId, detectedBrand, userId, device.getChannel(), saveToDatabase ? "" : ", 未保存到数据库");
                 return true;
@@ -219,7 +260,8 @@ public class DeviceManager {
      */
     public boolean logoutDevice(String deviceId) {
         Integer userId = deviceLoginMap.get(deviceId);
-        if (userId == null || userId <= 0) {
+        // 注意：天地伟业 SDK 登录成功可能返回 0，只有 -1 或 null 表示未登录
+        if (userId == null || userId < 0) {
             logger.debug("设备未登录: {}", deviceId);
             return false;
         }
@@ -231,14 +273,25 @@ public class DeviceManager {
             return false;
         }
 
+        // 天地伟业：登出前先停止预览并清除复用连接
+        if ("tiandy".equalsIgnoreCase(sdk.getBrand()) && sdk instanceof TiandySDK) {
+            Integer previewConnectId = tiandyPreviewConnectMap.remove(deviceId);
+            if (previewConnectId != null) {
+                ((TiandySDK) sdk).stopRealPlay(previewConnectId);
+                logger.info("天地伟业预览已停止: deviceId={}, connectId={}", deviceId, previewConnectId);
+            }
+            deviceHealthStatusMap.remove(deviceId);
+        }
+
         boolean result = sdk.logout(userId);
+        // 无论 SDK 登出是否成功，都清除本地登录状态，避免“登出后仍显示已登录”
+        deviceLoginMap.remove(deviceId);
+        deviceSDKMap.remove(deviceId);
+        database.updateDeviceStatus(deviceId, 0, -1);
         if (result) {
-            deviceLoginMap.remove(deviceId);
-            deviceSDKMap.remove(deviceId);
-            database.updateDeviceStatus(deviceId, 0, -1);
             logger.info("设备登出成功: {}", deviceId);
         } else {
-            logger.error("设备登出失败: {} (错误: {})", deviceId, sdk.getLastErrorString());
+            logger.warn("设备登出 SDK 返回失败，已清除本地状态: {} (错误: {})", deviceId, sdk.getLastErrorString());
         }
         return result;
     }
@@ -266,13 +319,95 @@ public class DeviceManager {
     public DeviceSDK getDeviceSDK(String deviceId) {
         return deviceSDKMap.get(deviceId);
     }
-    
+
+    /**
+     * 获取天地伟业设备的预览连接ID（登录成功后已启动的预览，用于抓图复用）
+     * 
+     * @return 预览 connectID，无复用或非天地伟业时返回 -1
+     */
+    public int getTiandyPreviewConnectId(String deviceId) {
+        return tiandyPreviewConnectMap.getOrDefault(deviceId, -1);
+    }
+
+    /**
+     * 清除天地伟业设备的预览复用连接。
+     * 仅用于登出等显式断开场景；抓图失败/超时不应调用，以保持预览长连供后续抓图使用。
+     */
+    public void clearTiandyPreview(String deviceId) {
+        Integer previewConnectId = tiandyPreviewConnectMap.remove(deviceId);
+        if (previewConnectId != null) {
+            DeviceSDK sdk = deviceSDKMap.get(deviceId);
+            if (sdk instanceof TiandySDK) {
+                ((TiandySDK) sdk).stopRealPlay(previewConnectId);
+                logger.info("天地伟业预览复用已清除(抓图失败或连接无效): deviceId={}, connectId={}", deviceId, previewConnectId);
+            }
+            deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * 天地伟业设备健康检查：仅检查已有预览连接，不尝试建立新连接。
+     * 报警回调线程中调用 SyncRealPlay 会导致 SDK 内部死锁，
+     * 新连接的建立由 TiandyPreviewStarter 定时任务或 CaptureService 负责。
+     */
+    public DeviceInfo.HealthStatus checkTiandyDeviceHealth(String deviceId) {
+        DeviceInfo device = getDevice(deviceId);
+        if (device == null)
+            return DeviceInfo.HealthStatus.UNKNOWN;
+        if (!DeviceInfo.BRAND_TIANDY.equalsIgnoreCase(device.getBrand()))
+            return DeviceInfo.HealthStatus.HEALTHY;
+        int connectId = getTiandyPreviewConnectId(deviceId);
+        if (connectId >= 0) {
+            deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.HEALTHY);
+            return DeviceInfo.HealthStatus.HEALTHY;
+        }
+        deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+        return DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE;
+    }
+
+    /**
+     * 获取设备当前健康状态（仅天地伟业使用；未检查或非天地伟业为 UNKNOWN/HEALTHY）
+     */
+    public DeviceInfo.HealthStatus getDeviceHealthStatus(String deviceId) {
+        return deviceHealthStatusMap.getOrDefault(deviceId, DeviceInfo.HealthStatus.UNKNOWN);
+    }
+
+    /**
+     * 确保天地伟业设备有预览连接；若已存在则返回 connectId，若无且设备已登录则尝试启动预览并返回新 connectId。
+     * 用于抓图前“无预览连接”时尝试重建，避免因一次失败/清除后必须重启服务才能抓图。
+     * 
+     * @return 预览 connectID，无法建立时返回 -1
+     */
+    public int ensureTiandyPreview(String deviceId) {
+        int existing = getTiandyPreviewConnectId(deviceId);
+        if (existing >= 0)
+            return existing;
+        Integer userId = deviceLoginMap.get(deviceId);
+        if (userId == null || userId < 0)
+            return -1;
+        DeviceSDK sdk = deviceSDKMap.get(deviceId);
+        if (!(sdk instanceof TiandySDK))
+            return -1;
+        DeviceInfo device = getDevice(deviceId);
+        if (device == null)
+            return -1;
+        int channel = device.getChannel() > 0 ? device.getChannel() : 1;
+        int connectId = ((TiandySDK) sdk).startRealPlay(userId, channel, 0);
+        if (connectId >= 0) {
+            tiandyPreviewConnectMap.put(deviceId, connectId);
+            deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.HEALTHY);
+            logger.info("天地伟业预览已重新建立: deviceId={}, connectId={}, channel={}", deviceId, connectId, channel);
+            return connectId;
+        }
+        return -1;
+    }
+
     /**
      * 通过登录句柄(userId/logonID)和品牌查找设备ID
      * 用于报警回调中根据SDK返回的句柄查找真实的设备ID
      * 
      * @param loginHandle SDK登录句柄
-     * @param brand 设备品牌（用于区分不同SDK的句柄）
+     * @param brand       设备品牌（用于区分不同SDK的句柄）
      * @return 设备ID，未找到返回null
      */
     public String getDeviceIdByLoginHandle(int loginHandle, String brand) {
@@ -358,8 +493,16 @@ public class DeviceManager {
         // 更新数据库状态
         updateDeviceStatus(deviceId, status);
 
-        // 如果设备离线，从登录映射中移除
+        // 如果设备离线，从登录映射中移除，并停止天地伟业预览
         if (status == 0) {
+            DeviceSDK sdk = deviceSDKMap.get(deviceId);
+            if ("tiandy".equalsIgnoreCase(device.getBrand()) && sdk instanceof TiandySDK) {
+                Integer previewConnectId = tiandyPreviewConnectMap.remove(deviceId);
+                if (previewConnectId != null) {
+                    ((TiandySDK) sdk).stopRealPlay(previewConnectId);
+                    logger.info("设备离线，天地伟业预览已停止: deviceId={}, connectId={}", deviceId, previewConnectId);
+                }
+            }
             deviceLoginMap.remove(deviceId);
             deviceSDKMap.remove(deviceId);
             logger.info("设备离线，已从登录映射中移除: {} (userId: {})", deviceId, userId);
@@ -410,7 +553,8 @@ public class DeviceManager {
     }
 
     /**
-     * 发布设备状态到 MQTT（senhub/device/status，payload 含 entity_type=camera、device_id、type、device_info 含 camera_type）
+     * 发布设备状态到 MQTT（senhub/device/status，payload 含
+     * entity_type=camera、device_id、type、device_info 含 camera_type）
      */
     private void publishDeviceStatus(DeviceInfo device, int status) {
         if (mqttPublisher == null) {
@@ -435,7 +579,8 @@ public class DeviceManager {
                 deviceInfoMap.put("serial_number", device.getSerialNumber());
             }
             statusMessage.put("device_info", deviceInfoMap);
-            if (status != 1) statusMessage.put("reason", "disconnected");
+            if (status != 1)
+                statusMessage.put("reason", "disconnected");
 
             String messageJson = objectMapper.writeValueAsString(statusMessage);
             mqttPublisher.publishStatus(messageJson);

@@ -13,6 +13,14 @@ public class DeviceInfo {
     public static final String BRAND_AUTO = "auto";
     public static final String BRAND_UNKNOWN = "unknown";
 
+    /** 设备健康状态（用于天地伟业等需预览就绪后才处理事件的设备） */
+    public enum HealthStatus {
+        HEALTHY,              // 预览就绪，可处理事件与抓图
+        PREVIEW_UNAVAILABLE,  // 无预览连接且重建失败
+        SDK_ERROR,            // SDK 异常
+        UNKNOWN               // 未检查或非天地伟业设备
+    }
+
     private int id;
     private String deviceId; // 设备ID，通常使用IP地址
     private String ip;
@@ -30,6 +38,8 @@ public class DeviceInfo {
     private Timestamp lastSeen;
     private Timestamp createdAt;
     private Timestamp updatedAt;
+    /** 运行时健康状态（不落库），天地伟业设备在健康检查通过前不处理事件/抓图 */
+    private HealthStatus healthStatus = HealthStatus.UNKNOWN;
 
     // Getters and Setters
     public int getId() {
@@ -166,6 +176,14 @@ public class DeviceInfo {
 
     public void setUpdatedAt(Timestamp updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public HealthStatus getHealthStatus() {
+        return healthStatus != null ? healthStatus : HealthStatus.UNKNOWN;
+    }
+
+    public void setHealthStatus(HealthStatus healthStatus) {
+        this.healthStatus = healthStatus;
     }
 
     @Override

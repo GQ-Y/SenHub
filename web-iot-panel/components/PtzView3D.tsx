@@ -313,10 +313,10 @@ export const PtzView3D: React.FC<PtzView3DProps> = ({
       {/* 覆盖层信息 */}
       <div className="absolute top-4 left-4 bg-white/90 backdrop-blur p-3 rounded-lg shadow-sm border border-gray-200 text-xs space-y-1 pointer-events-none select-none">
         <div className="font-bold text-gray-700 mb-1">当前状态</div>
-        <div className="flex justify-between gap-4"><span className="text-gray-500">水平角度:</span> <span className="font-mono">{pan.toFixed(1)}°</span></div>
-        <div className="flex justify-between gap-4"><span className="text-gray-500">垂直角度:</span> <span className="font-mono">{tilt.toFixed(1)}°</span></div>
-        <div className="flex justify-between gap-4"><span className="text-gray-500">可视距离:</span> <span className="font-mono">{visibleRadius}m</span></div>
-        <div className="flex justify-between gap-4"><span className="text-gray-500">视场角:</span> <span className="font-mono">{horizontalFov.toFixed(1)}° x {verticalFov.toFixed(1)}°</span></div>
+        <div className="flex justify-between gap-4"><span className="text-gray-500">水平角度:</span> <span className="font-mono">{pan != null && !Number.isNaN(pan) ? `${pan.toFixed(1)}°` : '—'}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-gray-500">垂直角度:</span> <span className="font-mono">{tilt != null && !Number.isNaN(tilt) ? `${tilt.toFixed(1)}°` : '—'}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-gray-500">可视距离:</span> <span className="font-mono">{visibleRadius != null && !Number.isNaN(visibleRadius) ? `${visibleRadius}m` : '—'}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-gray-500">视场角:</span> <span className="font-mono">{horizontalFov != null && !Number.isNaN(horizontalFov) && verticalFov != null && !Number.isNaN(verticalFov) ? `${horizontalFov.toFixed(1)}° x ${verticalFov.toFixed(1)}°` : '—'}</span></div>
       </div>
       
       <div className="absolute bottom-4 right-4 bg-black/70 text-white text-xs px-2 py-1 rounded pointer-events-none select-none">

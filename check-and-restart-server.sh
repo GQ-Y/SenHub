@@ -36,8 +36,9 @@ run_remote "cd $SERVER_DIR && \
   JAR_FILE=\$(find target -name 'video-gateway-service-*.jar' -not -name '*original*' -not -name '*sources*' -not -name '*javadoc*' 2>/dev/null | head -1); \
   if [ -z \"\$JAR_FILE\" ]; then JAR_FILE=\$(find target -name '*.jar' -not -name '*original*' -not -name '*sources*' -not -name '*javadoc*' 2>/dev/null | head -1); fi; \
   if [ -z \"\$JAR_FILE\" ] || [ ! -f \"\$JAR_FILE\" ]; then echo '❌ 未找到 jar，请先在服务器上编译: mvn clean package -DskipTests'; exit 1; fi; \
-  export LD_LIBRARY_PATH=\$(pwd)/lib/linux:\${LD_LIBRARY_PATH}; \
-  nohup java -Djava.library.path=\$(pwd)/lib/linux -jar \"\$JAR_FILE\" > server.log 2>&1 & \
+  TIANDY_LIB=\$(pwd)/lib/x86/tiandy; TIANDY_LIB_SUB=\$TIANDY_LIB/lib; \
+  if [ -d \"\$TIANDY_LIB\" ]; then export LD_LIBRARY_PATH=\"\$TIANDY_LIB:\$TIANDY_LIB_SUB:\$(pwd)/lib/linux:\${LD_LIBRARY_PATH}\"; export JAVA_LIB_PATH=\"\$TIANDY_LIB:\$TIANDY_LIB_SUB:\$(pwd)/lib/linux\"; else export LD_LIBRARY_PATH=\"\$(pwd)/lib/linux:\${LD_LIBRARY_PATH}\"; export JAVA_LIB_PATH=\"\$(pwd)/lib/linux\"; fi; \
+  nohup java -Djava.library.path=\"\$JAVA_LIB_PATH\" -jar \"\$JAR_FILE\" > server.log 2>&1 & \
   echo \"已启动: \$JAR_FILE\"; sleep 3; \
   ps aux | grep -E \"java.*\$(basename \$JAR_FILE)\" | grep -v grep || (echo '启动可能失败，查看: tail -30 server.log'; tail -30 server.log)"
 

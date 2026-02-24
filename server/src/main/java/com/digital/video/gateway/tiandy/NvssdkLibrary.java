@@ -14,9 +14,14 @@ public interface NvssdkLibrary extends Library {
     // NvssdkLibrary INSTANCE = (NvssdkLibrary) Native.loadLibrary("libnvssdk",
     // NvssdkLibrary.class);
 
-    // 返回值常量
+    // 返回值常量（与 天地伟业 CH-NetSDK 头文件 RetValue.h 一致）
     int RET_SUCCESS = 0;
+    /** 失败（通用），RetValue.h: RET_FAILED = -1 */
     int RET_FAILED = -1;
+    /** 设备远程抓拍失败，设备返回的数据长度为0，RetValue.h: RET_DEVICE_CAPTURE_FAIL = -106 */
+    int RET_DEVICE_CAPTURE_FAIL = -106;
+    /** 设备远程抓拍超时，设备未回复数据，RetValue.h: RET_DEVICE_CAPTURE_TIMEOUT = -107 */
+    int RET_DEVICE_CAPTURE_TIMEOUT = -107;
 
     // 登录类型
     int SERVER_NORMAL = 0; // 普通模式
@@ -31,8 +36,9 @@ public interface NvssdkLibrary extends Library {
     int RET_SYNCLOGON_PORT_ERROR = -7;
     int RET_SYNCLOGON_UNKNOW_ERROR = -8;
 
-    // 同步预览错误码
-    int RET_SYNCREALPLAY_TIMEOUT = -2;
+    // 同步预览错误码（与头文件 RetValue.h 一致）
+    int RET_SYNCREALPLAY_TIMEOUT = -307;  // 同步连接视频超时，对端未发视频头
+    int RET_SYNCREALPLAY_FAIL = -308;     // 同步连接视频失败
 
     // 登录状态常量（参考NVSSDK.java）
     int LOGON_SUCCESS = 0; // 登录成功
@@ -104,8 +110,10 @@ public interface NvssdkLibrary extends Library {
     // SDK初始化配置
     int NetClient_SetSDKInitConfig(int iCmd, Pointer lpInBuffer, int iInLen);
 
-    // 初始化配置命令
+    // 初始化配置命令（NetClientTypes.h）
     int INIT_CONFIG_LOCAL_LIBRARY_PATH = 0; // 设置本地库路径
+    /** 设置 SDK 日志级别，减少终端/文件噪音（libvautil、Analyze 等） */
+    int INIT_CONFIG_SET_LOG_LEVEL = 3;
 
     // 登录相关
     int NetClient_SyncLogon(int iLogonType, Pointer pInBuf, int iInBufSize);

@@ -76,8 +76,11 @@ export const PtzViewPage: React.FC<PtzViewPageProps> = ({ deviceId }) => {
     return () => clearInterval(interval);
   }, [deviceId]);
 
-  // 格式化角度显示
-  const formatAngle = (angle: number) => {
+  // 格式化角度显示（兼容 undefined/null）
+  const formatAngle = (angle: number | undefined | null) => {
+    if (angle == null || typeof angle !== 'number' || Number.isNaN(angle)) {
+      return '—';
+    }
     return `${angle.toFixed(1)}°`;
   };
 
@@ -255,7 +258,7 @@ export const PtzViewPage: React.FC<PtzViewPageProps> = ({ deviceId }) => {
                 <label className="text-sm text-gray-500">朝向</label>
                 <p className="text-gray-800 font-medium flex items-center">
                   <Compass size={16} className="mr-1" />
-                  {formatAngle(ptzData.azimuth)} ({getDirection(ptzData.azimuth)})
+                  {formatAngle(ptzData.azimuth)} {ptzData.azimuth != null && !Number.isNaN(ptzData.azimuth) ? `(${getDirection(ptzData.azimuth)})` : ''}
                 </p>
               </div>
             </div>
@@ -278,7 +281,7 @@ export const PtzViewPage: React.FC<PtzViewPageProps> = ({ deviceId }) => {
               </div>
               <div>
                 <label className="text-sm text-gray-500">变倍</label>
-                <p className="text-gray-800 font-medium">{ptzData.zoom.toFixed(1)}x</p>
+                <p className="text-gray-800 font-medium">{ptzData.zoom != null && !Number.isNaN(ptzData.zoom) ? `${ptzData.zoom.toFixed(1)}x` : '—'}</p>
               </div>
             </div>
           </div>

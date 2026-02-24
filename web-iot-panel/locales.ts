@@ -141,6 +141,7 @@ export const translations = {
     top_camera: "Top Camera",
     speaker: "Speaker",
     radar: "Radar",
+    radar_mgmt: "Radar Management",
     // Alarm rule related
     alarm_rules: "Alarm Rules",
     workflows: "Workflows",
@@ -485,6 +486,7 @@ export const translations = {
     top_camera: "顶部球机",
     speaker: "音柱",
     radar: "雷达",
+    radar_mgmt: "雷达管理",
     // Alarm rule related
     alarm_rules: "报警规则",
     workflows: "工作流",

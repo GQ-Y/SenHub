@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.hikvision</groupId>
-  <artifactId>nvr-control-service</artifactId>
-  <name>Hikvision NVR Control Service</name>
+  <groupId>com.digital.video.gateway</groupId>
+  <artifactId>video-gateway-service</artifactId>
+  <name>Digital Video Gateway Service</name>
   <version>1.0.0</version>
-  <description>基于海康威视NVR录像机Linux端SDK开发的Java语言局域网控制服务程序</description>
+  <description>综合性数字视频监控网关系统</description>
   <build>
     <plugins>
       <plugin>
@@ -27,9 +27,19 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
               <transformers>
                 <transformer>
-                  <mainClass>com.hikvision.nvr.Main</mainClass>
+                  <mainClass>com.digital.video.gateway.Main</mainClass>
                 </transformer>
               </transformers>
             </configuration>
@@ -39,18 +49,18 @@
     </plugins>
   </build>
   <properties>
+    <bcrypt.version>0.4</bcrypt.version>
+    <maven.compiler.source>11</maven.compiler.source>
     <jackson.version>2.15.2</jackson.version>
+    <paho.version>1.2.5</paho.version>
+    <maven.compiler.target>11</maven.compiler.target>
+    <spark.version>2.9.4</spark.version>
+    <jwt.version>4.4.0</jwt.version>
     <slf4j.version>2.0.7</slf4j.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <logback.version>1.4.8</logback.version>
     <jna.version>5.13.0</jna.version>
     <sqlite.version>3.42.0.0</sqlite.version>
-    <bcrypt.version>0.4</bcrypt.version>
-    <maven.compiler.source>11</maven.compiler.source>
-    <paho.version>1.2.5</paho.version>
-    <maven.compiler.target>11</maven.compiler.target>
-    <spark.version>2.9.4</spark.version>
-    <jwt.version>4.4.0</jwt.version>
     <yaml.version>2.14.2</yaml.version>
   </properties>
 </project>

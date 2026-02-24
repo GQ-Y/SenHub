@@ -14,7 +14,9 @@ import {
   Check,
   Package,
   Shield,
-  Radar
+  Radar,
+  Wifi,
+  Server
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useAppContext } from '../contexts/AppContext';
@@ -44,8 +46,8 @@ const SidebarItem = ({
         : 'text-gray-400 hover:bg-gray-800 hover:text-white'
     }`}
   >
-    <Icon size={20} className={isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'} />
-    <span className="font-medium text-sm tracking-wide">{label}</span>
+    <Icon size={20} className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`} />
+    <span className="font-medium text-sm tracking-wide whitespace-nowrap truncate min-w-0">{label}</span>
   </button>
 );
 
@@ -210,7 +212,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
             />
             <SidebarItem 
               icon={Radar} 
-              label="雷达管理" 
+              label={t('radar_mgmt')} 
               isActive={currentView === 'RADAR'} 
               onClick={() => handleNavigate('RADAR')}
             />
@@ -279,7 +281,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
                 currentView === 'DEVICE_DETAIL' ? t('live_view') :
                 currentView === 'ASSEMBLY_MANAGEMENT' ? t('assembly_management') :
                 currentView === 'ASSEMBLY_DETAIL' ? t('assembly_management') :
-                currentView === 'RADAR' ? '雷达管理' :
+                currentView === 'RADAR' ? t('radar_mgmt') :
                 currentView === 'DRIVER_CONFIG' ? t('drivers') :
                 currentView === 'MQTT_CONFIG' ? t('mqtt_broker') :
                 currentView === 'ALARM_RULES' ? t('alarm_rules') :
@@ -288,16 +290,20 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
           </div>
 
           <div className="flex items-center space-x-6">
-            {/* Status Indicators */}
-            <div className="hidden md:flex items-center space-x-4 text-xs font-medium">
-              <div className="flex items-center space-x-1.5 px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-100">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span>{t('mqtt_connected')}</span>
-              </div>
-              <div className="flex items-center space-x-1.5 px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-100">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                <span>{t('nvr_active')}</span>
-              </div>
+            {/* Status Indicators (icon only) */}
+            <div className="hidden md:flex items-center space-x-2">
+              <span
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-green-50 text-green-600 border border-green-100"
+                title={t('mqtt_connected')}
+              >
+                <Wifi size={18} className="text-green-600" />
+              </span>
+              <span
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-blue-50 text-blue-600 border border-blue-100"
+                title={t('nvr_active')}
+              >
+                <Server size={18} className="text-blue-600" />
+              </span>
             </div>
 
             <div className="h-6 w-px bg-gray-200 mx-2"></div>

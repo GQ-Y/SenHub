@@ -6,9 +6,23 @@ import com.digital.video.gateway.device.DeviceSDK;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.sun.jna.Native;
+import com.sun.jna.Pointer;
 import com.sun.jna.ptr.IntByReference;
 
+import com.sun.jna.CallbackReference;
+
+import javax.imageio.ImageIO;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferByte;
 import java.io.File;
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -25,6 +39,12 @@ public class TiandySDK implements DeviceSDK {
     private boolean initialized = false;
     private Config.SdkConfig sdkConfig;
 
+    // 存储登录 ID 到 IP 的映射，用于 startRealPlay
+    private final Map<Integer, String> loginIdToIpMap = new ConcurrentHashMap<>();
+
+    /** 预览启动同步锁:确保 startRealPlay 串行执行,避免SDK并发调用导致资源竞争 */
+    private static final java.util.concurrent.locks.ReentrantLock startRealPlayLock = new java.util.concurrent.locks.ReentrantLock();
+
     // 回调对象（延迟初始化，在库加载后创建，确保JNA能正确映射）
     private NvssdkLibrary.MAIN_NOTIFY_V4 emptyMainNotify;
     private NvssdkLibrary.ALARM_NOTIFY_V4 emptyAlarmNotify;
@@ -34,6 +54,10 @@ public class TiandySDK implements DeviceSDK {
     private NvssdkLibrary.PARACHANGE_NOTIFY_V4 emptyParaNotify;
     private NvssdkLibrary.COMRECV_NOTIFY_V4 emptyComNotify;
     private NvssdkLibrary.PROXY_NOTIFY emptyProxyNotify;
+
+    /** 预览用回调（与官方 Channel.java 一致，不可为 null，否则 SDK 可能不建立流） */
+    private NvssdkLibrary.FULLFRAME_NOTIFY_V4 realPlayCbkFullFrame;
+    private NvssdkLibrary.RAWFRAME_NOTIFY realPlayCbkRawFrame;
 
     /**
      * 初始化回调对象（在库加载后调用）
@@ -106,11 +130,27 @@ public class TiandySDK implements DeviceSDK {
                 // 空实现
             }
         };
+
+        // 预览回调（与官方 Channel.java:106-218 一致，必须非 null 否则 SDK 可能不建立流/权限异常）
+        realPlayCbkFullFrame = new NvssdkLibrary.FULLFRAME_NOTIFY_V4() {
+            @Override
+            public void apply(int iConnectID, int iStreamType, Pointer pcData, int iLen, Pointer pvHeader,
+                    Pointer pvUserData) {
+                // 空实现,仅用于满足SDK要求
+            }
+        };
+        realPlayCbkRawFrame = new NvssdkLibrary.RAWFRAME_NOTIFY() {
+            @Override
+            public void apply(int uiID, Pointer pcData, int iLen, TiandySDKStructure.RAWFRAME_INFO ptRawFrameInfo,
+                    Pointer lpUserData) {
+                // 空实现，仅满足 SDK 要求有有效回调指针
+            }
+        };
     }
 
     private TiandySDK() {
     }
-    
+
     /**
      * 设置报警服务和设备管理器（用于接收和处理报警事件）
      * 必须在SDK初始化后调用此方法，才能正确接收报警回调
@@ -118,11 +158,11 @@ public class TiandySDK implements DeviceSDK {
     public void setAlarmService(com.digital.video.gateway.service.AlarmService alarmService) {
         this.alarmService = alarmService;
         logger.info("天地伟业SDK报警服务已设置");
-        
+
         // 重新初始化报警回调（因为initCallbacks在SDK初始化时alarmService还是null）
         initAlarmCallback();
     }
-    
+
     /**
      * 设置设备管理器（用于通过loginHandle查找设备ID）
      */
@@ -130,7 +170,7 @@ public class TiandySDK implements DeviceSDK {
         this.deviceManager = deviceManager;
         logger.info("天地伟业SDK设备管理器已设置");
     }
-    
+
     /**
      * 初始化报警回调
      */
@@ -141,7 +181,7 @@ public class TiandySDK implements DeviceSDK {
                 public void apply(int ulLogonID, int iChan, int iAlarmState, int iAlarmType,
                         com.sun.jna.Pointer iUser) {
                     try {
-                        logger.info("收到天地伟业报警回调: logonID={}, channel={}, state={}, type={}", 
+                        logger.info("收到天地伟业报警回调: logonID={}, channel={}, state={}, type={}",
                                 ulLogonID, iChan, iAlarmState, iAlarmType);
                         if (TiandySDK.this.alarmService != null) {
                             // 通过logonID查找真正的设备ID
@@ -154,11 +194,11 @@ public class TiandySDK implements DeviceSDK {
                                 deviceId = "tiandy_" + ulLogonID;
                                 logger.warn("无法通过logonID={}找到设备，使用临时ID: {}", ulLogonID, deviceId);
                             }
-                            
+
                             String alarmTypeStr = "Tiandy_Alarm_" + iAlarmType;
                             String alarmMessage = String.format("天地伟业报警: device=%s, channel=%d, state=%d, type=%d",
                                     deviceId, iChan, iAlarmState, iAlarmType);
-                            
+
                             // 如果是智能分析报警（iAlarmType=6或9），尝试获取具体的事件类型
                             if (iAlarmType == 6 || iAlarmType == 9) {
                                 try {
@@ -166,13 +206,16 @@ public class TiandySDK implements DeviceSDK {
                                         // 使用通道号作为报警索引（根据SDK文档，iAlarmIndex应该是通道号）
                                         // 注意：示例代码中使用iAlarmState作为索引，但根据SDK文档，应该使用通道号
                                         TiandySDKStructure.VcaTAlarmInfo vcaAlarmInfo = new TiandySDKStructure.VcaTAlarmInfo();
-                                        int result = TiandySDK.this.nvssdkLibrary.NetClient_VCAGetAlarmInfo(ulLogonID, iChan, vcaAlarmInfo.getPointer(), vcaAlarmInfo.size());
+                                        int result = TiandySDK.this.nvssdkLibrary.NetClient_VCAGetAlarmInfo(ulLogonID,
+                                                iChan, vcaAlarmInfo.getPointer(), vcaAlarmInfo.size());
                                         if (result == 0) {
                                             vcaAlarmInfo.read();
                                             int eventType = vcaAlarmInfo.iEventType;
-                                            logger.info("获取智能分析报警详细信息: logonID={}, channel={}, alarmType={}, eventType={}, ruleID={}, targetID={}", 
-                                                    ulLogonID, iChan, iAlarmType, eventType, vcaAlarmInfo.iRuleID, vcaAlarmInfo.uiTargetID);
-                                            
+                                            logger.info(
+                                                    "获取智能分析报警详细信息: logonID={}, channel={}, alarmType={}, eventType={}, ruleID={}, targetID={}",
+                                                    ulLogonID, iChan, iAlarmType, eventType, vcaAlarmInfo.iRuleID,
+                                                    vcaAlarmInfo.uiTargetID);
+
                                             // 根据eventType构建更精确的alarmType（如Tiandy_Alarm_102表示周界入侵）
                                             // 注意：eventType是智能分析事件代码（如0-单绊线越界，2-周界入侵），不是iAlarmType
                                             // 但为了保持一致性，我们使用eventType来构建alarmType
@@ -180,40 +223,49 @@ public class TiandySDK implements DeviceSDK {
                                             if (eventType >= 0) {
                                                 // 如果eventType是基础事件（0-15），直接使用；如果是扩展事件（100+），也直接使用
                                                 alarmTypeStr = "Tiandy_Alarm_" + eventType;
-                                                alarmMessage = String.format("天地伟业智能分析报警: device=%s, channel=%d, state=%d, alarmType=%d, eventType=%d, ruleID=%d, targetID=%d",
-                                                        deviceId, iChan, iAlarmState, iAlarmType, eventType, vcaAlarmInfo.iRuleID, vcaAlarmInfo.uiTargetID);
+                                                alarmMessage = String.format(
+                                                        "天地伟业智能分析报警: device=%s, channel=%d, state=%d, alarmType=%d, eventType=%d, ruleID=%d, targetID=%d",
+                                                        deviceId, iChan, iAlarmState, iAlarmType, eventType,
+                                                        vcaAlarmInfo.iRuleID, vcaAlarmInfo.uiTargetID);
                                             }
                                         } else {
-                                            logger.warn("获取智能分析报警信息失败: logonID={}, channel={}, alarmType={}, result={}, 尝试使用iAlarmState作为索引", 
+                                            logger.warn(
+                                                    "获取智能分析报警信息失败: logonID={}, channel={}, alarmType={}, result={}, 尝试使用iAlarmState作为索引",
                                                     ulLogonID, iChan, iAlarmType, result);
                                             // 如果使用通道号失败，尝试使用iAlarmState作为索引（如示例代码所示）
                                             vcaAlarmInfo = new TiandySDKStructure.VcaTAlarmInfo();
-                                            result = TiandySDK.this.nvssdkLibrary.NetClient_VCAGetAlarmInfo(ulLogonID, iAlarmState, vcaAlarmInfo.getPointer(), vcaAlarmInfo.size());
+                                            result = TiandySDK.this.nvssdkLibrary.NetClient_VCAGetAlarmInfo(ulLogonID,
+                                                    iAlarmState, vcaAlarmInfo.getPointer(), vcaAlarmInfo.size());
                                             if (result == 0) {
                                                 vcaAlarmInfo.read();
                                                 int eventType = vcaAlarmInfo.iEventType;
-                                                logger.info("使用iAlarmState作为索引成功获取智能分析报警信息: logonID={}, channel={}, alarmType={}, eventType={}, ruleID={}", 
+                                                logger.info(
+                                                        "使用iAlarmState作为索引成功获取智能分析报警信息: logonID={}, channel={}, alarmType={}, eventType={}, ruleID={}",
                                                         ulLogonID, iChan, iAlarmType, eventType, vcaAlarmInfo.iRuleID);
                                                 if (eventType >= 0) {
                                                     alarmTypeStr = "Tiandy_Alarm_" + eventType;
-                                                    alarmMessage = String.format("天地伟业智能分析报警: device=%s, channel=%d, state=%d, alarmType=%d, eventType=%d, ruleID=%d",
-                                                            deviceId, iChan, iAlarmState, iAlarmType, eventType, vcaAlarmInfo.iRuleID);
+                                                    alarmMessage = String.format(
+                                                            "天地伟业智能分析报警: device=%s, channel=%d, state=%d, alarmType=%d, eventType=%d, ruleID=%d",
+                                                            deviceId, iChan, iAlarmState, iAlarmType, eventType,
+                                                            vcaAlarmInfo.iRuleID);
                                                 }
                                             } else {
-                                                logger.warn("使用iAlarmState作为索引也失败: logonID={}, channel={}, alarmType={}, result={}", 
+                                                logger.warn(
+                                                        "使用iAlarmState作为索引也失败: logonID={}, channel={}, alarmType={}, result={}",
                                                         ulLogonID, iChan, iAlarmType, result);
                                             }
                                         }
                                     } else {
-                                        logger.warn("nvssdkLibrary未初始化，无法获取智能分析报警详细信息: logonID={}, channel={}, alarmType={}", 
+                                        logger.warn(
+                                                "nvssdkLibrary未初始化，无法获取智能分析报警详细信息: logonID={}, channel={}, alarmType={}",
                                                 ulLogonID, iChan, iAlarmType);
                                     }
                                 } catch (Exception e) {
-                                    logger.error("调用NetClient_VCAGetAlarmInfo异常: logonID={}, channel={}, alarmType={}", 
+                                    logger.error("调用NetClient_VCAGetAlarmInfo异常: logonID={}, channel={}, alarmType={}",
                                             ulLogonID, iChan, iAlarmType, e);
                                 }
                             }
-                            
+
                             // 使用EventResolver解析标准事件（如果可用）
                             if (TiandySDK.this.alarmService != null) {
                                 // 直接调用handleAlarm，AlarmService内部会使用EventResolver解析
@@ -297,6 +349,22 @@ public class TiandySDK implements DeviceSDK {
                 }
             } catch (Exception e) {
                 logger.warn("设置本地库路径异常: {}（继续初始化）", e.getMessage());
+            }
+
+            // 设置 SDK 日志级别，抑制终端噪音（libvautil、CLS_CmdAnalyzeData 等 ERR 刷屏）
+            try {
+                TiandySDKStructure.SdkLogLevel logLevel = new TiandySDKStructure.SdkLogLevel();
+                logLevel.iTerminalOutputLevel = 0; // SDK_LOG_LEVEL_FORBID，不输出到终端
+                logLevel.iIsWriteFile = 0; // 不写日志文件
+                logLevel.iLogFileWriteLevel = 100; // 若写文件则仅 ERROR
+                logLevel.write();
+                int setLogRet = nvssdkLibrary.NetClient_SetSDKInitConfig(
+                        NvssdkLibrary.INIT_CONFIG_SET_LOG_LEVEL, logLevel.getPointer(), logLevel.size());
+                if (setLogRet != NvssdkLibrary.RET_SUCCESS) {
+                    logger.debug("天地伟业SDK设置日志级别失败，返回值: {}（继续初始化）", setLogRet);
+                }
+            } catch (Exception e) {
+                logger.debug("设置天地伟业SDK日志级别异常: {}（继续初始化）", e.getMessage());
             }
 
             // 参考官方示例JavaClientDemo.java:188-200的初始化顺序
@@ -386,31 +454,29 @@ public class TiandySDK implements DeviceSDK {
             }
 
             String actualLibPath = libFile.getAbsolutePath();
+            String soParent = libDirFile.getAbsolutePath();
 
-            // 设置库路径到java.library.path（用于加载依赖库）
-            // 使用LibraryPathHelper构建完整的库路径
-            String newLibPath = com.digital.video.gateway.Common.LibraryPathHelper.buildLibraryPath();
-            System.setProperty("java.library.path", newLibPath);
-            logger.debug("设置java.library.path: {}", newLibPath);
+            // 与 TiandyCaptureDemo 完全一致：用绝对路径加载 so，并把 tiandy 目录及 tiandy/lib 放入库路径
+            // 这样 libnvssdk.so 的依赖（如 ffmpeg）可由系统在 tiandy/lib 中找到，避免 Inner_StartRecvEx 失败
+            File tiandyLibSub = new File(libDirFile, "lib");
+            String pathForLoad = soParent;
+            if (tiandyLibSub.exists() && tiandyLibSub.isDirectory()) {
+                pathForLoad = soParent + File.pathSeparator + tiandyLibSub.getAbsolutePath();
+            }
+            String existingPath = System.getProperty("java.library.path", "");
+            System.setProperty("java.library.path",
+                    pathForLoad + (existingPath.isEmpty() ? "" : File.pathSeparator + existingPath));
+            logger.debug("天地伟业库路径(与Demo一致): {}", pathForLoad);
 
-            // 官方示例使用：Native.loadLibrary("nvssdk", NvssdkLibrary.class)
-            // 这样JNA会从java.library.path中查找libnvssdk.so
             try {
-                // 先尝试使用库名加载（官方示例的方式）
-                nvssdkLibrary = (NvssdkLibrary) Native.loadLibrary("nvssdk", NvssdkLibrary.class);
-                logger.info("天地伟业SDK库加载成功（使用库名: nvssdk），库路径: {}", actualLibPath);
+                nvssdkLibrary = (NvssdkLibrary) Native.load(actualLibPath, NvssdkLibrary.class);
+                logger.info("天地伟业SDK库加载成功(绝对路径，与Demo一致): {}", actualLibPath);
                 return true;
             } catch (UnsatisfiedLinkError e) {
-                // 如果库名加载失败，尝试使用绝对路径加载
-                logger.warn("使用库名加载失败，尝试使用绝对路径: {}", e.getMessage());
-                try {
-                    nvssdkLibrary = (NvssdkLibrary) Native.load(actualLibPath, NvssdkLibrary.class);
-                    logger.info("天地伟业SDK库加载成功（使用绝对路径），库路径: {}", actualLibPath);
-                    return true;
-                } catch (UnsatisfiedLinkError e2) {
-                    logger.error("加载天地伟业SDK库失败，库路径: {}，错误: {}", actualLibPath, e2.getMessage());
-                    return false;
-                }
+                logger.error(
+                        "加载天地伟业SDK库失败，库路径: {}，错误: {}（若为找不到 libavcodec 等，请确保启动时 LD_LIBRARY_PATH 含 tiandy 与 tiandy/lib）",
+                        actualLibPath, e.getMessage());
+                return false;
             }
 
         } catch (Exception e) {
@@ -471,6 +537,7 @@ public class TiandySDK implements DeviceSDK {
 
             if (logonID >= 0) {
                 logger.info("天地伟业设备登录成功: {}:{} (logonID: {})", ip, port, logonID);
+                loginIdToIpMap.put(logonID, ip); // Store IP for later use
                 return logonID;
             } else {
                 // 根据错误码提供更详细的错误信息
@@ -525,6 +592,7 @@ public class TiandySDK implements DeviceSDK {
         int ret = nvssdkLibrary.NetClient_Logoff(userId);
         if (ret == NvssdkLibrary.RET_SUCCESS) {
             logger.info("天地伟业设备登出成功: {}", userId);
+            loginIdToIpMap.remove(userId); // Remove IP on logout
             return true;
         } else {
             logger.error("天地伟业设备登出失败: {}, 错误码: {}", userId, ret);
@@ -568,6 +636,20 @@ public class TiandySDK implements DeviceSDK {
         }
     }
 
+    /** 抓图接口返回值描述（与 RetValue.h 一致，便于日志排查） */
+    private static String getCaptureErrorDesc(int iRet) {
+        switch (iRet) {
+            case NvssdkLibrary.RET_FAILED:
+                return " (失败-通用)";
+            case NvssdkLibrary.RET_DEVICE_CAPTURE_FAIL:
+                return " (设备远程抓拍失败，设备返回数据长度为0)";
+            case NvssdkLibrary.RET_DEVICE_CAPTURE_TIMEOUT:
+                return " (设备远程抓拍超时，设备未回复数据)";
+            default:
+                return "";
+        }
+    }
+
     @Override
     public void cleanup() {
         if (initialized && nvssdkLibrary != null) {
@@ -592,19 +674,46 @@ public class TiandySDK implements DeviceSDK {
     @Override
     public int startRealPlay(int userId, int channel, int streamType) {
         if (!initialized || nvssdkLibrary == null) {
+            System.out.println(
+                    System.currentTimeMillis() + " DEBUG: TiandySDK.startRealPlay check initialized=" + initialized);
             logger.error("天地伟业SDK未初始化");
             return -1;
         }
 
+        boolean locked = false;
         try {
-            // 参考Channel.java:245-318的实现
-            // 首先验证登录状态（确保连接保持有效）
+            System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK start locking");
+            logger.info("天地伟业预览启动: 准备获取锁 userId={}, channel={}", userId, channel);
+            // 使用 tryLock 避免死锁，等待时间需大于 SyncRealPlay 的超时时间(60s)
+            locked = startRealPlayLock.tryLock(65, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK lock interrupted");
+            e.printStackTrace();
+            logger.error("天地伟业预览启动: 获取锁被中断 userId={}, channel={}", userId, channel);
+            Thread.currentThread().interrupt();
+            return -1;
+        }
+
+        if (!locked) {
+            System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK lock result=false");
+            logger.error("天地伟业预览启动: 获取锁超时(65s), 可能存在死锁 userId={}, channel={}", userId, channel);
+            return -1;
+        }
+        System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK lock result=true");
+        logger.info("天地伟业预览启动: 获取锁成功, 开始执行 userId={}, channel={}", userId, channel);
+
+        try {
+            // 参考Channel.java:245-318的实现（官方示例在 SyncRealPlay 前不调用 GetLogonStatus，此处仅做快速校验）
+            System.out.println(System.currentTimeMillis() + " DEBUG: Calling GetLogonStatus userId=" + userId);
             int logonStatus = nvssdkLibrary.NetClient_GetLogonStatus(userId);
+            System.out.println(System.currentTimeMillis() + " DEBUG: LogonStatus=" + logonStatus);
             if (logonStatus != NvssdkLibrary.LOGON_SUCCESS) { // 0表示登录成功
+                System.out.println(System.currentTimeMillis() + " DEBUG: LogonStatus invalid");
                 logger.error("设备登录状态无效: userId={}, logonStatus={}（0=成功, 4=失败, 5=超时），无法启动预览",
                         userId, logonStatus);
                 return -1;
             }
+            logger.info("天地伟业预览启动: 登录状态检查完成 logonStatus={}", logonStatus);
 
             // 天地伟业SDK的通道号从0开始，如果传入的是1-based的通道号，需要转换为0-based
             int channelNo = channel;
@@ -614,8 +723,11 @@ public class TiandySDK implements DeviceSDK {
 
             // 参考Channel.java:253-277，必须验证通道号是否有效
             IntByReference piDigitalChanCount = new IntByReference();
+            System.out.println(System.currentTimeMillis() + " DEBUG: Calling GetDigitalChannelNum");
             int ret = nvssdkLibrary.NetClient_GetDigitalChannelNum(userId, piDigitalChanCount);
+            System.out.println(System.currentTimeMillis() + " DEBUG: GetDigitalChannelNum ret=" + ret);
             if (ret != NvssdkLibrary.RET_SUCCESS) {
+                System.out.println(System.currentTimeMillis() + " DEBUG: GetDigitalChannelNum failed");
                 logger.error("获取数字通道数失败: userId={}, 错误码={}", userId, ret);
                 return -1;
             }
@@ -623,8 +735,11 @@ public class TiandySDK implements DeviceSDK {
 
             // 获取总通道数
             IntByReference piChanTotalCount = new IntByReference();
+            System.out.println(System.currentTimeMillis() + " DEBUG: Calling GetChannelNum");
             ret = nvssdkLibrary.NetClient_GetChannelNum(userId, piChanTotalCount);
+            System.out.println(System.currentTimeMillis() + " DEBUG: GetChannelNum ret=" + ret);
             if (ret != NvssdkLibrary.RET_SUCCESS) {
+                System.out.println(System.currentTimeMillis() + " DEBUG: GetChannelNum failed");
                 logger.error("获取总通道数失败: userId={}, 错误码={}", userId, ret);
                 return -1;
             }
@@ -634,9 +749,11 @@ public class TiandySDK implements DeviceSDK {
             if (digitalChanCount == 0) {
                 digitalChanCount = chanTotalCount;
             }
+            System.out.println(System.currentTimeMillis() + " DEBUG: Channel counts digital=" + digitalChanCount
+                    + " total=" + chanTotalCount);
 
-            logger.debug("通道信息: 总通道数={}, 数字通道数={}, 请求通道号={}(0-based: {})",
-                    chanTotalCount, digitalChanCount, channel, channelNo);
+            logger.info("天地伟业预览启动: 通道数获取完成 总通道={}, 数字通道={}, 请求通道0-based={}",
+                    chanTotalCount, digitalChanCount, channelNo);
 
             // 验证通道号是否在有效范围内
             if (channelNo < 0 || channelNo >= digitalChanCount) {
@@ -648,48 +765,76 @@ public class TiandySDK implements DeviceSDK {
 
             // 设置预览参数
             tVideoPara.iSize = tVideoPara.size();
+            tVideoPara.tCltInfo.m_iServerID = userId;
+            tVideoPara.tCltInfo.m_iChannelNo = channelNo;
+            tVideoPara.tCltInfo.m_iStreamNO = streamType; // 0=主码流(高清抓图), 1=子码流
+            tVideoPara.tCltInfo.m_iNetMode = 1; // UDP（与 TiandyCaptureDemo 一致，mode 4 RTSP 不被 SDK V5.5 支持）
+            tVideoPara.tCltInfo.m_iTimeout = 20; // 20s 超时
 
-            // 初始化CLIENTINFO结构体的所有必要字段
-            tVideoPara.tCltInfo.m_iServerID = userId; // logon handle
-            tVideoPara.tCltInfo.m_iChannelNo = channelNo; // 使用0-based通道号
-            tVideoPara.tCltInfo.m_iStreamNO = streamType; // 0=主码流, 1=子码流
-            tVideoPara.tCltInfo.m_iNetMode = 1; // TCP方式
-            tVideoPara.tCltInfo.m_iTimeout = 20;
+            System.out.println(System.currentTimeMillis() + " DEBUG: VideoPara streamType="
+                    + tVideoPara.tCltInfo.m_iStreamNO + " netMode=" + tVideoPara.tCltInfo.m_iNetMode + " timeout="
+                    + tVideoPara.tCltInfo.m_iTimeout + " channelNo=" + channelNo + " cltInfoSize="
+                    + tVideoPara.tCltInfo.size());
 
-            // 初始化字节数组字段（避免未初始化导致的问题）
-            if (tVideoPara.tCltInfo.m_cNetFile == null) {
-                tVideoPara.tCltInfo.m_cNetFile = new byte[255];
-            }
-            if (tVideoPara.tCltInfo.m_cRemoteIP == null) {
-                tVideoPara.tCltInfo.m_cRemoteIP = new byte[16];
-            }
+            // 采用 SDK 默认缓冲区参数
+            /*
+             * tVideoPara.tCltInfo.m_iBufferCount = 20;
+             * tVideoPara.tCltInfo.m_iDelayNum = 1;
+             * tVideoPara.tCltInfo.m_iDelayTime = 0;
+             * tVideoPara.tCltInfo.m_iTTL = 8;
+             * tVideoPara.tCltInfo.m_iFlag = 0;
+             * tVideoPara.tCltInfo.m_iPosition = 0;
+             * tVideoPara.tCltInfo.m_iSpeed = 0;
+             */
 
-            // 设置缓冲区参数（参考官方示例Channel.java:287-299和VideoCtrl.java:336-344）
-            tVideoPara.tCltInfo.m_iBufferCount = 20; // 缓冲区数量，官方示例使用20
-            tVideoPara.tCltInfo.m_iDelayNum = 1; // 延迟数量，官方示例使用1
-            tVideoPara.tCltInfo.m_iDelayTime = 0; // 延迟时间
-            tVideoPara.tCltInfo.m_iTTL = 8; // TTL值，官方示例使用8
-            tVideoPara.tCltInfo.m_iFlag = 0; // 标志位
-            tVideoPara.tCltInfo.m_iPosition = 0; // 位置
-            tVideoPara.tCltInfo.m_iSpeed = 0; // 速度
-
-            // 回调函数设置（可以为null，但需要确保结构体正确）
-            tVideoPara.pCbkFullFrm = null; // 完整帧回调（可以为null）
+            // 回调
+            tVideoPara.pCbkFullFrm = CallbackReference.getFunctionPointer(realPlayCbkFullFrame);
             tVideoPara.pvCbkFullFrmUsrData = null;
-            tVideoPara.pCbkRawFrm = null; // 原始流回调（可以为null）
+            tVideoPara.pCbkRawFrm = CallbackReference.getFunctionPointer(realPlayCbkRawFrame);
             tVideoPara.pvCbkRawFrmUsrData = null;
-            // 允许解码（参考Channel.java:297，预览时使用ALLOW_DECODE）
-            // 虽然我们不需要显示，但SDK可能需要解码来建立连接
             tVideoPara.iIsForbidDecode = NvssdkLibrary.RAW_NOTIFY_ALLOW_DECODE;
-            tVideoPara.pvWnd = null; // 不显示视频窗口
+            tVideoPara.pvWnd = null;
 
-            // 先写入CLIENTINFO，再写入整个结构体
+            // 写入
             tVideoPara.tCltInfo.write();
             tVideoPara.write();
 
             IntByReference piConnectID = new IntByReference();
-            // 使用Pointer传递结构体（更安全，避免JNA自动转换问题）
-            int iRet = nvssdkLibrary.NetClient_SyncRealPlay(piConnectID, tVideoPara.getPointer(), tVideoPara.iSize);
+            System.out.println(System.currentTimeMillis() + " DEBUG: Calling SyncRealPlay");
+            logger.info("天地伟业预览启动: 即将调用 NetClient_SyncRealPlay（可能阻塞至超时）");
+
+            final int SYNC_REALPLAY_HARD_TIMEOUT_SEC = 90;
+            final com.sun.jna.Pointer paraPtr = tVideoPara.getPointer();
+            final int paraSize = tVideoPara.iSize;
+
+            java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "SyncRealPlay-" + userId);
+                t.setDaemon(true);
+                return t;
+            });
+            long startTime = System.currentTimeMillis();
+            int iRet;
+            try {
+                java.util.concurrent.Future<Integer> future = executor.submit(
+                        () -> nvssdkLibrary.NetClient_SyncRealPlay(piConnectID, paraPtr, paraSize));
+                iRet = future.get(SYNC_REALPLAY_HARD_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException te) {
+                long elapsed = System.currentTimeMillis() - startTime;
+                System.out.println(System.currentTimeMillis() + " DEBUG: SyncRealPlay HARD TIMEOUT after " + elapsed + "ms");
+                logger.error("天地伟业预览启动: SyncRealPlay Java层硬超时({}s), userId={}, channel={}",
+                        SYNC_REALPLAY_HARD_TIMEOUT_SEC, userId, channel);
+                executor.shutdownNow();
+                return -1;
+            } catch (java.util.concurrent.ExecutionException ee) {
+                logger.error("天地伟业预览启动: SyncRealPlay执行异常 userId={}", userId, ee.getCause());
+                executor.shutdownNow();
+                return -1;
+            } finally {
+                executor.shutdownNow();
+            }
+            long endTime = System.currentTimeMillis();
+            System.out.println(
+                    endTime + " DEBUG: SyncRealPlay returns " + iRet + " (took " + (endTime - startTime) + "ms)");
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 int connectID = piConnectID.getValue();
@@ -707,6 +852,12 @@ public class TiandySDK implements DeviceSDK {
         } catch (Exception e) {
             logger.error("天地伟业预览启动异常: userId={}, channel={}", userId, channel, e);
             return -1;
+        } finally {
+            if (locked) {
+                startRealPlayLock.unlock();
+                System.out.println(System.currentTimeMillis() + " DEBUG: TiandySDK unlocked");
+                logger.info("天地伟业预览启动: 释放锁 userId={}, channel={}", userId, channel);
+            }
         }
     }
 
@@ -723,7 +874,6 @@ public class TiandySDK implements DeviceSDK {
         try {
             int iRet = nvssdkLibrary.NetClient_StopRealPlay(connectId, 1);
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                logger.info("天地伟业预览停止成功: connectID={}", connectId);
                 return true;
             } else {
                 logger.error("天地伟业预览停止失败: connectID={}, 错误码={}", connectId, iRet);
@@ -805,43 +955,122 @@ public class TiandySDK implements DeviceSDK {
             return false;
         }
 
+        if (connectId < 0) {
+            logger.warn("天地伟业抓图拒绝: 无可用预览连接(connectId<0)");
+            return false;
+        }
+
         try {
-            // 使用NetClient_CapturePicByDevice直接抓图，不需要预览连接
-            // 参考NetSdkClient.h:3830-3848
-            // 天地伟业SDK的通道号从0开始，需要转换为0-based
-            int channelNo = channel > 0 ? channel - 1 : 0;
-
-            // 确保文件路径有正确的扩展名
-            String actualFilePath = filePath;
-            if (pictureType == NvssdkLibrary.CAPTURE_PICTURE_TYPE_BMP && !actualFilePath.endsWith(".bmp")) {
-                actualFilePath = filePath + ".bmp";
-            } else if (pictureType == NvssdkLibrary.CAPTURE_PICTURE_TYPE_JPG && !actualFilePath.endsWith(".jpg")) {
-                actualFilePath = filePath + ".jpg";
+            if (filePath == null || filePath.isEmpty()) {
+                logger.error("天地伟业抓图: 文件路径为空");
+                return false;
             }
-            
-            // 参考Channel.java:414，文件名需要以\0结尾（C字符串格式）
-            actualFilePath += "\0";
+            String actualFilePath = filePath.replace("\0", "");
+            if (!actualFilePath.endsWith(".jpg")) {
+                actualFilePath = actualFilePath.endsWith(".bmp") ? actualFilePath.replace(".bmp", ".jpg")
+                        : actualFilePath + ".jpg";
+            }
 
-            // iQvalue: 图片质量值（通常1-100，0表示使用设备默认值）
-            int iQvalue = 0; // 使用设备默认质量
+            logger.info("天地伟业抓图: connectId={}, filePath={}", connectId, actualFilePath);
 
-            // 如果只需要保存到文件，ptSnapPicData可以传null
-            // 参考官方文档：when _ptSnapPicData==NULL:don't save picture data (只保存到文件)
-            ByteBuffer strBuffer = ByteBuffer.wrap(actualFilePath.getBytes());
-            int iRet = nvssdkLibrary.NetClient_CapturePicByDevice(userId, channelNo, iQvalue, strBuffer, null, 0);
+            ByteBuffer buf = ByteBuffer.wrap(actualFilePath.getBytes());
+            int capRet = nvssdkLibrary.NetClient_CapturePicture(connectId, NvssdkLibrary.CAPTURE_PICTURE_TYPE_JPG, buf);
 
-            if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                logger.info("天地伟业直接抓图成功: userId={}, channel={}(0-based: {}), filePath={}",
-                        userId, channel, channelNo, actualFilePath);
+            if (capRet > 0) {
+                logger.info("天地伟业抓图成功: connectId={}, 字节数={}, filePath={}", connectId, capRet, actualFilePath);
                 return true;
             } else {
-                logger.error("天地伟业直接抓图失败: userId={}, channel={}(0-based: {}), filePath={}, 错误码={}",
-                        userId, channel, channelNo, actualFilePath, iRet);
+                logger.error("天地伟业抓图失败: connectId={}, 返回值={}{}", connectId, capRet, getCaptureErrorDesc(capRet));
                 return false;
             }
         } catch (Exception e) {
-            logger.error("天地伟业直接抓图异常: userId={}, channel={}, filePath={}", userId, channel, filePath, e);
+            logger.error("天地伟业抓图异常: connectId={}, filePath={}", connectId, filePath, e);
             return false;
+        }
+    }
+
+    /** 根据 YUV422 字节数推断宽高（width*height*2 = size），常用分辨率优先 */
+    private static int[] inferYuv422Resolution(int size) {
+        int half = size / 2;
+        int[][] candidates = { { 1920, 1080 }, { 1280, 720 }, { 704, 576 }, { 640, 480 }, { 352, 288 }, { 320, 240 } };
+        for (int[] wh : candidates) {
+            if (wh[0] * wh[1] == half)
+                return wh;
+        }
+        return null;
+    }
+
+    /** YUV422 (YUYV) 转 RGB 并写入 JPG 文件 */
+    private boolean yuv422ToJpg(byte[] yuv, int width, int height, String jpgPath) {
+        if (yuv == null || width <= 0 || height <= 0 || yuv.length < width * height * 2) {
+            return false;
+        }
+        try {
+            BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
+            byte[] rgb = ((DataBufferByte) img.getRaster().getDataBuffer()).getData();
+            int pixelCount = width * height;
+            int rgbIdx = 0;
+            for (int i = 0; i < pixelCount * 2; i += 4) {
+                int y0 = yuv[i] & 0xff;
+                int u = (yuv[i + 1] & 0xff) - 128;
+                int y1 = yuv[i + 2] & 0xff;
+                int v = (yuv[i + 3] & 0xff) - 128;
+                int c0 = y0 - 16, c1 = y1 - 16;
+                int r0 = (298 * c0 + 409 * v + 128) >> 8;
+                int g0 = (298 * c0 - 100 * u - 208 * v + 128) >> 8;
+                int b0 = (298 * c0 + 516 * u + 128) >> 8;
+                int r1 = (298 * c1 + 409 * v + 128) >> 8;
+                int g1 = (298 * c1 - 100 * u - 208 * v + 128) >> 8;
+                int b1 = (298 * c1 + 516 * u + 128) >> 8;
+                rgb[rgbIdx++] = (byte) Math.max(0, Math.min(255, b0));
+                rgb[rgbIdx++] = (byte) Math.max(0, Math.min(255, g0));
+                rgb[rgbIdx++] = (byte) Math.max(0, Math.min(255, r0));
+                rgb[rgbIdx++] = (byte) Math.max(0, Math.min(255, b1));
+                rgb[rgbIdx++] = (byte) Math.max(0, Math.min(255, g1));
+                rgb[rgbIdx++] = (byte) Math.max(0, Math.min(255, r1));
+            }
+            // 使用较高 JPEG 质量（0.9）写入，避免默认压缩导致不清晰
+            return writeJpegWithQuality(img, jpgPath, 0.9f);
+        } catch (Exception e) {
+            logger.warn("YUV 转 JPG 写入失败: {}", jpgPath, e);
+            return false;
+        }
+    }
+
+    /** 以指定质量写入 JPEG，quality 建议 0.85f～1.0f，越高越清晰、文件越大 */
+    private boolean writeJpegWithQuality(BufferedImage img, String jpgPath, float quality) {
+        Iterator<javax.imageio.ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
+        if (!writers.hasNext()) {
+            try {
+                return ImageIO.write(img, "jpg", new File(jpgPath));
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        ImageWriter writer = writers.next();
+        try {
+            try (ImageOutputStream ios = ImageIO.createImageOutputStream(new File(jpgPath))) {
+                if (ios == null) {
+                    return ImageIO.write(img, "jpg", new File(jpgPath));
+                }
+                writer.setOutput(ios);
+                ImageWriteParam param = writer.getDefaultWriteParam();
+                if (param.canWriteCompressed()) {
+                    param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                    param.setCompressionQuality(quality);
+                }
+                writer.write(null, new IIOImage(img, null, null), param);
+                return true;
+            }
+        } catch (Exception e) {
+            logger.warn("JPEG 高质量写入失败，回退默认: {}", jpgPath, e);
+            try {
+                return ImageIO.write(img, "jpg", new File(jpgPath));
+            } catch (IOException e2) {
+                return false;
+            }
+        } finally {
+            writer.dispose();
         }
     }
 
@@ -933,7 +1162,7 @@ public class TiandySDK implements DeviceSDK {
         try {
             // 通道号转换为0-based
             int channelNo = channel > 0 ? channel - 1 : 0;
-            
+
             // 将角度转换为SDK参数（角度*100，保留两位小数精度）
             int panValue = (int) (pan * 100);
             int tiltValue = (int) (tilt * 100);
@@ -947,13 +1176,13 @@ public class TiandySDK implements DeviceSDK {
             TiandySDKStructure.PTZ_ABSOLUTE_POS ptzPos = new TiandySDKStructure.PTZ_ABSOLUTE_POS();
             ptzPos.iSize = ptzPos.size();
             ptzPos.iChannelNo = channelNo;
-            ptzPos.iPan = panValue;      // 水平角度 * 100
-            ptzPos.iTilt = tiltValue;    // 垂直角度 * 100
-            ptzPos.iZoom = zoomValue;    // 变倍 * 100
+            ptzPos.iPan = panValue; // 水平角度 * 100
+            ptzPos.iTilt = tiltValue; // 垂直角度 * 100
+            ptzPos.iZoom = zoomValue; // 变倍 * 100
             ptzPos.write();
 
-            int iRet = nvssdkLibrary.NetClient_SendCommand(userId, 
-                    NvssdkLibrary.COMMAND_ID_SYNC_SETPTZ, 
+            int iRet = nvssdkLibrary.NetClient_SendCommand(userId,
+                    NvssdkLibrary.COMMAND_ID_SYNC_SETPTZ,
                     channelNo, ptzPos.getPointer(), ptzPos.size());
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
@@ -961,7 +1190,7 @@ public class TiandySDK implements DeviceSDK {
                         userId, channel, pan, tilt, zoom);
                 return true;
             }
-            
+
             logger.warn("天地伟业SYNC_SETPTZ失败(错误码={}), 尝试备用方法...", iRet);
 
             // 方法2：尝试使用预置位方式（如果设备不支持直接绝对定位）
@@ -969,7 +1198,7 @@ public class TiandySDK implements DeviceSDK {
             // 这里暂时返回失败，等待后续扩展
             logger.warn("天地伟业SDK绝对定位功能可能需要设备支持，当前设备可能不支持此功能");
             logger.info("建议：1.检查设备是否为球机 2.检查设备固件版本 3.使用预置位功能替代");
-            
+
             return false;
         } catch (Exception e) {
             logger.error("天地伟业云台绝对定位异常: userId={}, channel={}, pan={}, tilt={}", userId, channel, pan, tilt, e);
@@ -994,21 +1223,21 @@ public class TiandySDK implements DeviceSDK {
             ptzPos.iChannelNo = channelNo;
             ptzPos.write();
 
-            int iRet = nvssdkLibrary.NetClient_RecvCommand(userId, 
-                    NvssdkLibrary.COMMAND_ID_SYNC_GETPTZ, 
+            int iRet = nvssdkLibrary.NetClient_RecvCommand(userId,
+                    NvssdkLibrary.COMMAND_ID_SYNC_GETPTZ,
                     channelNo, ptzPos.getPointer(), ptzPos.size());
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 ptzPos.read();
-                
+
                 // 将SDK返回值转换为实际角度（除以100）
                 float pan = ptzPos.iPan / 100.0f;
                 float tilt = ptzPos.iTilt / 100.0f;
                 float zoom = ptzPos.iZoom / 100.0f;
-                
+
                 logger.debug("天地伟业获取PTZ位置成功: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
                         userId, channel, pan, tilt, zoom);
-                
+
                 return new PtzPosition(pan, tilt, zoom);
             } else {
                 logger.debug("天地伟业获取PTZ位置失败(错误码={}): userId={}, channel={}", iRet, userId, channel);

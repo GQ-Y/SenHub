@@ -226,6 +226,15 @@ public class AlarmService {
                 logger.warn("设备不在线，无法处理报警: deviceId={}, status={}", deviceId, device.getStatus());
                 return;
             }
+
+            // 天地伟业：健康检查未通过前不处理该摄像头的任何事件
+            if (DeviceInfo.BRAND_TIANDY.equalsIgnoreCase(device.getBrand())) {
+                DeviceInfo.HealthStatus health = deviceManager.checkTiandyDeviceHealth(deviceId);
+                if (health != DeviceInfo.HealthStatus.HEALTHY) {
+                    logger.warn("天地伟业设备健康检查未通过，跳过报警处理: deviceId={}, 状态={}", deviceId, health);
+                    return;
+                }
+            }
             
             // 获取装置ID（如果有）
             String assemblyId = null;

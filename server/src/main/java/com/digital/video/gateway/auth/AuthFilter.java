@@ -52,7 +52,7 @@ public class AuthFilter implements Filter {
 
         // 允许视频文件访问（免token验证，因为video标签无法携带Authorization header）
         // 注意：这里假设视频文件路径已经通过设备ID验证，具有一定的安全性
-        if (path.contains("/video") && request.queryParams("file") != null) {
+        if (path != null && path.contains("/video") && request.queryParams("file") != null) {
             // 视频文件访问免token验证，但需要通过文件名验证设备ID
             return;
         }
@@ -62,18 +62,18 @@ public class AuthFilter implements Filter {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             response.status(401);
             response.type("application/json");
-            response.body("{\"code\":401,\"message\":\"Unauthorized\",\"data\":null}");
+            response.body("{\"code\":401,\"errorCode\":\"MISSING_TOKEN\",\"message\":\"Missing or invalid Authorization header\",\"data\":null}");
             logger.warn("未授权的请求: {}", path);
             return;
         }
 
         String token = authHeader.substring(7);
         String username = JwtUtil.verifyToken(token);
-        
+
         if (username == null) {
             response.status(401);
             response.type("application/json");
-            response.body("{\"code\":401,\"message\":\"Invalid token\",\"data\":null}");
+            response.body("{\"code\":401,\"errorCode\":\"TOKEN_INVALID\",\"message\":\"Token invalid or expired\",\"data\":null}");
             logger.warn("无效的token: {}", path);
             return;
         }
