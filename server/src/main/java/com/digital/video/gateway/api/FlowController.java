@@ -12,12 +12,15 @@ import spark.Request;
 import spark.Response;
 
 import java.io.File;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import javax.servlet.MultipartConfigElement;
+import javax.servlet.http.Part;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -128,8 +131,12 @@ public class FlowController {
     }
 
     /**
-     * 异步触发流程测试：模拟一个「未穿反光衣」(VEST_DETECTION) 报警事件，
-     * 使用 test/fanguangyi.png 作为抓拍图片。立即返回，流程在后台执行。
+     * 异步触发流程测试。支持 multipart/form-data 上传自定义参数：
+     *   eventName  - 事件名称（中文），如"反光衣检测"
+     *   alarmType  - 报警类型 key，如 VEST_DETECTION
+     *   deviceId   - 模拟设备ID
+     *   deviceIp   - 模拟设备IP
+     *   image      - 自定义抓拍图片文件（可选，未上传则使用默认测试图片）
      */
     public String testFlow(Request request, Response response) {
         try {
@@ -144,11 +151,61 @@ public class FlowController {
                 return createError(500, "流程执行器未初始化，无法测试");
             }
 
-            FlowDefinition definition = flowService.toDefinition(flow);
-            FlowContext context = buildTestContext();
-            prepareTestImage(context);
+            // 解析 multipart 或 JSON 请求
+            String eventName = null;
+            String alarmType = null;
+            String deviceId = null;
+            String deviceIp = null;
+            byte[] imageBytes = null;
+            String imageFileName = null;
 
-            logger.info("异步触发测试流程: flowId={}, alarmType={}", flowId, context.getAlarmType());
+            String contentType = request.contentType();
+            if (contentType != null && contentType.contains("multipart/form-data")) {
+                request.attribute("org.eclipse.jetty.multipartConfig",
+                        new MultipartConfigElement(System.getProperty("java.io.tmpdir"), 10_000_000, 10_000_000, 1_000_000));
+
+                eventName = getPartValue(request, "eventName");
+                alarmType = getPartValue(request, "alarmType");
+                deviceId = getPartValue(request, "deviceId");
+                deviceIp = getPartValue(request, "deviceIp");
+
+                Part imagePart = request.raw().getPart("image");
+                if (imagePart != null && imagePart.getSize() > 0) {
+                    try (InputStream is = imagePart.getInputStream()) {
+                        imageBytes = is.readAllBytes();
+                    }
+                    String submitted = imagePart.getSubmittedFileName();
+                    imageFileName = (submitted != null && !submitted.isBlank()) ? submitted : "upload.jpg";
+                }
+            } else {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+                    eventName = body.get("eventName") instanceof String ? (String) body.get("eventName") : null;
+                    alarmType = body.get("alarmType") instanceof String ? (String) body.get("alarmType") : null;
+                    deviceId = body.get("deviceId") instanceof String ? (String) body.get("deviceId") : null;
+                    deviceIp = body.get("deviceIp") instanceof String ? (String) body.get("deviceIp") : null;
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (alarmType == null || alarmType.isBlank()) alarmType = "VEST_DETECTION";
+            if (eventName == null || eventName.isBlank()) eventName = "反光衣检测";
+            if (deviceId == null || deviceId.isBlank()) deviceId = "test-camera-001";
+            if (deviceIp == null || deviceIp.isBlank()) deviceIp = "192.168.1.100";
+
+            FlowDefinition definition = flowService.toDefinition(flow);
+            FlowContext context = buildTestContext(alarmType, eventName, deviceId, deviceIp);
+
+            if (imageBytes != null) {
+                prepareUploadedImage(context, imageBytes, imageFileName);
+            } else {
+                prepareDefaultTestImage(context);
+            }
+
+            final String logAlarmType = alarmType;
+            logger.info("异步触发测试流程: flowId={}, alarmType={}, eventName={}, deviceId={}",
+                    flowId, alarmType, eventName, deviceId);
 
             new Thread(() -> {
                 try {
@@ -162,7 +219,8 @@ public class FlowController {
             Map<String, Object> result = new HashMap<>();
             result.put("message", "流程测试已触发，正在后台执行");
             result.put("flowId", flowId);
-            result.put("alarmType", "VEST_DETECTION");
+            result.put("alarmType", logAlarmType);
+            result.put("eventName", eventName);
 
             response.status(200);
             return createSuccess(result);
@@ -173,41 +231,54 @@ public class FlowController {
         }
     }
 
-    /**
-     * 构建模拟的报警上下文：未穿反光衣事件
-     */
-    private FlowContext buildTestContext() {
-        FlowContext ctx = new FlowContext();
-        ctx.setDeviceId("test-camera-001");
-        ctx.setAssemblyId("test-assembly");
-        ctx.setAlarmType("VEST_DETECTION");
+    private String getPartValue(Request request, String name) {
+        try {
+            Part part = request.raw().getPart(name);
+            if (part != null && part.getSize() > 0 && part.getSize() < 10000) {
+                try (InputStream is = part.getInputStream()) {
+                    return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
 
-        ctx.putVariable("alarmType", "VEST_DETECTION");
-        ctx.putVariable("eventKey", "VEST_DETECTION");
-        ctx.putVariable("eventNameZh", "反光衣检测");
-        ctx.putVariable("eventNameEn", "Vest Detection");
+    /**
+     * 构建模拟的报警上下文（支持自定义参数）
+     */
+    private FlowContext buildTestContext(String alarmType, String eventName, String deviceId, String deviceIp) {
+        FlowContext ctx = new FlowContext();
+        ctx.setDeviceId(deviceId);
+        ctx.setAssemblyId("test-assembly");
+        ctx.setAlarmType(alarmType);
+
+        ctx.putVariable("alarmType", alarmType);
+        ctx.putVariable("eventKey", alarmType);
+        ctx.putVariable("eventNameZh", eventName);
+        ctx.putVariable("eventNameEn", alarmType);
         ctx.putVariable("category", "vca");
-        ctx.putVariable("originalAlarmType", "VEST_DETECTION");
+        ctx.putVariable("originalAlarmType", alarmType);
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("alarmMessage", "[测试] 检测到未穿反光衣");
+        payload.put("alarmMessage", "[测试] " + eventName);
         payload.put("channel", 0);
-        payload.put("event_key", "VEST_DETECTION");
-        payload.put("event_id", 1231);
-        payload.put("event_name_zh", "反光衣检测");
-        payload.put("event_name_en", "Vest Detection");
+        payload.put("event_key", alarmType);
+        payload.put("event_id", 9999);
+        payload.put("event_name_zh", eventName);
+        payload.put("event_name_en", alarmType);
         payload.put("test", true);
 
         String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         payload.put("timestamp", ts);
 
         Map<String, Object> alarmData = new HashMap<>();
-        alarmData.put("deviceId", "test-camera-001");
+        alarmData.put("deviceId", deviceId);
         alarmData.put("deviceName", "测试摄像头");
-        alarmData.put("deviceIp", "192.168.1.100");
+        alarmData.put("deviceIp", deviceIp);
         alarmData.put("channel", 0);
-        alarmData.put("alarmType", "VEST_DETECTION");
-        alarmData.put("alarmMessage", "[测试] 检测到未穿反光衣");
+        alarmData.put("alarmType", alarmType);
+        alarmData.put("alarmMessage", "[测试] " + eventName);
         alarmData.put("timestamp", ts);
         alarmData.put("test", true);
         payload.put("alarmData", alarmData);
@@ -217,9 +288,32 @@ public class FlowController {
     }
 
     /**
-     * 将 test/fanguangyi.png 复制为临时文件，设置到 context 的 capturePath
+     * 将前端上传的图片保存为临时文件，设置到 context 的 capturePath
      */
-    private void prepareTestImage(FlowContext context) {
+    private void prepareUploadedImage(FlowContext context, byte[] imageBytes, String fileName) {
+        try {
+            String ext = ".jpg";
+            if (fileName != null) {
+                String lower = fileName.toLowerCase();
+                if (lower.endsWith(".png")) ext = ".png";
+                else if (lower.endsWith(".gif")) ext = ".gif";
+                else if (lower.endsWith(".webp")) ext = ".webp";
+                else if (lower.endsWith(".bmp")) ext = ".bmp";
+            }
+            Path tempFile = Files.createTempFile("test_capture_", ext);
+            Files.write(tempFile, imageBytes);
+            context.putVariable("capturePath", tempFile.toAbsolutePath().toString());
+            context.putVariable("captureFileName", "test_capture" + ext);
+            logger.info("上传测试图片已保存: {} ({} bytes)", tempFile, imageBytes.length);
+        } catch (Exception e) {
+            logger.warn("保存上传测试图片失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 使用默认测试图片（test/fanguangyi.png）
+     */
+    private void prepareDefaultTestImage(FlowContext context) {
         String[] searchPaths = {
             "test/fanguangyi.png",
             "server/test/fanguangyi.png",
@@ -236,19 +330,18 @@ public class FlowController {
         }
 
         if (imageFile == null) {
-            logger.warn("测试图片 fanguangyi.png 未找到，抓拍节点将跳过");
+            logger.warn("默认测试图片 fanguangyi.png 未找到，抓拍节点将跳过");
             return;
         }
 
         try {
             Path tempFile = Files.createTempFile("test_capture_", ".png");
             Files.copy(imageFile.toPath(), tempFile, StandardCopyOption.REPLACE_EXISTING);
-            String tempPath = tempFile.toAbsolutePath().toString();
-            context.putVariable("capturePath", tempPath);
-            context.putVariable("captureFileName", "test_vest_detection.png");
-            logger.info("测试图片已准备: {} -> {}", imageFile.getAbsolutePath(), tempPath);
+            context.putVariable("capturePath", tempFile.toAbsolutePath().toString());
+            context.putVariable("captureFileName", "test_capture.png");
+            logger.info("默认测试图片已准备: {}", tempFile);
         } catch (Exception e) {
-            logger.warn("复制测试图片失败: {}", e.getMessage());
+            logger.warn("复制默认测试图片失败: {}", e.getMessage());
         }
     }
 

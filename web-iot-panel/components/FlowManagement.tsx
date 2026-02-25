@@ -6,7 +6,7 @@ import {
   Plus, Trash2, RefreshCw, Save, X, Download, Upload, ZoomIn, ZoomOut,
   Play, Square, GitBranch, Camera, Video, Radio, Cloud, Volume2, Send, Zap, Settings, Move,
   Maximize2, Minimize2, ChevronDown, ChevronRight, Check, Clock, Power, MapPin, Globe, Brain,
-  LayoutGrid, ShieldCheck, MessageSquare, Mic
+  LayoutGrid, ShieldCheck, MessageSquare, Mic, Megaphone, ImagePlus
 } from 'lucide-react';
 
 // 内置组件定义
@@ -24,6 +24,7 @@ const FLOW_COMPONENTS: FlowComponentDefinition[] = [
   { type: 'mqtt_publish', label: 'node_mqtt_publish', icon: 'Radio', category: 'output', defaultConfig: { topic: 'alarm/report/{deviceId}' } },
   { type: 'oss_upload', label: 'node_oss_upload', icon: 'Cloud', category: 'output', defaultConfig: { path: 'alarm/{deviceId}/{fileName}' } },
   { type: 'speaker_play', label: 'node_speaker_play', icon: 'Volume2', category: 'output', defaultConfig: { audioFile: '' } },
+  { type: 'system_speaker', label: 'node_system_speaker', icon: 'Megaphone', category: 'output', defaultConfig: { audioPath: '' } },
   { type: 'webhook', label: 'node_webhook', icon: 'Send', category: 'output', defaultConfig: { url: '', method: 'POST' } },
   { type: 'http_request', label: 'node_http_request', icon: 'Globe', category: 'output', defaultConfig: { url: '', method: 'POST' } },
   { type: 'ai_inference', label: 'node_ai_inference', icon: 'Brain', category: 'output', defaultConfig: { apiUrl: '', requestBody: '{"image_url":"{captureUrl}"}', outputVariablePrefix: 'ai_', timeoutSeconds: 30 } },
@@ -34,7 +35,7 @@ const FLOW_COMPONENTS: FlowComponentDefinition[] = [
 ];
 
 const ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
-  Zap, GitBranch, Camera, Video, Move, Radio, Cloud, Volume2, Send, Square, Settings, Play, Clock, Power, MapPin, Globe, Brain, ShieldCheck, MessageSquare, Mic
+  Zap, GitBranch, Camera, Video, Move, Radio, Cloud, Volume2, Send, Square, Settings, Play, Clock, Power, MapPin, Globe, Brain, ShieldCheck, MessageSquare, Mic, Megaphone
 };
 
 const CATEGORY_ORDER = ['trigger', 'logic', 'action', 'output'] as const;
@@ -299,24 +300,65 @@ export const FlowManagement: React.FC = () => {
     }
   };
 
-  // 测试流程（模拟未穿反光衣报警事件，真实执行所有节点）
+  // 测试流程弹窗
   const [testingFlowId, setTestingFlowId] = useState<string | null>(null);
-  const handleTest = async (flowId: string) => {
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testModalFlowId, setTestModalFlowId] = useState<string>('');
+  const [testForm, setTestForm] = useState({
+    eventName: '反光衣检测',
+    alarmType: 'VEST_DETECTION',
+    deviceId: 'test-camera-001',
+    deviceIp: '192.168.1.100',
+  });
+  const [testImage, setTestImage] = useState<File | null>(null);
+  const [testImagePreview, setTestImagePreview] = useState<string | null>(null);
+  const testFileRef = useRef<HTMLInputElement>(null);
+
+  const openTestModal = (flowId: string) => {
+    setTestModalFlowId(flowId);
+    setTestImage(null);
+    setTestImagePreview(null);
+    setShowTestModal(true);
+  };
+
+  const handleTestImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setTestImage(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setTestImagePreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleTestSubmit = async () => {
     if (testingFlowId) return;
-    setTestingFlowId(flowId);
+    setTestingFlowId(testModalFlowId);
+    setShowTestModal(false);
     try {
-      const res = await flowService.testFlow(flowId);
-      const data = res?.data;
-      let msg = t('flow_test_success') || '流程测试执行完成';
-      if (data && typeof data === 'object') {
-        const parts: string[] = [msg];
-        if (data.aiVerifyResult) parts.push(`AI复核: ${data.aiVerifyResult}`);
-        if (data.aiAlertText) parts.push(`警示语: ${data.aiAlertText}`);
-        if (data.aiTtsGenerated) parts.push('TTS: 已生成');
-        if (data.ossUrl) parts.push(`OSS: ${data.ossUrl}`);
-        msg = parts.join('\n');
+      const formData = new FormData();
+      formData.append('eventName', testForm.eventName);
+      formData.append('alarmType', testForm.alarmType);
+      formData.append('deviceId', testForm.deviceId);
+      formData.append('deviceIp', testForm.deviceIp);
+      if (testImage) {
+        formData.append('image', testImage);
       }
-      alert(msg);
+
+      const token = localStorage.getItem('nvr_auth_token');
+      const { API_CONFIG } = await import('../src/api/config');
+      const baseUrl = API_CONFIG.BASE_URL;
+      const resp = await fetch(`${baseUrl}/flows/${encodeURIComponent(testModalFlowId)}/test`, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const json = await resp.json();
+      if (json.code === 0 || json.code === 200) {
+        alert(json.data?.message || t('flow_test_success'));
+      } else {
+        alert(json.message || 'Test failed');
+      }
     } catch (e: any) {
       alert(e?.message || 'Test failed');
     } finally {
@@ -911,6 +953,19 @@ export const FlowManagement: React.FC = () => {
             </div>
           )}
 
+          {selectedNode.type === 'system_speaker' && (
+            <div>
+              <label className="block text-gray-600 mb-1">{t('config_audio_path')}</label>
+              <input
+                value={selectedNode.config?.audioPath || ''}
+                onChange={e => updateNodeConfig('audioPath', e.target.value)}
+                className="w-full px-2 py-1 rounded border border-gray-200 focus:ring-1 focus:ring-blue-500"
+                placeholder={t('config_audio_path_hint')}
+              />
+              <p className="text-[10px] text-gray-400 mt-1">{t('config_system_speaker_hint')}</p>
+            </div>
+          )}
+
           {selectedNode.type === 'webhook' && (
             <div>
               <label className="block text-gray-600 mb-1">{t('config_webhook_url')}</label>
@@ -1419,7 +1474,7 @@ export const FlowManagement: React.FC = () => {
                   <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-100">
                     <button
                       disabled={testingFlowId === flow.flowId}
-                      onClick={(e) => { e.stopPropagation(); handleTest(flow.flowId); }}
+                      onClick={(e) => { e.stopPropagation(); openTestModal(flow.flowId); }}
                       className="flex-1 py-1.5 rounded-lg text-[11px] font-medium text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-colors disabled:opacity-50"
                     >
                       {testingFlowId === flow.flowId ? '...' : t('test')}
@@ -1950,6 +2005,109 @@ export const FlowManagement: React.FC = () => {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 {t('confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 流程测试弹窗 */}
+      {showTestModal && (
+        <div className="fixed inset-0 bg-black/40 z-[200] flex items-center justify-center" onClick={() => setShowTestModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-[460px] max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <Play size={18} className="text-emerald-500" />
+                {t('flow_test_title')}
+              </h3>
+              <button onClick={() => setShowTestModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('test_event_name')}</label>
+                <input
+                  value={testForm.eventName}
+                  onChange={e => setTestForm(f => ({ ...f, eventName: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  placeholder="反光衣检测"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('test_alarm_type')}</label>
+                <input
+                  value={testForm.alarmType}
+                  onChange={e => setTestForm(f => ({ ...f, alarmType: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  placeholder="VEST_DETECTION"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('test_device_id')}</label>
+                  <input
+                    value={testForm.deviceId}
+                    onChange={e => setTestForm(f => ({ ...f, deviceId: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    placeholder="test-camera-001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('test_device_ip')}</label>
+                  <input
+                    value={testForm.deviceIp}
+                    onChange={e => setTestForm(f => ({ ...f, deviceIp: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    placeholder="192.168.1.100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('test_capture_image')}</label>
+                <div
+                  onClick={() => testFileRef.current?.click()}
+                  className="border-2 border-dashed border-gray-200 rounded-xl p-4 cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-all text-center"
+                >
+                  {testImagePreview ? (
+                    <div className="relative">
+                      <img src={testImagePreview} alt="preview" className="max-h-40 mx-auto rounded-lg object-contain" />
+                      <p className="text-xs text-gray-500 mt-2">{testImage?.name} ({(testImage?.size ?? 0 / 1024).toFixed(0)} KB)</p>
+                    </div>
+                  ) : (
+                    <div className="text-gray-400">
+                      <ImagePlus size={32} className="mx-auto mb-2" />
+                      <p className="text-sm">{t('test_upload_hint')}</p>
+                      <p className="text-xs text-gray-400 mt-1">{t('test_upload_optional')}</p>
+                    </div>
+                  )}
+                </div>
+                <input
+                  ref={testFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleTestImageChange}
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button
+                onClick={() => setShowTestModal(false)}
+                className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleTestSubmit}
+                disabled={!!testingFlowId}
+                className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition flex items-center gap-2"
+              >
+                <Play size={14} />
+                {t('test_run')}
               </button>
             </div>
           </div>

@@ -525,6 +525,7 @@ public class Main {
         executor.registerHandler("ai_verify", new com.digital.video.gateway.workflow.handlers.AiVerifyHandler(aiClient, aiAnalysisService));
         executor.registerHandler("ai_alert_text", new com.digital.video.gateway.workflow.handlers.AiAlertTextHandler(aiClient, aiAnalysisService));
         executor.registerHandler("ai_tts", new com.digital.video.gateway.workflow.handlers.AiTtsHandler(configService, aiAnalysisService));
+        executor.registerHandler("system_speaker", new com.digital.video.gateway.workflow.handlers.SystemSpeakerHandler());
         return executor;
     }
 

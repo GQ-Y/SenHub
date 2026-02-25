@@ -299,6 +299,7 @@ export type FlowNodeType =
   | 'ai_verify'       // AI 图片核验（分支）
   | 'ai_alert_text'   // AI 警示语生成
   | 'ai_tts'          // AI 语音合成
+  | 'system_speaker'  // 系统喇叭广播
   | 'end';            // 结束节点
 
 // 画布节点（包含位置信息）
