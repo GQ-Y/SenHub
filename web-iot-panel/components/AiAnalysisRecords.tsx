@@ -2,11 +2,45 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { aiAnalysisService, AiAnalysisRecord } from '../src/api/services';
+import { fetchWithAuthAsBlobUrl } from '../src/api/client';
 import {
   Brain, Image as ImageIcon, Volume2, VolumeX, RefreshCw,
   Clock, ShieldCheck, ShieldX, Shield, AlertTriangle,
   Megaphone, X, ZoomIn, ChevronLeft, ChevronRight
 } from 'lucide-react';
+
+/** 带鉴权的图片：对 /api 或相对路径用 fetch+token 取 blob 再展示 */
+const AuthImage: React.FC<{ url: string; alt: string; className?: string; loading?: 'lazy' | 'eager' }> = ({ url, alt, className, loading }) => {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [err, setErr] = useState(false);
+  const blobRef = useRef<string | null>(null);
+  const needAuth = url.startsWith('/') || url.includes('/api/');
+  useEffect(() => {
+    if (!url || !needAuth) return;
+    let cancelled = false;
+    fetchWithAuthAsBlobUrl(url)
+      .then((u) => {
+        if (cancelled) { URL.revokeObjectURL(u); return; }
+        if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+        blobRef.current = u;
+        setBlobUrl(u);
+        setErr(false);
+      })
+      .catch(() => { if (!cancelled) setErr(true); });
+    return () => {
+      cancelled = true;
+      if (blobRef.current) {
+        URL.revokeObjectURL(blobRef.current);
+        blobRef.current = null;
+      }
+      setBlobUrl(null);
+    };
+  }, [url, needAuth]);
+  if (err) return <div className={className} style={{ background: '#f3f4f6' }} />;
+  const src = needAuth ? blobUrl : url;
+  if (!src) return <div className={className} style={{ background: '#f3f4f6' }} />;
+  return <img src={src} alt={alt} className={className} loading={loading} />;
+};
 
 export const AiAnalysisRecords: React.FC = () => {
   const { t } = useAppContext();
@@ -33,19 +67,25 @@ export const AiAnalysisRecords: React.FC = () => {
 
   useEffect(() => { loadRecords(); }, []);
 
-  const playVoice = (id: string, url: string) => {
+  const playVoice = async (id: string, url: string) => {
     if (!url) return;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
       if (playingId === id) { setPlayingId(null); return; }
     }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    setPlayingId(id);
-    audio.play().catch(() => setPlayingId(null));
-    audio.onended = () => { audioRef.current = null; setPlayingId(null); };
-    audio.onerror = () => { audioRef.current = null; setPlayingId(null); };
+    try {
+      const needAuth = url.startsWith('/') || url.includes('/api/');
+      const src = needAuth ? await fetchWithAuthAsBlobUrl(url) : url;
+      const audio = new Audio(src);
+      audioRef.current = audio;
+      setPlayingId(id);
+      audio.play().catch(() => { audioRef.current = null; setPlayingId(null); if (needAuth && src) URL.revokeObjectURL(src); });
+      audio.onended = () => { audioRef.current = null; setPlayingId(null); if (needAuth && src) URL.revokeObjectURL(src); };
+      audio.onerror = () => { audioRef.current = null; setPlayingId(null); if (needAuth && src) URL.revokeObjectURL(src); };
+    } catch {
+      setPlayingId(null);
+    }
   };
 
   const verifyLabel = (r: AiAnalysisRecord) => {
@@ -139,8 +179,8 @@ export const AiAnalysisRecords: React.FC = () => {
               {/* 图片为主 */}
               <div className="aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
                 {r.imageUrl ? (
-                  <img
-                    src={r.imageUrl}
+                  <AuthImage
+                    url={r.imageUrl}
                     alt={r.eventTitle}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
@@ -222,8 +262,8 @@ export const AiAnalysisRecords: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {current.imageUrl ? (
-              <img
-                src={current.imageUrl}
+              <AuthImage
+                url={current.imageUrl}
                 alt={current.eventTitle}
                 className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
               />

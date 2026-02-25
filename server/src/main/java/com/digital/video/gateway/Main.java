@@ -835,11 +835,13 @@ public class Main {
             response.header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
         });
 
-        // 为API请求设置默认Content-Type（不包括视频文件）
+        // 为 API 请求设置默认 Content-Type（排除非 /api 的面板与静态资源、以及视频/文件接口）
         Spark.before((request, response) -> {
             String path = request.pathInfo();
-            if (path != null && !path.contains("/video") && !path.contains("/snapshot/file")
-                    && !path.contains("/export/file")) {
+            if (path == null || !path.startsWith("/api")) {
+                return;
+            }
+            if (!path.contains("/video") && !path.contains("/snapshot/file") && !path.contains("/export/file")) {
                 response.type("application/json");
             }
         });
@@ -1073,6 +1075,68 @@ public class Main {
                 os.flush();
             }
             return "";
+        });
+
+        // Web 面板静态资源与 SPA 兜底：非 /api 的 GET 请求 → classpath static/ 或 index.html
+        Spark.get("/*", (request, response) -> {
+            String pathInfo = request.pathInfo();
+            if (pathInfo == null || pathInfo.startsWith("/api")) {
+                response.status(404);
+                return "";
+            }
+            String path = pathInfo.replaceFirst("^/+", "").replace("\\", "/");
+            if (path.contains("..")) {
+                response.status(403);
+                return "Forbidden";
+            }
+            if (path.isEmpty()) {
+                path = "index.html";
+            }
+            String resourcePath = "static/" + path;
+            ClassLoader cl = Main.class.getClassLoader();
+            try (java.io.InputStream in = cl.getResourceAsStream(resourcePath)) {
+                if (in != null) {
+                    String lower = path.toLowerCase();
+                    if (lower.endsWith(".html")) response.type("text/html; charset=utf-8");
+                    else if (lower.endsWith(".js") || lower.endsWith(".mjs")) response.type("application/javascript; charset=utf-8");
+                    else if (lower.endsWith(".css")) response.type("text/css; charset=utf-8");
+                    else if (lower.endsWith(".json")) response.type("application/json");
+                    else if (lower.endsWith(".png")) response.type("image/png");
+                    else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) response.type("image/jpeg");
+                    else if (lower.endsWith(".gif")) response.type("image/gif");
+                    else if (lower.endsWith(".svg")) response.type("image/svg+xml");
+                    else if (lower.endsWith(".ico")) response.type("image/x-icon");
+                    else if (lower.endsWith(".woff2")) response.type("font/woff2");
+                    else if (lower.endsWith(".woff")) response.type("font/woff");
+                    else if (lower.endsWith(".ttf")) response.type("font/ttf");
+                    else if (lower.endsWith(".eot")) response.type("application/vnd.ms-fontobject");
+                    else response.type("application/octet-stream");
+                    java.io.OutputStream out = response.raw().getOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                    }
+                    out.flush();
+                    return "";
+                }
+            }
+            try (java.io.InputStream indexStream = cl.getResourceAsStream("static/index.html")) {
+                if (indexStream != null) {
+                    response.type("text/html; charset=utf-8");
+                    java.io.OutputStream out = response.raw().getOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = indexStream.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                    }
+                    out.flush();
+                    return "";
+                }
+            }
+            response.status(404);
+            response.type("text/plain");
+            return "Static panel not found. Build web-iot-panel and copy to server/src/main/resources/static.";
         });
 
         // 异常处理

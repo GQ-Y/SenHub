@@ -241,6 +241,21 @@ export async function del<T = any>(
 }
 
 /**
+ * 带 Token 请求媒体 URL，返回 Blob URL（用于 img/audio/video 等无法带 Header 的场景）
+ * 调用方在不用时需自行 revokeObjectURL 释放
+ */
+export async function fetchWithAuthAsBlobUrl(url: string): Promise<string> {
+  const token = getToken();
+  const fullUrl = url.startsWith('http') ? url : (url.startsWith('/') ? window.location.origin + url : window.location.origin + '/' + url);
+  const res = await fetch(fullUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(res.status === 401 ? '未授权，请重新登录' : `请求失败 ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
  * 根据HTTP状态码获取错误消息
  */
 function getHttpErrorMessage(status: number): string {

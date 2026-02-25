@@ -4,14 +4,16 @@
 # 用法: sudo bash install.sh [安装目录]
 # 默认安装目录: /opt/senhub
 #
-# 安装前请将下方两个 URL 改为实际下载地址（应用包、SDK 库包）。
+# 安装前请将下方 URL 改为实际下载地址。
 #
 
 set -e
 
-# ---------- 下载地址（请替换为实际上传后的 URL）----------
-SENHUB_APP_URL="${SENHUB_APP_URL:-http://demo.zt.admins.smartrail.cloud/SenHub-app-1.0.0.tar.gz}"
-SENHUB_LIBS_URL="${SENHUB_LIBS_URL:-http://demo.zt.admins.smartrail.cloud/Senhub-libs.tar.gz}"
+# ---------- 版本与下载地址 ----------
+SENHUB_VERSION="1.0.1"
+SENHUB_BASE_URL="${SENHUB_BASE_URL:-http://demo.zt.admins.smartrail.cloud}"
+SENHUB_APP_URL="${SENHUB_APP_URL:-${SENHUB_BASE_URL}/SenHub-app-${SENHUB_VERSION}.tar.gz}"
+SENHUB_LIBS_URL="${SENHUB_LIBS_URL:-${SENHUB_BASE_URL}/Senhub-libs.tar.gz}"
 
 # ---------- 安装目录 ----------
 INSTALL_DIR="${1:-/opt/senhub}"
@@ -124,6 +126,8 @@ step5_download_extract() {
         echo "错误: 未找到 JAR 文件，请设置 SENHUB_APP_URL 并确保应用包内包含 .jar"
         exit 1
     fi
+    echo "$SENHUB_VERSION" > "$INSTALL_DIR/VERSION"
+    echo "  已安装版本: $SENHUB_VERSION"
 }
 
 # ---------- 步骤 6：设置 LD_LIBRARY_PATH ----------
@@ -184,6 +188,20 @@ self="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 INSTALL_DIR="$(cd "$(dirname "$self")/.." && pwd)"
 SERVICE_NAME="senhub-app"
 VGW_ENV="$INSTALL_DIR/bin/vgw-env"
+SENHUB_BASE_URL="http://demo.zt.admins.smartrail.cloud"
+
+# 语义化版本比较：$1 > $2 返回 0
+_ver_gt() {
+    [ "$1" = "$2" ] && return 1
+    local IFS=.
+    local i a=($1) b=($2)
+    for ((i=0; i<${#a[@]} || i<${#b[@]}; i++)); do
+        local va=${a[i]:-0} vb=${b[i]:-0}
+        if ((va > vb)); then return 0; fi
+        if ((va < vb)); then return 1; fi
+    done
+    return 1
+}
 
 cmd="${1:-status}"
 case "$cmd" in
@@ -198,8 +216,83 @@ case "$cmd" in
             tail -f "$INSTALL_DIR/logs/server.log" 2>/dev/null || tail -f "$INSTALL_DIR/logs/app.log" 2>/dev/null || echo "无日志"
         fi
         ;;
+    version)
+        local_ver="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "未知")"
+        echo "SenHub 当前版本: $local_ver"
+        ;;
+    update)
+        echo "========== SenHub 在线更新 =========="
+        local_ver="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "0.0.0")"
+        echo "当前运行版本: $local_ver"
+        echo "正在检查最新版本..."
+        remote_ver="$(curl -fsSL "${SENHUB_BASE_URL}/LATEST_VERSION" 2>/dev/null | tr -d '[:space:]')"
+        if [ -z "$remote_ver" ]; then
+            echo "错误: 无法获取远程版本信息 (${SENHUB_BASE_URL}/LATEST_VERSION)"
+            exit 1
+        fi
+        echo "服务器最新版本: $remote_ver"
+        if ! _ver_gt "$remote_ver" "$local_ver"; then
+            echo "当前已是最新版本，无需更新。"
+            exit 0
+        fi
+        echo ""
+        echo "发现新版本 $remote_ver (当前 $local_ver)，开始更新..."
+        TMP_DIR="/tmp/senhub-update-$$"
+        mkdir -p "$TMP_DIR"
+        APP_URL="${SENHUB_BASE_URL}/SenHub-app-${remote_ver}.tar.gz"
+        echo "下载: $APP_URL"
+        if ! curl -fSL "$APP_URL" | tar -xz -C "$TMP_DIR"; then
+            echo "错误: 下载或解压失败"
+            rm -rf "$TMP_DIR"
+            exit 1
+        fi
+        JAR="$(find "$TMP_DIR" -maxdepth 4 -name "*.jar" -type f 2>/dev/null | head -1)"
+        if [ -z "$JAR" ]; then
+            echo "错误: 更新包中未找到 JAR 文件"
+            rm -rf "$TMP_DIR"
+            exit 1
+        fi
+        echo "停止服务..."
+        systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+        sleep 2
+        echo "替换 JAR..."
+        cp "$JAR" "$INSTALL_DIR/senhub-app.jar"
+        # 更新附带文件（如有）
+        [ -f "$TMP_DIR/test/fanguangyi.png" ] && cp "$TMP_DIR/test/fanguangyi.png" "$INSTALL_DIR/test/"
+        if [ -f "$TMP_DIR/lib/x86/tiandy/sdk_log_config.ini" ] && [ -d "$INSTALL_DIR/lib/x86/tiandy" ]; then
+            cp "$TMP_DIR/lib/x86/tiandy/sdk_log_config.ini" "$INSTALL_DIR/lib/x86/tiandy/"
+        fi
+        echo "$remote_ver" > "$INSTALL_DIR/VERSION"
+        rm -rf "$TMP_DIR"
+        echo "启动服务..."
+        systemctl start "$SERVICE_NAME"
+        sleep 3
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            echo "========== 更新完成 =========="
+            echo "已从 $local_ver 更新到 $remote_ver"
+        else
+            echo "警告: 服务启动异常，请检查: journalctl -u $SERVICE_NAME -n 50"
+            exit 1
+        fi
+        ;;
+    check)
+        local_ver="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "0.0.0")"
+        remote_ver="$(curl -fsSL "${SENHUB_BASE_URL}/LATEST_VERSION" 2>/dev/null | tr -d '[:space:]')"
+        if [ -z "$remote_ver" ]; then
+            echo "无法获取远程版本"; exit 1
+        fi
+        echo "当前版本: $local_ver"
+        echo "最新版本: $remote_ver"
+        if _ver_gt "$remote_ver" "$local_ver"; then
+            echo "有新版本可用！执行 vgw update 进行更新。"
+        else
+            echo "已是最新版本。"
+        fi
+        ;;
     info)
+        local_ver="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "未知")"
         echo "SenHub 安装信息"
+        echo "  版本:     $local_ver"
         echo "  安装目录: $INSTALL_DIR"
         echo "  服务名:   $SERVICE_NAME"
         echo "  JAR:      $INSTALL_DIR/senhub-app.jar"
@@ -207,7 +300,7 @@ case "$cmd" in
         echo "  数据:     $INSTALL_DIR/data/ $INSTALL_DIR/storage/"
         echo "  访问:     http://$(hostname -I 2>/dev/null | awk '{print $1}'):8084"
         ;;
-    *) echo "用法: vgw { start | stop | restart | status | logs [sdk] | info }"; exit 1 ;;
+    *) echo "用法: vgw { start | stop | restart | status | logs [sdk] | version | check | update | info }"; exit 1 ;;
 esac
 VGWSCRIPT
     chmod 755 "$INSTALL_DIR/bin/vgw"
@@ -221,11 +314,11 @@ step9_start() {
     systemctl start "$SERVICE_NAME"
     sleep 5
     if systemctl is-active --quiet "$SERVICE_NAME"; then
-        echo "  服务已启动"
+        echo "  服务已启动 (版本: $SENHUB_VERSION)"
         tail -20 "$INSTALL_DIR/logs/server.log" 2>/dev/null || true
         echo ""
         echo "  访问地址: http://$(hostname -I 2>/dev/null | awk '{print $1}'):8084"
-        echo "  快捷命令: vgw start | stop | restart | status | logs | info"
+        echo "  快捷命令: vgw start | stop | restart | status | logs | version | check | update | info"
     else
         echo "  启动可能异常，请检查: journalctl -u $SERVICE_NAME -n 50"
         exit 1
@@ -245,7 +338,7 @@ main() {
     step8_vgw_cmd
     step9_start
     echo ""
-    echo "安装完成."
+    echo "安装完成. (版本: $SENHUB_VERSION)"
 }
 
 main "$@"

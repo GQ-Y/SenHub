@@ -17,7 +17,10 @@ import {
   Video as VideoIcon,
   Code,
   X,
-  Eye
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  Gauge
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
@@ -42,6 +45,7 @@ export const DeviceDetail: React.FC = () => {
 
   // 录像回放相关状态
   const [playbackVideoUrl, setPlaybackVideoUrl] = useState<string | null>(null);
+  const [playbackFilePath, setPlaybackFilePath] = useState<string | null>(null);
   const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadHandle, setDownloadHandle] = useState<number | null>(null);
@@ -50,6 +54,16 @@ export const DeviceDetail: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 时间轴相关状态
+  const [timelineHalf, setTimelineHalf] = useState<'AM' | 'PM'>(() => {
+    return new Date().getHours() >= 12 ? 'PM' : 'AM';
+  });
+  const [tlSelStart, setTlSelStart] = useState<number | null>(null);
+  const [tlSelEnd, setTlSelEnd] = useState<number | null>(null);
+  const [tlDragging, setTlDragging] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'config' | 'ptz'>('preview');
 
   // 云台控制速率 (1-100)
@@ -138,20 +152,40 @@ export const DeviceDetail: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (playbackVideoUrl && playbackVideoUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(playbackVideoUrl);
+      }
+    };
+  }, [playbackVideoUrl]);
+
   // 初始化时间范围 - 必须在所有条件返回之前调用
   useEffect(() => {
-    // 设置默认起始时间为当前时间往前推1小时，结束时间为当前时间
     const now = new Date();
     const start = new Date(now.getTime() - 60 * 60 * 1000);
-
-    // 格式化为 HH:mm
     const formatTime = (date: Date) => {
       return date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
     };
-
     setPlaybackStartTime(formatTime(start));
     setPlaybackEndTime(formatTime(now));
-  }, []); // 只在组件挂载时执行一次
+  }, []);
+
+  // 时间轴 mouseup 全局监听
+  const timelineMouseUpRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const up = () => timelineMouseUpRef.current?.();
+    window.addEventListener('mouseup', up);
+    return () => window.removeEventListener('mouseup', up);
+  }, []);
+
+  // 倍速同步
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed, playbackVideoUrl]);
 
   // 条件返回必须在所有 Hooks 调用之后
   if (isLoading) {
@@ -294,6 +328,134 @@ export const DeviceDetail: React.FC = () => {
       type: 'info',
     });
   };
+  // 时间轴：12小时 / 5分钟一块 = 144 块
+  const BLOCKS = 144;
+  const BLOCK_MINUTES = 5;
+  const baseHour = timelineHalf === 'AM' ? 0 : 12;
+
+  const blockToTime = (block: number): string => {
+    const totalMin = block * BLOCK_MINUTES;
+    const h = baseHour + Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const handleTimelineBlockDown = (idx: number) => {
+    setTlSelStart(idx);
+    setTlSelEnd(idx);
+    setTlDragging(true);
+  };
+
+  const handleTimelineBlockEnter = (idx: number) => {
+    if (tlDragging) setTlSelEnd(idx);
+  };
+
+  const handleTimelineMouseUp = () => {
+    if (!tlDragging) return;
+    setTlDragging(false);
+    if (tlSelStart !== null && tlSelEnd !== null) {
+      const lo = Math.min(tlSelStart, tlSelEnd);
+      const hi = Math.max(tlSelStart, tlSelEnd);
+      const maxBlocks = 12; // 1h / 5min = 12 blocks max
+      const clampedHi = Math.min(hi, lo + maxBlocks - 1);
+      const startStr = blockToTime(lo);
+      const endStr = blockToTime(clampedHi + 1);
+      setPlaybackStartTime(startStr);
+      setPlaybackEndTime(endStr);
+      setTlSelStart(lo);
+      setTlSelEnd(clampedHi);
+      triggerPlayback(startStr, endStr);
+    }
+  };
+
+  timelineMouseUpRef.current = handleTimelineMouseUp;
+
+  const triggerPlayback = (start: string, end: string) => {
+    setPlaybackStartTime(start);
+    setPlaybackEndTime(end);
+    setTimeout(() => {
+      handleStartPlaybackWithTime(start, end);
+    }, 0);
+  };
+
+  // 启动录像回放下载（由时间轴自动调用）
+  const handleStartPlaybackWithTime = async (start: string, end: string) => {
+    if (!start || !end || !deviceId) return;
+
+    setIsLoadingPlayback(true);
+    setDownloadProgress(0);
+    if (playbackVideoUrl) URL.revokeObjectURL(playbackVideoUrl);
+    setPlaybackVideoUrl(null);
+
+    const fullStartTime = `${selectedDate} ${start}:00`;
+    const fullEndTime = `${selectedDate} ${end}:00`;
+
+    const startTimeDate = new Date(`${selectedDate}T${start}`);
+    const endTimeDate = new Date(`${selectedDate}T${end}`);
+    const timeDiff = endTimeDate.getTime() - startTimeDate.getTime();
+
+    if (timeDiff <= 0 || timeDiff > 3600000) {
+      modal.showModal({ message: '时间范围无效（最大1小时）', type: 'error' });
+      setIsLoadingPlayback(false);
+      return;
+    }
+
+    try {
+      const response = await deviceService.playback(deviceId, fullStartTime, fullEndTime, 1);
+      if (!response?.data) throw new Error('启动下载失败：服务器未返回数据');
+
+      const handle = response.data?.downloadHandle;
+      const filePath = response.data?.filePath;
+      if (handle === undefined || handle === null || !filePath) {
+        throw new Error(`启动下载失败：未返回下载句柄或文件路径`);
+      }
+
+      setDownloadHandle(handle);
+
+      const checkProgress = async () => {
+        try {
+          const progressResponse = await deviceService.getPlaybackProgress(deviceId, handle);
+          const progress = progressResponse.data?.progress || 0;
+          const isCompleted = progressResponse.data?.isCompleted || false;
+
+          setDownloadProgress(progress);
+
+          if (isCompleted || progress >= 100) {
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+            try {
+              const blobUrl = await deviceService.fetchPlaybackBlob(deviceId, filePath);
+              setPlaybackVideoUrl(blobUrl);
+              setPlaybackFilePath(filePath);
+              setIsLoadingPlayback(false);
+            } catch (blobErr: any) {
+              setIsLoadingPlayback(false);
+              modal.showModal({ message: blobErr.message || '视频文件获取失败', type: 'error' });
+            }
+          } else if (progressResponse.data?.isError) {
+            setIsLoadingPlayback(false);
+            modal.showModal({ message: '下载失败，请重试', type: 'error' });
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
+          }
+        } catch (err) {
+          console.error('查询下载进度失败:', err);
+        }
+      };
+
+      progressIntervalRef.current = setInterval(checkProgress, 1000);
+      checkProgress();
+    } catch (err: any) {
+      console.error('启动录像回放失败:', err);
+      modal.showModal({ message: err.message || '启动录像回放失败', type: 'error' });
+      setIsLoadingPlayback(false);
+    }
+  };
+
   // 启动录像回放下载
   const handleStartPlayback = async () => {
     if (!playbackStartTime || !playbackEndTime) {
@@ -308,6 +470,9 @@ export const DeviceDetail: React.FC = () => {
 
     setIsLoadingPlayback(true);
     setDownloadProgress(0);
+    if (playbackVideoUrl) {
+      URL.revokeObjectURL(playbackVideoUrl);
+    }
     setPlaybackVideoUrl(null);
 
     // 组合日期和时间
@@ -370,20 +535,19 @@ export const DeviceDetail: React.FC = () => {
           setDownloadProgress(progress);
 
           if (isCompleted || progress >= 100) {
-            // 下载完成，获取视频URL
-            const videoUrl = deviceService.getPlaybackFileUrl(deviceId, filePath);
-            setPlaybackVideoUrl(videoUrl);
-            setIsLoadingPlayback(false);
-
-            // 提示用户下载完成
-            modal.showModal({
-              message: '录像文件下载完成，已准备好播放',
-              type: 'success',
-            });
-
             if (progressIntervalRef.current) {
               clearInterval(progressIntervalRef.current);
               progressIntervalRef.current = null;
+            }
+            try {
+              const blobUrl = await deviceService.fetchPlaybackBlob(deviceId, filePath);
+              setPlaybackVideoUrl(blobUrl);
+              setPlaybackFilePath(filePath);
+              setIsLoadingPlayback(false);
+              modal.showModal({ message: '录像文件下载完成，已准备好播放', type: 'success' });
+            } catch (blobErr: any) {
+              setIsLoadingPlayback(false);
+              modal.showModal({ message: blobErr.message || '视频文件获取失败', type: 'error' });
             }
           } else if (progressResponse.data?.isError) {
             // 下载出错
@@ -683,20 +847,17 @@ export const DeviceDetail: React.FC = () => {
                           ref={videoRef}
                           src={playbackVideoUrl}
                           controls
+                          autoPlay
                           className="w-full h-full"
                           onError={(e) => {
-                            console.error('视频加载失败:', playbackVideoUrl, e);
+                            console.error('视频播放失败:', e);
                             modal.showModal({
-                              message: `视频加载失败。请检查 URL 是否正确，或尝试手动导出。URL: ${playbackVideoUrl}`,
+                              message: '视频播放失败，文件格式可能不受浏览器支持。',
                               type: 'error',
                             });
-                            setPlaybackVideoUrl(null);
                           }}
                           onLoadedMetadata={() => {
-                            console.log('视频元数据加载成功');
-                          }}
-                          onCanPlay={() => {
-                            console.log('视频可以播放');
+                            if (videoRef.current) videoRef.current.playbackRate = playbackSpeed;
                           }}
                         />
                         {downloadProgress > 0 && downloadProgress < 100 && (
@@ -771,80 +932,142 @@ export const DeviceDetail: React.FC = () => {
 
                   {/* Timeline / Playback Controls */}
                   <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-gray-800 flex items-center">
-                        <Calendar size={18} className="mr-2 text-blue-500" />
+                    {/* Header row: title, date, AM/PM, speed */}
+                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                      <h3 className="font-semibold text-gray-800 flex items-center text-sm">
+                        <Calendar size={16} className="mr-1.5 text-blue-500" />
                         {t('playback')}
                       </h3>
-                      <input
-                        type="date"
-                        value={selectedDate}
-                        onChange={(e) => handleDateChange(e.target.value)}
-                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                      />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Date picker */}
+                        <input
+                          type="date"
+                          value={selectedDate}
+                          onChange={(e) => handleDateChange(e.target.value)}
+                          className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        {/* AM/PM toggle */}
+                        <div className="flex bg-gray-100 rounded-lg p-0.5">
+                          <button
+                            onClick={() => { setTimelineHalf('AM'); setTlSelStart(null); setTlSelEnd(null); }}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${timelineHalf === 'AM' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                          >
+                            上午
+                          </button>
+                          <button
+                            onClick={() => { setTimelineHalf('PM'); setTlSelStart(null); setTlSelEnd(null); }}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${timelineHalf === 'PM' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                          >
+                            下午
+                          </button>
+                        </div>
+                        {/* Speed control */}
+                        <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                          <Gauge size={12} className="ml-1.5 text-gray-400" />
+                          {[1, 2, 3].map(s => (
+                            <button
+                              key={s}
+                              onClick={() => {
+                                setPlaybackSpeed(s);
+                                if (videoRef.current) videoRef.current.playbackRate = s;
+                              }}
+                              className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${playbackSpeed === s ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                              {s}x
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">开始时间</label>
-                          <input
-                            type="time"
-                            step="60"
-                            value={playbackStartTime}
-                            onChange={(e) => setPlaybackStartTime(e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                          />
+                    {/* Hour labels */}
+                    <div className="flex mb-0.5 select-none">
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <div key={i} className="flex-1 text-center text-[10px] font-mono text-gray-400 leading-tight">
+                          {String(baseHour + i).padStart(2, '0')}
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">结束时间</label>
-                          <input
-                            type="time"
-                            step="60"
-                            value={playbackEndTime}
-                            onChange={(e) => setPlaybackEndTime(e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                          />
-                        </div>
-                      </div>
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                        <p className="text-xs text-blue-600 flex items-center">
-                          <Download size={12} className="mr-1" />
-                          提示：录像回放时间范围最大限时1小时（24小时制）
-                        </p>
-                      </div>
+                      ))}
+                    </div>
 
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={handleStartPlayback}
-                          disabled={isLoadingPlayback || !playbackStartTime || !playbackEndTime}
-                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                        >
-                          {isLoadingPlayback ? `下载中 ${downloadProgress}%` : '开始回放'}
-                        </button>
+                    {/* Timeline grid: 144 blocks */}
+                    <div
+                      ref={timelineRef}
+                      className="flex h-8 rounded-lg overflow-hidden border border-gray-200 cursor-crosshair select-none"
+                      onMouseLeave={() => { if (tlDragging) handleTimelineMouseUp(); }}
+                    >
+                      {Array.from({ length: BLOCKS }, (_, idx) => {
+                        const lo = tlSelStart !== null && tlSelEnd !== null ? Math.min(tlSelStart, tlSelEnd) : -1;
+                        const hi = tlSelStart !== null && tlSelEnd !== null ? Math.max(tlSelStart, tlSelEnd) : -1;
+                        const isSelected = idx >= lo && idx <= hi;
+                        const isHourBound = idx > 0 && idx % 12 === 0;
+                        return (
+                          <div
+                            key={idx}
+                            onMouseDown={(e) => { e.preventDefault(); handleTimelineBlockDown(idx); }}
+                            onMouseEnter={() => handleTimelineBlockEnter(idx)}
+                            title={`${blockToTime(idx)} — ${blockToTime(idx + 1)}`}
+                            className={`flex-1 transition-colors duration-75 ${isHourBound ? 'border-l border-gray-300' : ''} ${
+                              isSelected
+                                ? 'bg-blue-500 hover:bg-blue-600'
+                                : 'bg-gray-50 hover:bg-blue-100'
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Selected range info + actions */}
+                    <div className="mt-2 flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        {playbackStartTime && playbackEndTime ? (
+                          <>
+                            <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono text-[11px]">
+                              {playbackStartTime} — {playbackEndTime}
+                            </span>
+                            {isLoadingPlayback && (
+                              <span className="inline-flex items-center gap-1 text-amber-600">
+                                <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                                {downloadProgress}%
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-gray-400">在时间轴上拖选时段（最长1小时）</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
                         {playbackVideoUrl && (
                           <button
                             onClick={() => {
+                              if (playbackVideoUrl) URL.revokeObjectURL(playbackVideoUrl);
                               setPlaybackVideoUrl(null);
                               setSnapshot(null);
                               handleSnapshot();
                             }}
-                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                            className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-xs font-medium"
                           >
-                            查看快照
+                            返回快照
                           </button>
                         )}
+                        <button
+                          onClick={handleStartPlayback}
+                          disabled={isLoadingPlayback || !playbackStartTime || !playbackEndTime}
+                          className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                        >
+                          {isLoadingPlayback ? '下载中…' : '回放'}
+                        </button>
                       </div>
-
-                      {isLoadingPlayback && downloadProgress > 0 && (
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${downloadProgress}%` }}
-                          ></div>
-                        </div>
-                      )}
                     </div>
+
+                    {/* Download progress bar */}
+                    {isLoadingPlayback && downloadProgress > 0 && (
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                        <div
+                          className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                          style={{ width: `${downloadProgress}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -973,21 +1196,27 @@ export const DeviceDetail: React.FC = () => {
                           <span className="text-xs font-medium">{t('snapshot')}</span>
                         </button>
                         <button
-                          onClick={() => {
-                            if (playbackVideoUrl) {
-                              const link = document.createElement('a');
-                              link.href = playbackVideoUrl;
-                              link.download = `playback_${deviceId}_${new Date().getTime()}.mp4`;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
+                          onClick={async () => {
+                            if (playbackFilePath && deviceId) {
+                              try {
+                                const blobUrl = await deviceService.fetchPlaybackBlob(deviceId, playbackFilePath);
+                                const link = document.createElement('a');
+                                link.href = blobUrl;
+                                link.download = `playback_${deviceId}_${new Date().getTime()}.mp4`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                URL.revokeObjectURL(blobUrl);
+                              } catch (err: any) {
+                                modal.showModal({ message: err.message || '导出失败', type: 'error' });
+                              }
                             }
                           }}
-                          className={`flex flex-col items-center justify-center p-3 rounded-xl transition-colors border ${playbackVideoUrl
+                          className={`flex flex-col items-center justify-center p-3 rounded-xl transition-colors border ${playbackFilePath
                             ? 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100'
                             : 'bg-gray-50 text-gray-400 border-transparent cursor-not-allowed'
                             }`}
-                          disabled={!playbackVideoUrl}
+                          disabled={!playbackFilePath}
                         >
                           <Download size={20} className="mb-1" />
                           <span className="text-xs font-medium">{language === 'zh' ? '导出录像' : 'Export Video'}</span>

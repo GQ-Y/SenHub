@@ -14,7 +14,9 @@ interface AppContextType {
   t: (key: keyof typeof translations['en']) => string;
 }
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+const _key = '__APP_CONTEXT__';
+const AppContext: React.Context<AppContextType | undefined> =
+  (globalThis as any)[_key] || ((globalThis as any)[_key] = createContext<AppContextType | undefined>(undefined));
 
 // 内部组件，用于访问navigate
 const AppContextProviderInner: React.FC<{ children: ReactNode }> = ({ children }) => {

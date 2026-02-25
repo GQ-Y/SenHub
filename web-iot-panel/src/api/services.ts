@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { get, post, put, del, setToken } from './client';
+import { get, post, put, del, setToken, getToken } from './client';
 import { API_CONFIG } from './config';
 import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus, AlarmFlow, CameraEventType } from '../../types';
 
@@ -233,13 +233,20 @@ export const deviceService = {
    * 获取已下载的录像文件URL
    */
   getPlaybackFileUrl(deviceId: string, filePath: string): string {
-    // 统一使用 API_CONFIG.BASE_URL
     const apiBaseUrl = API_CONFIG.BASE_URL;
-
-    // 移除末尾的斜杠和 /api，因为我们要手动添加正确的路径
     const baseUrl = apiBaseUrl.replace(/\/api$/, '').replace(/\/$/, '');
-
     return `${baseUrl}/api/devices/${encodeURIComponent(deviceId)}/playback/file?filePath=${encodeURIComponent(filePath)}`;
+  },
+
+  async fetchPlaybackBlob(deviceId: string, filePath: string): Promise<string> {
+    const url = this.getPlaybackFileUrl(deviceId, filePath);
+    const token = getToken();
+    const headers: HeadersInit = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) throw new Error(`视频文件下载失败 (${resp.status})`);
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
   },
 
   /**
