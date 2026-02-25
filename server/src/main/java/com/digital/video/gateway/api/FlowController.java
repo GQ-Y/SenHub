@@ -128,8 +128,8 @@ public class FlowController {
     }
 
     /**
-     * 真实执行流程测试：模拟一个「未穿反光衣」(VEST_DETECTION) 报警事件，
-     * 使用 test/fanguangyi.png 作为抓拍图片，走完所有节点。
+     * 异步触发流程测试：模拟一个「未穿反光衣」(VEST_DETECTION) 报警事件，
+     * 使用 test/fanguangyi.png 作为抓拍图片。立即返回，流程在后台执行。
      */
     public String testFlow(Request request, Response response) {
         try {
@@ -146,43 +146,30 @@ public class FlowController {
 
             FlowDefinition definition = flowService.toDefinition(flow);
             FlowContext context = buildTestContext();
-
-            // 把测试图片复制到临时文件作为 capturePath（模拟抓图结果）
             prepareTestImage(context);
 
-            logger.info("开始测试执行流程: flowId={}, alarmType={}", flowId, context.getAlarmType());
-            flowExecutor.execute(definition, context);
+            logger.info("异步触发测试流程: flowId={}, alarmType={}", flowId, context.getAlarmType());
+
+            new Thread(() -> {
+                try {
+                    flowExecutor.execute(definition, context);
+                    logger.info("测试流程执行完成: flowId={}", flowId);
+                } catch (Exception e) {
+                    logger.error("测试流程后台执行失败: flowId={}", flowId, e);
+                }
+            }, "FlowTest-" + flowId).start();
 
             Map<String, Object> result = new HashMap<>();
-            result.put("message", "流程测试执行完成");
+            result.put("message", "流程测试已触发，正在后台执行");
             result.put("flowId", flowId);
             result.put("alarmType", "VEST_DETECTION");
-            if (context.getVariables().get("ossUrl") != null) {
-                result.put("ossUrl", context.getVariables().get("ossUrl"));
-            }
-            if (context.getVariables().get("ai_verify_match") != null) {
-                result.put("aiVerifyMatch", context.getVariables().get("ai_verify_match"));
-            }
-            if (context.getVariables().get("ai_verify_reason") != null) {
-                result.put("aiVerifyReason", context.getVariables().get("ai_verify_reason"));
-            }
-            if (context.getVariables().get("ai_alert_text") != null) {
-                result.put("aiAlertText", context.getVariables().get("ai_alert_text"));
-                logger.info("流程测试 - AI警示语: {}", context.getVariables().get("ai_alert_text"));
-            }
-            if (context.getVariables().get("ai_tts_audio_path") != null) {
-                result.put("aiTtsGenerated", true);
-                result.put("aiTtsAudioPath", context.getVariables().get("ai_tts_audio_path"));
-                result.put("aiTtsFileName", context.getVariables().get("ai_tts_file_name"));
-                logger.info("流程测试 - TTS音频文件: {}", context.getVariables().get("ai_tts_audio_path"));
-            }
 
             response.status(200);
             return createSuccess(result);
         } catch (Exception e) {
-            logger.error("测试流程执行失败", e);
+            logger.error("触发测试流程失败", e);
             response.status(500);
-            return createError(500, "测试流程执行失败: " + e.getMessage());
+            return createError(500, "触发测试流程失败: " + e.getMessage());
         }
     }
 

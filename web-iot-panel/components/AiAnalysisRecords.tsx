@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { aiAnalysisService, AiAnalysisRecord } from '../src/api/services';
-import { Brain, Image as ImageIcon, Volume2, VolumeX, RefreshCw, Clock, Shield, ShieldCheck, ShieldX, AlertTriangle, Megaphone } from 'lucide-react';
+import {
+  Brain, Image as ImageIcon, Volume2, VolumeX, RefreshCw,
+  Clock, ShieldCheck, ShieldX, Shield, AlertTriangle,
+  Megaphone, X, ZoomIn, ChevronLeft, ChevronRight
+} from 'lucide-react';
 
 export const AiAnalysisRecords: React.FC = () => {
   const { t } = useAppContext();
@@ -9,6 +14,7 @@ export const AiAnalysisRecords: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const loadRecords = async () => {
@@ -25,19 +31,14 @@ export const AiAnalysisRecords: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    loadRecords();
-  }, []);
+  useEffect(() => { loadRecords(); }, []);
 
   const playVoice = (id: string, url: string) => {
     if (!url) return;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
-      if (playingId === id) {
-        setPlayingId(null);
-        return;
-      }
+      if (playingId === id) { setPlayingId(null); return; }
     }
     const audio = new Audio(url);
     audioRef.current = audio;
@@ -54,16 +55,35 @@ export const AiAnalysisRecords: React.FC = () => {
   };
 
   const VerifyIcon = ({ result }: { result: string }) => {
-    if (result === 'pass') return <ShieldCheck size={12} />;
-    if (result === 'fail') return <ShieldX size={12} />;
-    return <Shield size={12} />;
+    if (result === 'pass') return <ShieldCheck size={14} />;
+    if (result === 'fail') return <ShieldX size={14} />;
+    return <Shield size={14} />;
   };
 
   const verifyBadgeClass = (r: AiAnalysisRecord) => {
-    if (r.verifyResult === 'pass') return 'bg-emerald-500/90 text-white shadow-emerald-200';
-    if (r.verifyResult === 'fail') return 'bg-red-500/90 text-white shadow-red-200';
-    return 'bg-gray-500/80 text-white shadow-gray-200';
+    if (r.verifyResult === 'pass') return 'bg-emerald-500 text-white';
+    if (r.verifyResult === 'fail') return 'bg-red-500 text-white';
+    return 'bg-gray-500 text-white';
   };
+
+  const openLightbox = useCallback((idx: number) => setLightboxIdx(idx), []);
+  const closeLightbox = useCallback(() => setLightboxIdx(null), []);
+  const goPrev = useCallback(() => setLightboxIdx(i => i !== null ? (i - 1 + records.length) % records.length : null), [records.length]);
+  const goNext = useCallback(() => setLightboxIdx(i => i !== null ? (i + 1) % records.length : null), [records.length]);
+
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') goPrev();
+      if (e.key === 'ArrowRight') goNext();
+    };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+  }, [lightboxIdx, closeLightbox, goPrev, goNext]);
+
+  const current = lightboxIdx !== null ? records[lightboxIdx] : null;
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -106,16 +126,17 @@ export const AiAnalysisRecords: React.FC = () => {
             <Brain size={32} className="text-gray-300" />
           </div>
           <p className="text-gray-500 font-medium">{t('no_ai_analysis_records') || '暂无 AI 分析记录'}</p>
-          <p className="text-sm text-gray-400 mt-1.5 max-w-md mx-auto">{t('ai_analysis_records_hint') || '工作流中 AI 核验节点的执行结果将在此展示'}</p>
+          <p className="text-sm text-gray-400 mt-1.5 max-w-md mx-auto">{t('ai_analysis_records_hint')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
-          {records.map((r) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          {records.map((r, idx) => (
             <div
               key={r.id}
-              className="group rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden hover:shadow-lg hover:border-gray-200 hover:-translate-y-0.5 transition-all duration-200"
+              className="group rounded-2xl border border-gray-100 bg-white overflow-hidden hover:shadow-lg hover:border-gray-200 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+              onClick={() => openLightbox(idx)}
             >
-              {/* Image area */}
+              {/* 图片为主 */}
               <div className="aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
                 {r.imageUrl ? (
                   <img
@@ -127,76 +148,198 @@ export const AiAnalysisRecords: React.FC = () => {
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-gray-300">
                     <ImageIcon size={36} strokeWidth={1.5} />
-                    <span className="text-[10px] mt-1.5">暂无图片</span>
                   </div>
                 )}
-                {/* Verify badge */}
-                <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold shadow-sm backdrop-blur-sm ${verifyBadgeClass(r)}`}>
+                {/* 核验结果角标 */}
+                <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm backdrop-blur-sm ${verifyBadgeClass(r)}`}>
                   <VerifyIcon result={r.verifyResult} />
                   {verifyLabel(r)}
                 </span>
-                {/* Time overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent px-2.5 pb-2 pt-6">
+                {/* 底部渐变：时间 + 放大提示 */}
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2.5 pb-2 pt-8 flex items-end justify-between">
                   <span className="inline-flex items-center gap-1 text-[10px] text-white/90">
                     <Clock size={10} />
                     {r.time}
                   </span>
+                  <ZoomIn size={14} className="text-white/70 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               </div>
-
-              {/* Content area */}
-              <div className="p-3 space-y-2">
-                <div>
-                  <p className="text-[13px] font-semibold text-gray-800 truncate" title={r.eventTitle}>
-                    {r.eventTitle}
-                  </p>
-                  <p className="text-[11px] text-gray-400 truncate mt-0.5" title={r.eventName}>
-                    {r.eventName}
-                  </p>
-                </div>
-
-                {r.verifyReason && (
-                  <p className="text-[11px] text-gray-500 leading-relaxed line-clamp-2 border-l-2 border-gray-200 pl-2" title={r.verifyReason}>
-                    {r.verifyReason}
-                  </p>
-                )}
-
-                {r.alertText && (
-                  <div className="flex items-start gap-1.5 rounded-lg bg-amber-50/80 border border-amber-100 px-2 py-1.5">
-                    <Megaphone size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-amber-700 leading-relaxed line-clamp-2" title={r.alertText}>
-                      {r.alertText}
-                    </p>
-                  </div>
-                )}
-
+              {/* 简要信息 + 语音 */}
+              <div className="px-2.5 py-2 space-y-1.5">
+                <p className="text-xs font-semibold text-gray-800 truncate" title={r.eventTitle}>{r.eventTitle}</p>
+                <p className="text-[10px] text-gray-400 truncate">{r.eventName}</p>
                 {r.voiceUrl && (
                   <button
                     type="button"
-                    onClick={() => playVoice(r.id, r.voiceUrl!)}
-                    className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-all active:scale-[0.97] ${
+                    onClick={(e) => { e.stopPropagation(); playVoice(r.id, r.voiceUrl!); }}
+                    className={`w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-all active:scale-[0.97] ${
                       playingId === r.id
-                        ? 'bg-blue-500 text-white shadow-sm shadow-blue-200'
+                        ? 'bg-blue-500 text-white'
                         : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                     }`}
                   >
-                    {playingId === r.id ? (
-                      <>
-                        <VolumeX size={14} />
-                        停止播放
-                      </>
-                    ) : (
-                      <>
-                        <Volume2 size={14} />
-                        {t('voice_play') || '播放语音'}
-                      </>
-                    )}
+                    {playingId === r.id ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                    {playingId === r.id ? '停止' : (t('voice_play') || '播放')}
                   </button>
                 )}
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* 全屏 Lightbox */}
+      {current && createPortal(
+        <div className="fixed inset-0 z-[300] flex" onClick={closeLightbox}>
+          {/* 遮罩 */}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+
+          {/* 左右切换 */}
+          <button
+            onClick={(e) => { e.stopPropagation(); goPrev(); }}
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur flex items-center justify-center text-white transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); goNext(); }}
+            className="absolute right-[340px] top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur flex items-center justify-center text-white transition-colors"
+          >
+            <ChevronRight size={24} />
+          </button>
+
+          {/* 关闭按钮 */}
+          <button
+            onClick={closeLightbox}
+            className="absolute top-4 left-4 z-20 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur flex items-center justify-center text-white transition-colors"
+          >
+            <X size={20} />
+          </button>
+
+          {/* 图片区（左侧） */}
+          <div
+            className="flex-1 flex items-center justify-center relative z-10 p-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {current.imageUrl ? (
+              <img
+                src={current.imageUrl}
+                alt={current.eventTitle}
+                className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+              />
+            ) : (
+              <div className="w-96 h-72 rounded-xl bg-gray-800 flex flex-col items-center justify-center text-gray-500">
+                <ImageIcon size={64} strokeWidth={1} />
+                <span className="text-sm mt-2">暂无图片</span>
+              </div>
+            )}
+            {/* 计数器 */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm text-white/80 text-xs px-4 py-1.5 rounded-full">
+              {(lightboxIdx ?? 0) + 1} / {records.length}
+            </div>
+          </div>
+
+          {/* 详情面板（右侧） */}
+          <div
+            className="w-[320px] flex-shrink-0 bg-white/95 backdrop-blur-xl h-full overflow-y-auto z-10 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 space-y-5">
+              {/* 核验结果 */}
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  current.verifyResult === 'pass' ? 'bg-emerald-100 text-emerald-600'
+                  : current.verifyResult === 'fail' ? 'bg-red-100 text-red-600'
+                  : 'bg-gray-100 text-gray-600'
+                }`}>
+                  <VerifyIcon result={current.verifyResult} />
+                </div>
+                <div>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${verifyBadgeClass(current)}`}>
+                    {verifyLabel(current)}
+                  </span>
+                  <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1">
+                    <Clock size={10} />
+                    {current.time}
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-px bg-gray-200" />
+
+              {/* 事件信息 */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">事件标题</p>
+                  <p className="text-sm font-semibold text-gray-800">{current.eventTitle}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">事件名称</p>
+                  <p className="text-sm text-gray-600">{current.eventName}</p>
+                </div>
+              </div>
+
+              {current.verifyReason && (
+                <>
+                  <div className="h-px bg-gray-200" />
+                  <div>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">核验说明</p>
+                    <p className="text-sm text-gray-600 leading-relaxed">{current.verifyReason}</p>
+                  </div>
+                </>
+              )}
+
+              {current.alertText && (
+                <>
+                  <div className="h-px bg-gray-200" />
+                  <div>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <Megaphone size={10} />
+                      AI 警示语
+                    </p>
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+                      <p className="text-sm text-amber-800 leading-relaxed">{current.alertText}</p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {current.voiceUrl && (
+                <>
+                  <div className="h-px bg-gray-200" />
+                  <div>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <Volume2 size={10} />
+                      语音播报
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => playVoice(current.id, current.voiceUrl!)}
+                      className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all active:scale-[0.97] ${
+                        playingId === current.id
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                          : 'bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100'
+                      }`}
+                    >
+                      {playingId === current.id ? (
+                        <>
+                          <VolumeX size={18} />
+                          停止播放
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 size={18} />
+                          {t('voice_play') || '播放语音'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
