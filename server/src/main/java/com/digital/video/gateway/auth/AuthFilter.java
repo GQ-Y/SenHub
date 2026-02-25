@@ -40,9 +40,15 @@ public class AuthFilter implements Filter {
         }
 
         // 其余 /api 接口均需 JWT 校验
-        // 验证JWT token
+        // 验证JWT token（优先 Header，播放文件接口支持 query 传 token，便于 <video src> 直链）
+        String token = null;
         String authHeader = request.headers("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7);
+        } else if (path != null && path.contains("/playback/file") && request.queryParams("token") != null) {
+            token = request.queryParams("token");
+        }
+        if (token == null) {
             response.status(401);
             response.type("application/json");
             response.body("{\"code\":401,\"errorCode\":\"MISSING_TOKEN\",\"message\":\"Missing or invalid Authorization header\",\"data\":null}");
@@ -50,7 +56,6 @@ public class AuthFilter implements Filter {
             return;
         }
 
-        String token = authHeader.substring(7);
         String username = JwtUtil.verifyToken(token);
 
         if (username == null) {

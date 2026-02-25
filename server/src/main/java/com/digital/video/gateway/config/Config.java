@@ -42,7 +42,17 @@ public class Config {
     @JsonProperty("ai")
     private AiConfig ai = new AiConfig();
 
+    @JsonProperty("zlm")
+    private ZlmConfig zlm;
+
     // Getters and Setters
+    public ZlmConfig getZlm() {
+        return zlm;
+    }
+
+    public void setZlm(ZlmConfig zlm) {
+        this.zlm = zlm;
+    }
     public NotificationConfig getNotification() {
         return notification;
     }
@@ -788,6 +798,36 @@ public class Config {
         public void setInterval(int interval) {
             this.interval = interval;
         }
+    }
+
+    /**
+     * ZLMediaKit 内嵌服务配置（直播拉流、回放转码等）
+     */
+    public static class ZlmConfig {
+        private boolean enabled = true;
+        @JsonProperty("http_port")
+        private int httpPort = 7788;
+        @JsonProperty("rtsp_port")
+        private int rtspPort = 5540;
+        @JsonProperty("rtmp_port")
+        private int rtmpPort = 19350;
+        @JsonProperty("media_server_id")
+        private String mediaServerId = "SenHubZLM";
+        @JsonProperty("api_secret")
+        private String apiSecret = "035c73f7-bb6b-4889-a715-d9eb2d1925cc";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getHttpPort() { return httpPort; }
+        public void setHttpPort(int httpPort) { this.httpPort = httpPort; }
+        public int getRtspPort() { return rtspPort; }
+        public void setRtspPort(int rtspPort) { this.rtspPort = rtspPort; }
+        public int getRtmpPort() { return rtmpPort; }
+        public void setRtmpPort(int rtmpPort) { this.rtmpPort = rtmpPort; }
+        public String getMediaServerId() { return mediaServerId; }
+        public void setMediaServerId(String mediaServerId) { this.mediaServerId = mediaServerId; }
+        public String getApiSecret() { return apiSecret; }
+        public void setApiSecret(String apiSecret) { this.apiSecret = apiSecret; }
     }
 
     /**

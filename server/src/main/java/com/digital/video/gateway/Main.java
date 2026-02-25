@@ -34,6 +34,7 @@ import com.digital.video.gateway.service.AlarmRuleService;
 import com.digital.video.gateway.service.AlarmRecordService;
 import com.digital.video.gateway.service.SpeakerService;
 import com.digital.video.gateway.service.RecordingTaskService;
+import com.digital.video.gateway.service.ZlmMediaService;
 import com.digital.video.gateway.database.RadarDeviceDAO;
 import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.Assembly;
@@ -102,6 +103,7 @@ public class Main {
     private ScheduledExecutorService statisticsScheduler;
     /** 录像回放下载目录过期清理（3天）定时任务 */
     private ScheduledExecutorService playbackCleanupScheduler;
+    private ZlmMediaService zlmMediaService;
     /** MQTT 消息处理线程池，避免命令/工作流在 Paho 回调线程执行导致阻塞 */
     private ExecutorService mqttMessageExecutor;
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -155,8 +157,13 @@ public class Main {
             // 注意：logback在类加载时就会初始化，所以这里只清理旧的滚动日志文件
             int cleanedCount = LogCleaner.cleanAllLogs("./logs", "./sdkLog");
 
-            // 1. 加载配置
-            config = ConfigLoader.load("config.yaml");
+            // 1. 加载配置（优先使用外部 ./config/config.yaml，便于部署时修改 zlm 等配置）
+            java.io.File externalConfig = new java.io.File("./config/config.yaml");
+            if (externalConfig.exists()) {
+                config = ConfigLoader.loadFromFile(externalConfig.getAbsolutePath());
+            } else {
+                config = ConfigLoader.load("config.yaml");
+            }
             if (config == null) {
                 logger.error("配置文件加载失败");
                 System.exit(1);
@@ -393,6 +400,13 @@ public class Main {
             // 10.6. 启动录像回放下载目录过期清理（每日凌晨2点，保留近3天）
             startPlaybackDownloadCleanupTask();
             logger.info("录像回放下载清理任务已启动（每日02:00，保留3天）");
+
+            // 10.7. 启动 ZLM 内嵌流媒体服务（可选：直播拉流、回放转码）
+            zlmMediaService = new ZlmMediaService(config.getZlm());
+            zlmMediaService.start();
+            if (zlmMediaService.isStarted()) {
+                logger.info("ZLM 内嵌服务已就绪");
+            }
 
             // 11. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
@@ -918,9 +932,17 @@ public class Main {
         // 初始化控制器
         AuthController authController = new AuthController(database);
         HikvisionSDK hikvisionSDKForController = (HikvisionSDK) SDKFactory.getSDK("hikvision");
+        ZlmProxyService zlmProxyService = null;
+        if (zlmMediaService != null && zlmMediaService.isStarted() && zlmMediaService.getConfig() != null) {
+            com.digital.video.gateway.service.ZlmApiClient zlmApiClient = new com.digital.video.gateway.service.ZlmApiClient(
+                    "http://127.0.0.1:" + zlmMediaService.getConfig().getHttpPort(),
+                    zlmMediaService.getConfig().getApiSecret());
+            zlmProxyService = new com.digital.video.gateway.service.ZlmProxyService(
+                    zlmApiClient, deviceManager, zlmMediaService.getConfig().getHttpPort(), zlmMediaService.getConfig().getRtmpPort());
+        }
         DeviceController deviceController = new DeviceController(deviceManager, database, recorder,
                 captureService, ptzService, ptzMonitorService, playbackService, hikvisionSDKForController,
-                assemblyService, alarmRuleService);
+                assemblyService, alarmRuleService, zlmProxyService);
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);
@@ -975,11 +997,14 @@ public class Main {
         Spark.post("/api/devices/:id/ptz/refresh", deviceController::refreshPtzPosition);
         Spark.put("/api/devices/:id/ptz/monitor", deviceController::setPtzMonitor);
         Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
+        Spark.get("/api/devices/:id/live/url", deviceController::getLiveUrl);
         Spark.get("/api/devices/:id/record-video", deviceController::getRecordVideo);
         Spark.get("/api/devices/:id/video", deviceController::getVideoFile);
         Spark.post("/api/devices/:id/playback", deviceController::playback);
         Spark.get("/api/devices/:id/playback/progress", deviceController::getPlaybackProgress);
         Spark.get("/api/devices/:id/playback/file", deviceController::getPlaybackFile);
+        Spark.get("/api/devices/:id/playback/transcode-url", deviceController::getPlaybackTranscodeUrl);
+        Spark.post("/api/devices/:id/playback/transcode-stop", deviceController::postPlaybackTranscodeStop);
         Spark.post("/api/devices/:id/playback/stop", deviceController::stopPlayback);
         Spark.post("/api/devices/:id/export", deviceController::exportVideo);
         Spark.get("/api/devices/:id/export/file", deviceController::getExportFile);
@@ -1308,6 +1333,11 @@ public class Main {
             // 关闭数据库
             if (database != null) {
                 database.close();
+            }
+
+            // 停止 ZLM 内嵌服务
+            if (zlmMediaService != null) {
+                zlmMediaService.stop();
             }
 
             // 停止HTTP服务器

@@ -214,6 +214,30 @@ export const deviceService = {
   },
 
   /**
+   * 获取设备直播地址（ZLM 拉流 → HTTP-FLV/HLS）
+   */
+  async getLiveUrl(deviceId: string) {
+    const response = await get<{ flv_url: string; hls_url: string }>(`/devices/${encodeURIComponent(deviceId)}/live/url`);
+    return response;
+  },
+
+  /**
+   * 获取回放转码流地址（MP4 → HTTP-FLV，用于浏览器不支持 H.265 时）
+   */
+  async getPlaybackTranscodeUrl(deviceId: string, filePath: string) {
+    const response = await get<{ flv_url: string; key: string }>(`/devices/${encodeURIComponent(deviceId)}/playback/transcode-url`, { filePath });
+    return response;
+  },
+
+  /**
+   * 停止回放转码任务
+   */
+  async postPlaybackTranscodeStop(deviceId: string, key: string) {
+    const response = await post<{ stopped: boolean }>(`/devices/${encodeURIComponent(deviceId)}/playback/transcode-stop`, { key });
+    return response;
+  },
+
+  /**
    * 录像回放（启动下载）
    */
   async playback(deviceId: string, startTime: string, endTime: string, channel: number = 1) {
@@ -230,12 +254,21 @@ export const deviceService = {
   },
 
   /**
-   * 获取已下载的录像文件URL
+   * 获取已下载的录像文件URL（用于下载、导出等）
    */
   getPlaybackFileUrl(deviceId: string, filePath: string): string {
     const apiBaseUrl = API_CONFIG.BASE_URL;
     const baseUrl = apiBaseUrl.replace(/\/api$/, '').replace(/\/$/, '');
     return `${baseUrl}/api/devices/${encodeURIComponent(deviceId)}/playback/file?filePath=${encodeURIComponent(filePath)}`;
+  },
+
+  /**
+   * 获取带 token 的播放地址，供 <video src> 直链使用（浏览器无法带 Authorization 头，用 query token）
+   */
+  getPlaybackFileUrlWithToken(deviceId: string, filePath: string): string {
+    const url = this.getPlaybackFileUrl(deviceId, filePath);
+    const token = getToken();
+    return token ? `${url}&token=${encodeURIComponent(token)}` : url;
   },
 
   async fetchPlaybackBlob(deviceId: string, filePath: string): Promise<string> {

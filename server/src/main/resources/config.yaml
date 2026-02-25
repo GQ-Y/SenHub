@@ -125,3 +125,14 @@ notification:
   feishu:
     enabled: false
     webhook_url: ""
+
+# ZLMediaKit 内嵌服务（直播拉流、回放转码等）
+# 默认启用；未读取到配置文件时也会按默认配置启动 ZLM
+# 需部署 FFmpeg 以供回放转码使用
+zlm:
+  enabled: true
+  http_port: 7788
+  rtsp_port: 5540
+  rtmp_port: 19350
+  media_server_id: "SenHubZLM"
+  api_secret: "035c73f7-bb6b-4889-a715-d9eb2d1925cc"

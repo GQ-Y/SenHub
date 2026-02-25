@@ -58,6 +58,13 @@ step2_install_deps() {
         libpulse0
     apt-get install -y --no-install-recommends libasound2t64 2>/dev/null || \
         apt-get install -y --no-install-recommends libasound2 2>/dev/null || true
+    # FFmpeg：ZLM 回放转码（H.265→H.264）依赖，未安装时转码播放不可用
+    if command -v ffmpeg &>/dev/null; then
+        echo "  ffmpeg 已存在，跳过"
+    else
+        echo "  安装 FFmpeg（ZLM 回放转码依赖）..."
+        apt-get install -y --no-install-recommends ffmpeg 2>/dev/null || true
+    fi
     if command -v mpv &>/dev/null; then
         echo "  mpv 已存在，跳过"
     else

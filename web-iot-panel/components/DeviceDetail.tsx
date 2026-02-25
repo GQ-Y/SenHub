@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import flvjs from 'flv.js';
 import {
   ArrowLeft,
   Camera,
@@ -20,7 +21,8 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
-  Gauge
+  Gauge,
+  Radio
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService } from '../src/api/services';
@@ -62,6 +64,14 @@ export const DeviceDetail: React.FC = () => {
   const [selectedMinute, setSelectedMinute] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [activeTab, setActiveTab] = useState<'preview' | 'config' | 'ptz'>('preview');
+
+  // 实时直播 / 回放转码（ZLM HTTP-FLV，共用一套 flv 播放）
+  const [flvPlaybackUrl, setFlvPlaybackUrl] = useState<string | null>(null);
+  const [flvPlaybackKey, setFlvPlaybackKey] = useState<string | null>(null); // 仅回放转码时有值，用于 transcode-stop
+  const [isLoadingLive, setIsLoadingLive] = useState(false);
+  const [isLoadingTranscode, setIsLoadingTranscode] = useState(false);
+  const liveVideoRef = useRef<HTMLVideoElement>(null);
+  const flvPlayerRef = useRef<ReturnType<typeof flvjs.createPlayer> | null>(null);
 
   // 云台控制速率 (1-100)
   const [ptzRate, setPtzRate] = useState<number>(50);
@@ -163,6 +173,90 @@ export const DeviceDetail: React.FC = () => {
       videoRef.current.playbackRate = playbackSpeed;
     }
   }, [playbackSpeed, playbackVideoUrl]);
+
+  // 实时直播/回放转码：flv.js 绑定/销毁
+  useEffect(() => {
+    if (!flvPlaybackUrl || !liveVideoRef.current) return;
+    if (!flvjs.isSupported()) {
+      modal.showModal({ message: '当前浏览器不支持 HTTP-FLV 播放', type: 'error' });
+      setFlvPlaybackUrl(null);
+      setFlvPlaybackKey(null);
+      return;
+    }
+    const isLive = flvPlaybackKey == null;
+    const player = flvjs.createPlayer({ type: 'flv', url: flvPlaybackUrl }, { isLive });
+    player.attachMediaElement(liveVideoRef.current);
+    player.load();
+    player.play();
+    flvPlayerRef.current = player;
+    return () => {
+      try {
+        player.destroy();
+      } catch (_) {}
+      flvPlayerRef.current = null;
+    };
+  }, [flvPlaybackUrl]);
+
+  // 组件卸载或切设备时释放转码任务
+  useEffect(() => {
+    return () => {
+      if (flvPlaybackKey && deviceId) {
+        deviceService.postPlaybackTranscodeStop(deviceId, flvPlaybackKey).catch(() => {});
+      }
+    };
+  }, [flvPlaybackKey, deviceId]);
+
+  const handleStartLiveStream = async () => {
+    if (!deviceId) return;
+    setIsLoadingLive(true);
+    try {
+      const res = await deviceService.getLiveUrl(deviceId);
+      const url = res.data?.flv_url;
+      if (url) {
+        setFlvPlaybackKey(null);
+        setFlvPlaybackUrl(url);
+      } else {
+        modal.showModal({ message: res?.message || '直播服务未启用或设备无 RTSP 地址', type: 'error' });
+      }
+    } catch (e: any) {
+      modal.showModal({ message: e?.message || '获取直播地址失败', type: 'error' });
+    } finally {
+      setIsLoadingLive(false);
+    }
+  };
+
+  const handleStopFlvPlayback = async () => {
+    if (flvPlaybackKey && deviceId) {
+      try {
+        await deviceService.postPlaybackTranscodeStop(deviceId, flvPlaybackKey);
+      } catch (_) {}
+    }
+    setFlvPlaybackUrl(null);
+    setFlvPlaybackKey(null);
+  };
+
+  const handleStartTranscodePlayback = async () => {
+    if (!deviceId || !playbackFilePath) {
+      modal.showModal({ message: '请先选择时间段并等待录像下载完成', type: 'error' });
+      return;
+    }
+    setIsLoadingTranscode(true);
+    try {
+      const res = await deviceService.getPlaybackTranscodeUrl(deviceId, playbackFilePath);
+      const url = res.data?.flv_url;
+      const key = res.data?.key;
+      if (url && key) {
+        setFlvPlaybackUrl(url);
+        setFlvPlaybackKey(key);
+      } else {
+        modal.showModal({ message: res?.message || '转码服务未启用或启动失败（需配置 zlm.enabled 并安装 FFmpeg）', type: 'error' });
+      }
+    } catch (e: any) {
+      modal.showModal({ message: e?.message || '获取转码地址失败', type: 'error' });
+    } finally {
+      setIsLoadingTranscode(false);
+    }
+  };
 
   // 条件返回必须在所有 Hooks 调用之后
   if (isLoading) {
@@ -339,7 +433,7 @@ export const DeviceDetail: React.FC = () => {
 
     setIsLoadingPlayback(true);
     setDownloadProgress(0);
-    if (playbackVideoUrl) URL.revokeObjectURL(playbackVideoUrl);
+    if (playbackVideoUrl && playbackVideoUrl.startsWith('blob:')) URL.revokeObjectURL(playbackVideoUrl);
     setPlaybackVideoUrl(null);
 
     const fullStartTime = `${selectedDate} ${start}:00`;
@@ -370,18 +464,12 @@ export const DeviceDetail: React.FC = () => {
 
       if (cached || handle === -2) {
         setDownloadProgress(100);
-        try {
-          const blobUrl = await deviceService.fetchPlaybackBlob(deviceId, filePath);
-          setPlaybackVideoUrl(blobUrl);
-          setPlaybackFilePath(filePath);
-          const [, timePart] = fullStartTime.split(' ');
-          const [h, m] = (timePart || '00:00:00').split(':').map(Number);
-          playbackSegmentRef.current = { hour: h, minute: m };
-          setIsLoadingPlayback(false);
-        } catch (blobErr: any) {
-          setIsLoadingPlayback(false);
-          modal.showModal({ message: blobErr.message || '视频文件获取失败', type: 'error' });
-        }
+        setPlaybackFilePath(filePath);
+        setPlaybackVideoUrl(deviceService.getPlaybackFileUrlWithToken(deviceId, filePath));
+        const [, timePart] = fullStartTime.split(' ');
+        const [h, m] = (timePart || '00:00:00').split(':').map(Number);
+        playbackSegmentRef.current = { hour: h, minute: m };
+        setIsLoadingPlayback(false);
         return;
       }
 
@@ -412,18 +500,12 @@ export const DeviceDetail: React.FC = () => {
               clearInterval(progressIntervalRef.current);
               progressIntervalRef.current = null;
             }
-            try {
-              const blobUrl = await deviceService.fetchPlaybackBlob(deviceId, completedFilePath);
-              setPlaybackVideoUrl(blobUrl);
-              setPlaybackFilePath(completedFilePath);
-              const [, timePart] = fullStartTime.split(' ');
-              const [h, m] = (timePart || '00:00:00').split(':').map(Number);
-              playbackSegmentRef.current = { hour: h, minute: m };
-              setIsLoadingPlayback(false);
-            } catch (blobErr: any) {
-              setIsLoadingPlayback(false);
-              modal.showModal({ message: blobErr.message || '视频文件获取失败', type: 'error' });
-            }
+            setPlaybackFilePath(completedFilePath);
+            setPlaybackVideoUrl(deviceService.getPlaybackFileUrlWithToken(deviceId, completedFilePath));
+            const [, timePart] = fullStartTime.split(' ');
+            const [h, m] = (timePart || '00:00:00').split(':').map(Number);
+            playbackSegmentRef.current = { hour: h, minute: m };
+            setIsLoadingPlayback(false);
           } else if (progressResponse.data?.isError) {
             setIsLoadingPlayback(false);
             modal.showModal({ message: '下载失败，请重试', type: 'error' });
@@ -706,7 +788,24 @@ export const DeviceDetail: React.FC = () => {
                     ref={imageContainerRef}
                     className="relative bg-black rounded-2xl overflow-hidden shadow-lg aspect-video group"
                   >
-                    {playbackVideoUrl ? (
+                    {flvPlaybackUrl ? (
+                      <div className="w-full h-full flex flex-col">
+                        <video
+                          ref={liveVideoRef}
+                          controls
+                          className="w-full h-full"
+                          muted={false}
+                        />
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-black/50 flex justify-end">
+                          <button
+                            onClick={handleStopFlvPlayback}
+                            className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                          >
+                            {flvPlaybackKey ? '关闭转码播放' : '关闭直播'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : playbackVideoUrl ? (
                       <div className="w-full h-full flex flex-col">
                         <video
                           ref={videoRef}
@@ -721,7 +820,8 @@ export const DeviceDetail: React.FC = () => {
                             if (err) {
                               // MEDIA_ERR_ABORTED=1, MEDIA_ERR_NETWORK=2, MEDIA_ERR_DECODE=3, MEDIA_ERR_SRC_NOT_SUPPORTED=4
                               if (err.code === 3 || err.code === 4) {
-                                message = '当前浏览器可能不支持该视频编码（如 H.265/HEVC）。请使用 Safari 尝试播放，或点击下方「导出录像」下载后用 VLC 等本地播放器观看。';
+                                const detail = err.message ? `（${err.message}）` : '';
+                                message = `当前浏览器不支持该视频编码${detail}。请使用 Safari 尝试播放，或点击下方「导出录像」下载后用 VLC 等本地播放器观看。`;
                               } else if (err.code === 2) {
                                 message = '视频加载失败，请检查网络后重试。';
                               }
@@ -788,7 +888,15 @@ export const DeviceDetail: React.FC = () => {
                           ) : (
                             <>
                               <p className="mb-2">暂无图像</p>
-                              <p className="text-sm">点击抓图按钮获取设备快照，或选择时间进行录像回放</p>
+                              <p className="text-sm mb-3">点击抓图获取快照，选择时间进行录像回放，或开启实时直播</p>
+                              <button
+                                onClick={handleStartLiveStream}
+                                disabled={isLoadingLive}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 mx-auto"
+                              >
+                                <Radio size={16} />
+                                {isLoadingLive ? '连接中...' : '实时直播'}
+                              </button>
                             </>
                           )}
                         </div>
@@ -802,10 +910,19 @@ export const DeviceDetail: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* 控制按钮 - 全屏 */}
-                    {snapshot && (
+                    {/* 控制按钮 - 全屏、实时直播 */}
+                    {snapshot && !flvPlaybackUrl && (
                       <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
                         <div className="flex items-center space-x-3">
+                          <button
+                            onClick={handleStartLiveStream}
+                            disabled={isLoadingLive}
+                            className="text-white hover:text-blue-400 transition-colors flex items-center gap-1"
+                            title="实时直播"
+                          >
+                            <Radio size={18} />
+                            <span className="text-xs">{isLoadingLive ? '连接中...' : '实时直播'}</span>
+                          </button>
                           <button
                             onClick={handleFullscreen}
                             className="text-white hover:text-blue-400 transition-colors"
@@ -849,6 +966,16 @@ export const DeviceDetail: React.FC = () => {
                             下午
                           </button>
                         </div>
+                        {/* 转码播放（浏览器不支持 H.265 时使用） */}
+                        {playbackFilePath && (
+                          <button
+                            onClick={handleStartTranscodePlayback}
+                            disabled={isLoadingTranscode}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-50"
+                          >
+                            {isLoadingTranscode ? '转码中...' : '转码播放'}
+                          </button>
+                        )}
                         {/* Speed control */}
                         <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
                           <Gauge size={12} className="ml-1.5 text-gray-400" />
@@ -920,7 +1047,7 @@ export const DeviceDetail: React.FC = () => {
                       {playbackVideoUrl && (
                         <button
                           onClick={() => {
-                            if (playbackVideoUrl) URL.revokeObjectURL(playbackVideoUrl);
+                            if (playbackVideoUrl && playbackVideoUrl.startsWith('blob:')) URL.revokeObjectURL(playbackVideoUrl);
                             setPlaybackVideoUrl(null);
                             setSnapshot(null);
                             handleSnapshot();

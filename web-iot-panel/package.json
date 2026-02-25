@@ -15,7 +15,8 @@
     "react-router-dom": "^6.28.0",
     "lucide-react": "^0.562.0",
     "recharts": "^3.6.0",
-    "three": "^0.169.0"
+    "three": "^0.169.0",
+    "flv.js": "^1.6.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

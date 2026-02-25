@@ -11,6 +11,7 @@ import com.digital.video.gateway.service.CaptureService;
 import com.digital.video.gateway.service.PTZService;
 import com.digital.video.gateway.service.PtzMonitorService;
 import com.digital.video.gateway.service.PlaybackService;
+import com.digital.video.gateway.service.ZlmProxyService;
 import com.digital.video.gateway.service.AssemblyService;
 import com.digital.video.gateway.service.AlarmRuleService;
 import com.digital.video.gateway.database.DevicePtzExtensionTable;
@@ -47,13 +48,15 @@ public class DeviceController {
     private final HikvisionSDK sdk; // 保留用于重启等特殊功能（仅海康设备）
     private final AssemblyService assemblyService;
     private final AlarmRuleService alarmRuleService;
+    private final ZlmProxyService zlmProxyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public DeviceController(DeviceManager deviceManager, com.digital.video.gateway.database.Database database,
             Recorder recorder, CaptureService captureService, PTZService ptzService,
             PtzMonitorService ptzMonitorService,
             PlaybackService playbackService, HikvisionSDK sdk,
-            AssemblyService assemblyService, AlarmRuleService alarmRuleService) {
+            AssemblyService assemblyService, AlarmRuleService alarmRuleService,
+            ZlmProxyService zlmProxyService) {
         this.deviceManager = deviceManager;
         this.database = database;
         this.recorder = recorder;
@@ -64,6 +67,7 @@ public class DeviceController {
         this.sdk = sdk; // 保留用于重启等特殊功能
         this.assemblyService = assemblyService;
         this.alarmRuleService = alarmRuleService;
+        this.zlmProxyService = zlmProxyService;
     }
 
     /**
@@ -806,6 +810,35 @@ public class DeviceController {
     }
 
     /**
+     * 获取设备直播地址（ZLM 拉流代理 → HTTP-FLV/HLS）
+     * GET /api/devices/:id/live/url
+     */
+    public String getLiveUrl(Request request, Response response) {
+        try {
+            if (zlmProxyService == null) {
+                response.status(503);
+                return createErrorResponse(503, "直播服务未启用（请配置 zlm.enabled）");
+            }
+            String deviceId = request.params(":id");
+            String host = request.host() != null ? request.host() : "127.0.0.1";
+            if (host.contains(":")) host = host.substring(0, host.indexOf(':'));
+            Map<String, String> urls = zlmProxyService.getLiveUrl(deviceId, host);
+            if (urls == null) {
+                response.status(404);
+                return createErrorResponse(404, "设备不存在或无 RTSP 地址");
+            }
+            Map<String, Object> data = new HashMap<>(urls);
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("获取直播地址失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取直播地址失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 从请求中获取JWT token
      */
     private String getTokenFromRequest(Request request) {
@@ -1490,6 +1523,74 @@ public class DeviceController {
             logger.error("获取录像文件失败", e);
             response.status(500);
             return createErrorResponse(500, "获取录像文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取回放转码流地址（MP4 → ZLM+FFmpeg → HTTP-FLV，供浏览器播放 H.265 等不兼容编码）
+     * GET /api/devices/:id/playback/transcode-url?filePath=xxx
+     */
+    public String getPlaybackTranscodeUrl(Request request, Response response) {
+        try {
+            if (zlmProxyService == null) {
+                response.status(503);
+                return createErrorResponse(503, "转码服务未启用（请配置 zlm.enabled 并安装 FFmpeg）");
+            }
+            String deviceId = request.params(":id");
+            String filePath = request.queryParams("filePath");
+            if (filePath == null || filePath.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "filePath参数不能为空");
+            }
+            try {
+                filePath = java.net.URLDecoder.decode(filePath, "UTF-8");
+            } catch (Exception e) {
+                logger.debug("transcode-url filePath 解码失败，使用原始值");
+            }
+            String host = request.host() != null ? request.host() : "127.0.0.1";
+            if (host.contains(":")) host = host.substring(0, host.indexOf(':'));
+            Map<String, String> result = zlmProxyService.getPlaybackTranscodeUrl(deviceId, filePath, host);
+            if (result == null) {
+                response.status(400);
+                return createErrorResponse(400, "文件无效或转码启动失败");
+            }
+            Map<String, Object> data = new HashMap<>(result);
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("获取回放转码地址失败", e);
+            response.status(500);
+            return createErrorResponse(500, "获取回放转码地址失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 停止回放转码任务
+     * POST /api/devices/:id/playback/transcode-stop  body: {"key":"xxx"}
+     */
+    public String postPlaybackTranscodeStop(Request request, Response response) {
+        try {
+            if (zlmProxyService == null) {
+                response.status(503);
+                return createErrorResponse(503, "转码服务未启用");
+            }
+            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String key = (String) body.get("key");
+            if (key == null || key.isEmpty()) {
+                response.status(400);
+                return createErrorResponse(400, "key参数不能为空");
+            }
+            boolean ok = zlmProxyService.stopPlaybackTranscode(key);
+            Map<String, Object> data = new HashMap<>();
+            data.put("stopped", ok);
+            response.status(200);
+            response.type("application/json");
+            return createSuccessResponse(data);
+        } catch (Exception e) {
+            logger.error("停止回放转码失败", e);
+            response.status(500);
+            return createErrorResponse(500, "停止回放转码失败: " + e.getMessage());
         }
     }
 
