@@ -82,7 +82,7 @@ mqtt:
 mvn exec:java -Dexec.mainClass="com.digital.video.gateway.Main"
 
 # Method 2: Run the packaged jar
-java -jar target/video-gateway-service-1.0.0.jar
+java -jar target/senhub-app-1.0.0.jar
 ```
 
 After the service starts, the default HTTP API port is `8080`, and you can access the management interface at `http://localhost:8080`.

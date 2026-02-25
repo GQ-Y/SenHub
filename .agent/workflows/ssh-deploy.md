@@ -13,7 +13,7 @@ description: 远程服务器部署与测试流程 (SSH Deployment & Testing)
 // turbo
 1. 在远程服务器创建目录并清理旧进程及日志：
    ```bash
-   sshpass -p admin ssh zyc@192.168.1.210 "mkdir -p /home/zyc/data/xwq/demo && pkill -f video-gateway || true && rm -f /home/zyc/data/xwq/demo/server/server.log"
+   sshpass -p admin ssh zyc@192.168.1.210 "mkdir -p /home/zyc/data/xwq/demo && pkill -f senhub-app || true && rm -f /home/zyc/data/xwq/demo/server/server.log"
    ```
 
 2. 同步代码（排除不需要的目录）：
@@ -30,7 +30,7 @@ description: 远程服务器部署与测试流程 (SSH Deployment & Testing)
 
 2. 启动服务（后台运行并记录日志）：
    ```bash
-   sshpass -p admin ssh zyc@192.168.1.210 "cd /home/zyc/data/xwq/demo/server && nohup java -jar target/video-gateway-service-1.0.0.jar > server.log 2>&1 &"
+   sshpass -p admin ssh zyc@192.168.1.210 "cd /home/zyc/data/xwq/demo/server && nohup java -jar target/senhub-app-1.0.0.jar > server.log 2>&1 &"
    ```
 
 ### 4. 验证阶段

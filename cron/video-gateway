@@ -1,9 +1,0 @@
-# Video Gateway 定时任务
-# 安装：sudo cp cron/video-gateway /etc/cron.d/video-gateway-restart
-# 注意：部署到服务器后请将路径改为实际路径（如 /mnt/data/zyc/xwq/demo 或 /home/zyc/data/xwq/demo）
-
-# 每日凌晨 4 点重启服务
-0 4 * * * zyc systemctl restart video-gateway
-
-# 每周日凌晨 3 点执行磁盘清理（示例路径：/home/zyc/data/xwq/demo 或 /mnt/data/zyc/xwq/demo）
-0 3 * * 0 zyc /home/zyc/data/xwq/demo/cleanup_disk.sh >> /tmp/cleanup.log 2>&1

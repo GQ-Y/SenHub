@@ -82,7 +82,7 @@ mqtt:
 mvn exec:java -Dexec.mainClass="com.digital.video.gateway.Main"
 
 # 方式2：运行打包后的 jar
-java -jar target/video-gateway-service-1.0.0.jar
+java -jar target/senhub-app-1.0.0.jar
 ```
 
 服务启动后，默认 HTTP API 端口为 `8080`，可通过 `http://localhost:8080` 访问管理界面。

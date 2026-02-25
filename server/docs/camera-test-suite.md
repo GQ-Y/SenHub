@@ -52,7 +52,7 @@
 ssh zyc@192.168.1.210
 cd /home/zyc/data/xwq/demo/server
 export LD_LIBRARY_PATH="$(pwd)/lib/linux:$LD_LIBRARY_PATH"
-JAR=$(find target -name "video-gateway-service-*.jar" -not -name "*original*" | head -1)
+JAR=$(find target -name "senhub-app-*.jar" -not -name "*original*" | head -1)
 java -Djava.library.path="$(pwd)/lib/linux" -cp "$JAR" com.digital.video.gateway.test.CameraTestRunner
 ```
 

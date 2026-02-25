@@ -1,9 +1,9 @@
-# 综合性数字视频监控网关系统配置文件
+# SenHub 视频网关配置文件
 
 # MQTT配置（senhub 主题规范）
 mqtt:
   broker: "tcp://mqtt.yingzhu.net:1883"  # MQTT服务器地址
-  client_id: "video-gateway-service"  # 客户端ID
+  client_id: "senhub-app"  # 客户端ID
   username: "demos1"  # MQTT用户名
   password: "demos1"  # MQTT密码
   status_topic: "senhub/device/status"  # 设备/雷达状态上报主题

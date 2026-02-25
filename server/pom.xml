@@ -6,12 +6,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.digital.video.gateway</groupId>
-    <artifactId>video-gateway-service</artifactId>
+    <artifactId>senhub-app</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Digital Video Gateway Service</name>
-    <description>综合性数字视频监控网关系统</description>
+    <name>SenHub</name>
+    <description>SenHub 视频网关与安防报警服务</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

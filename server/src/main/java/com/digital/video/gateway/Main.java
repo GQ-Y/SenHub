@@ -1040,15 +1040,15 @@ public class Main {
         Spark.delete("/api/flows/:flowId", flowController::deleteFlow);
         Spark.post("/api/flows/:flowId/test", flowController::testFlow);
 
-        // 静态文件服务：提供 data/ 目录下文件（TTS音频、图片等）的 HTTP 访问
+        // 静态文件服务：data/ 与 storage/（含 storage/tts）目录下文件的 HTTP 访问
         Spark.get("/api/static/*", (request, res) -> {
             String splat = request.splat()[0];
-            // 防止路径穿越
             if (splat.contains("..")) {
                 res.status(403);
                 return "Forbidden";
             }
-            java.io.File file = new java.io.File("data/" + splat);
+            String baseDir = splat.startsWith("tts/") ? "storage" : "data";
+            java.io.File file = new java.io.File(baseDir + "/" + splat);
             if (!file.exists() || !file.isFile()) {
                 res.status(404);
                 return "Not found";

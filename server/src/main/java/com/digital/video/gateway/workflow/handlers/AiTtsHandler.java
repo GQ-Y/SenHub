@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * AI 语音合成节点：调用 MiniMax TTS API 将文本转为 MP3，保存到 data/tts/ 目录，
+ * AI 语音合成节点：调用 MiniMax TTS API 将文本转为 MP3，保存到 storage/tts/ 目录，
  * 通过静态文件服务 /api/static/tts/xxx.mp3 可访问。
  */
 public class AiTtsHandler implements FlowNodeHandler {
@@ -126,7 +126,7 @@ public class AiTtsHandler implements FlowNodeHandler {
                 if (!hexData.isBlank()) {
                     byte[] audioBytes = hexToBytes(hexData);
 
-                    Path ttsDir = Path.of("data", "tts");
+                    Path ttsDir = Path.of("storage", "tts");
                     Files.createDirectories(ttsDir);
                     String timestamp = java.time.LocalDateTime.now()
                             .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));

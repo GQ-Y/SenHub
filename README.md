@@ -47,7 +47,7 @@ cd SenHub/server
 mvn clean package
 
 # Run the service
-java -jar target/video-gateway-service-1.0.0.jar
+java -jar target/senhub-app-1.0.0.jar
 ```
 
 更多详细信息请查看：
