@@ -27,6 +27,7 @@ import spark.Request;
 import spark.Response;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 设备管理控制器
@@ -34,6 +35,8 @@ import java.util.*;
  */
 public class DeviceController {
     private static final Logger logger = LoggerFactory.getLogger(DeviceController.class);
+    /** 录像下载句柄 -> 本地文件路径，用于进度查询时按文件是否就绪兜底判定完成，并返回 filePath */
+    private final Map<String, String> playbackHandleToPath = new ConcurrentHashMap<>();
     private final DeviceManager deviceManager;
     private final com.digital.video.gateway.database.Database database;
     private final Recorder recorder;
@@ -1238,17 +1241,49 @@ public class DeviceController {
             Date startTime = sdf.parse(startTimeStr);
             Date endTime = sdf.parse(endTimeStr);
 
-            // 验证时间范围：所有设备限制1小时
+            // 验证时间范围：限制为1分钟分段
             long timeDiff = endTime.getTime() - startTime.getTime();
-            long oneHourInMillis = 60 * 60 * 1000; // 1小时的毫秒数
-            if (timeDiff > oneHourInMillis) {
+            long oneMinuteInMillis = 60 * 1000;
+            if (timeDiff > oneMinuteInMillis) {
                 response.status(400);
-                return createErrorResponse(400, "设备录像回放时间范围不能超过1小时");
+                return createErrorResponse(400, "设备录像回放时间范围不能超过1分钟");
             }
 
             if (timeDiff <= 0) {
                 response.status(400);
                 return createErrorResponse(400, "结束时间必须晚于开始时间");
+            }
+
+            // 按设备分目录 + 以分钟时间命名: ./storage/downloads/{sanitizedDeviceId}/{yyyyMMdd}_{HH}_{mm}.mp4
+            String sanitizedDeviceId = deviceId.replaceAll("[^a-zA-Z0-9]", "_");
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.setTime(startTime);
+            String datePart = new SimpleDateFormat("yyyyMMdd").format(startTime);
+            int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+            int minute = cal.get(java.util.Calendar.MINUTE);
+            String fileName = datePart + "_" + String.format("%02d", hour) + "_" + String.format("%02d", minute) + ".mp4";
+            String downloadDir = "./storage/downloads/" + sanitizedDeviceId;
+            File downloadDirFile = new File(downloadDir);
+            if (!downloadDirFile.exists()) {
+                downloadDirFile.mkdirs();
+            }
+            String localFilePath = downloadDir + "/" + fileName;
+
+            // 缓存命中：文件已存在且大小>0则直接返回
+            File cacheFile = new File(localFilePath);
+            if (cacheFile.exists() && cacheFile.length() > 0) {
+                logger.info("录像缓存命中: deviceId={}, filePath={}", deviceId, localFilePath);
+                Map<String, Object> data = new HashMap<>();
+                data.put("downloadHandle", -2);
+                data.put("filePath", localFilePath);
+                data.put("channel", channel);
+                data.put("startTime", startTimeStr);
+                data.put("endTime", endTimeStr);
+                data.put("cached", true);
+                data.put("message", "录像已从缓存返回");
+                response.status(200);
+                response.type("application/json");
+                return createSuccessResponse(data);
             }
 
             // 确保设备已登录
@@ -1267,25 +1302,10 @@ public class DeviceController {
             }
 
             int userId = deviceManager.getDeviceUserId(deviceId);
-            // 注意：天地伟业SDK登录成功后返回的logonID可以是0，只有-1才表示未登录
             if (userId < 0) {
                 response.status(500);
                 return createErrorResponse(500, "设备未登录");
             }
-
-            // 创建下载目录
-            String downloadDir = "./storage/downloads";
-            File downloadDirFile = new File(downloadDir);
-            if (!downloadDirFile.exists()) {
-                downloadDirFile.mkdirs();
-            }
-
-            // 生成本地保存文件路径
-            // 天地伟业使用MP4格式下载（DOWNLOAD_FILE_TYPE_ZFMP4）
-            String fileExtension = ".mp4";
-            String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
-            String localFilePath = downloadDir + "/playback_" + deviceId.replaceAll("[^a-zA-Z0-9]", "_") + "_"
-                    + timestamp + fileExtension;
 
             // 调用SDK启动下载（使用主码流，streamType=0）
             int downloadHandle = sdk.downloadPlaybackByTimeRange(userId, channel, startTime, endTime, localFilePath, 0);
@@ -1300,13 +1320,15 @@ public class DeviceController {
             logger.info("录像下载启动成功: deviceId={}, channel={}, downloadHandle={}, filePath={}",
                     deviceId, channel, downloadHandle, localFilePath);
 
-            // 返回下载句柄和文件路径
+            playbackHandleToPath.put(deviceId + ":" + downloadHandle, localFilePath);
+
             Map<String, Object> data = new HashMap<>();
             data.put("downloadHandle", downloadHandle);
             data.put("filePath", localFilePath);
             data.put("channel", channel);
             data.put("startTime", startTimeStr);
             data.put("endTime", endTimeStr);
+            data.put("cached", false);
             data.put("message", "录像下载已启动");
 
             response.status(200);
@@ -1345,6 +1367,18 @@ public class DeviceController {
                 return createErrorResponse(400, "downloadHandle参数格式错误");
             }
 
+            // 缓存命中场景：handle=-2 表示文件已就绪，直接返回完成
+            if (downloadHandle == -2) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("downloadHandle", downloadHandle);
+                data.put("progress", 100);
+                data.put("isCompleted", true);
+                data.put("isError", false);
+                response.status(200);
+                response.type("application/json");
+                return createSuccessResponse(data);
+            }
+
             // 获取设备SDK（支持所有品牌）
             DeviceSDK deviceSDK = deviceManager.getDeviceSDK(deviceId);
             if (deviceSDK == null) {
@@ -1355,11 +1389,27 @@ public class DeviceController {
             // 使用DeviceSDK接口查询下载进度（支持所有品牌）
             int progress = deviceSDK.getDownloadProgress(downloadHandle);
 
+            // 兜底：若 SDK 未返回 100 但本地文件已存在且大小>0，视为完成（避免轮询永不结束）
+            String pathKey = deviceId + ":" + downloadHandle;
+            String storedFilePath = playbackHandleToPath.get(pathKey);
+            if (storedFilePath != null && progress < 100 && progress >= 0) {
+                File f = new File(storedFilePath);
+                if (f.exists() && f.length() > 0) {
+                    progress = 100;
+                    logger.debug("录像下载完成(按文件就绪): deviceId={}, handle={}, filePath={}", deviceId, downloadHandle, storedFilePath);
+                }
+            }
+
+            boolean isCompleted = progress >= 100;
             Map<String, Object> data = new HashMap<>();
             data.put("downloadHandle", downloadHandle);
             data.put("progress", progress >= 0 ? progress : 0);
-            data.put("isCompleted", progress >= 100);
+            data.put("isCompleted", isCompleted);
             data.put("isError", progress < 0);
+            if (isCompleted && storedFilePath != null) {
+                data.put("filePath", storedFilePath);
+                playbackHandleToPath.remove(pathKey);
+            }
 
             response.status(200);
             response.type("application/json");
@@ -1464,6 +1514,8 @@ public class DeviceController {
                 response.status(400);
                 return createErrorResponse(400, "downloadHandle参数格式错误");
             }
+
+            playbackHandleToPath.remove(deviceId + ":" + downloadHandle);
 
             HCNetSDK hcNetSDK = sdk.getSDK();
             if (hcNetSDK == null) {

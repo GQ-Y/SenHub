@@ -100,6 +100,8 @@ public class Main {
     private FlowExecutor flowExecutor;
     private AiAnalysisService aiAnalysisService;
     private ScheduledExecutorService statisticsScheduler;
+    /** 录像回放下载目录过期清理（3天）定时任务 */
+    private ScheduledExecutorService playbackCleanupScheduler;
     /** MQTT 消息处理线程池，避免命令/工作流在 Paho 回调线程执行导致阻塞 */
     private ExecutorService mqttMessageExecutor;
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -387,6 +389,10 @@ public class Main {
             // 10.5. 启动设备状态统计任务（每小时记录一次设备状态快照）
             startDeviceStatusStatisticsTask();
             logger.info("设备状态统计任务已启动");
+
+            // 10.6. 启动录像回放下载目录过期清理（每日凌晨2点，保留近3天）
+            startPlaybackDownloadCleanupTask();
+            logger.info("录像回放下载清理任务已启动（每日02:00，保留3天）");
 
             // 11. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
@@ -795,6 +801,61 @@ public class Main {
     }
 
     /**
+     * 启动录像回放下载目录过期清理任务：每日凌晨2点执行，删除超过3天的 .mp4 文件
+     */
+    private void startPlaybackDownloadCleanupTask() {
+        playbackCleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "PlaybackDownloadCleanup");
+            t.setDaemon(true);
+            return t;
+        });
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        long now = cal.getTimeInMillis();
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 2);
+        cal.set(java.util.Calendar.MINUTE, 0);
+        cal.set(java.util.Calendar.SECOND, 0);
+        cal.set(java.util.Calendar.MILLISECOND, 0);
+        if (cal.getTimeInMillis() <= now) {
+            cal.add(java.util.Calendar.DAY_OF_MONTH, 1);
+        }
+        long delayMs = cal.getTimeInMillis() - now;
+        long periodMs = 24 * 60 * 60 * 1000L;
+        playbackCleanupScheduler.scheduleAtFixedRate(
+                this::cleanupExpiredPlaybackDownloads,
+                delayMs, periodMs, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * 清理 storage/downloads 下超过3天的录像片段
+     */
+    private void cleanupExpiredPlaybackDownloads() {
+        try {
+            java.io.File downloadsRoot = new java.io.File("./storage/downloads");
+            if (!downloadsRoot.exists() || !downloadsRoot.isDirectory()) return;
+            long cutoff = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000;
+            int deletedCount = 0;
+            java.io.File[] deviceDirs = downloadsRoot.listFiles(java.io.File::isDirectory);
+            if (deviceDirs == null) return;
+            for (java.io.File deviceDir : deviceDirs) {
+                java.io.File[] files = deviceDir.listFiles((d, name) -> name != null && name.endsWith(".mp4"));
+                if (files == null) continue;
+                for (java.io.File f : files) {
+                    if (f.lastModified() < cutoff) {
+                        if (f.delete()) deletedCount++;
+                        else logger.warn("删除过期录像文件失败: {}", f.getAbsolutePath());
+                    }
+                }
+                if (deviceDir.list() != null && deviceDir.list().length == 0) {
+                    if (deviceDir.delete()) logger.debug("已删除空目录: {}", deviceDir.getAbsolutePath());
+                }
+            }
+            if (deletedCount > 0) logger.info("录像回放清理: 已删除 {} 个超过3天的录像文件", deletedCount);
+        } catch (Exception e) {
+            logger.error("录像回放清理任务执行失败", e);
+        }
+    }
+
+    /**
      * 启动HTTP服务器
      */
     private void startHttpServer() {
@@ -1194,6 +1255,17 @@ public class Main {
                     }
                 } catch (InterruptedException e) {
                     statisticsScheduler.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (playbackCleanupScheduler != null) {
+                playbackCleanupScheduler.shutdown();
+                try {
+                    if (!playbackCleanupScheduler.awaitTermination(3, TimeUnit.SECONDS)) {
+                        playbackCleanupScheduler.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    playbackCleanupScheduler.shutdownNow();
                     Thread.currentThread().interrupt();
                 }
             }

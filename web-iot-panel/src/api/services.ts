@@ -217,7 +217,7 @@ export const deviceService = {
    * 录像回放（启动下载）
    */
   async playback(deviceId: string, startTime: string, endTime: string, channel: number = 1) {
-    const response = await post<{ downloadHandle: number; filePath: string; channel: number; startTime: string; endTime: string; message: string }>(`/devices/${encodeURIComponent(deviceId)}/playback`, { startTime, endTime, channel });
+    const response = await post<{ downloadHandle: number; filePath: string; channel: number; startTime: string; endTime: string; message: string; cached?: boolean }>(`/devices/${encodeURIComponent(deviceId)}/playback`, { startTime, endTime, channel });
     return response;
   },
 
@@ -225,7 +225,7 @@ export const deviceService = {
    * 查询录像下载进度
    */
   async getPlaybackProgress(deviceId: string, downloadHandle: number) {
-    const response = await get<{ downloadHandle: number; progress: number; isCompleted: boolean; isError: boolean }>(`/devices/${encodeURIComponent(deviceId)}/playback/progress`, { downloadHandle: downloadHandle.toString() });
+    const response = await get<{ downloadHandle: number; progress: number; isCompleted: boolean; isError: boolean; filePath?: string }>(`/devices/${encodeURIComponent(deviceId)}/playback/progress`, { downloadHandle: downloadHandle.toString() });
     return response;
   },
 
