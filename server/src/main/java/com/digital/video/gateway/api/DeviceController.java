@@ -824,6 +824,7 @@ public class DeviceController {
             if (host.contains(":")) host = host.substring(0, host.indexOf(':'));
             Map<String, String> urls = zlmProxyService.getLiveUrl(deviceId, host);
             if (urls == null) {
+                logger.warn("获取直播地址返回 404: deviceId={} (设备不存在或无 RTSP 地址)", deviceId);
                 response.status(404);
                 return createErrorResponse(404, "设备不存在或无 RTSP 地址");
             }

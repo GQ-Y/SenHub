@@ -43,20 +43,29 @@ public class ZlmProxyService {
     public Map<String, String> getLiveUrl(String deviceId, String hostForUrl) {
         if (client == null || deviceManager == null) return null;
         DeviceInfo device = deviceManager.getDevice(deviceId);
-        if (device == null) return null;
+        if (device == null) {
+            logger.warn("获取直播地址时设备不存在: deviceId={}", deviceId);
+            return null;
+        }
         String rtspUrl = device.getRtspUrl();
         if (rtspUrl == null || rtspUrl.isEmpty()) {
             rtspUrl = buildRtspUrlFromDevice(device);
+            if (rtspUrl != null && !rtspUrl.isEmpty()) {
+                logger.info("设备无存储的 RTSP，已根据 IP/端口生成: deviceId={}, rtsp={}", deviceId, rtspUrl.replaceAll(":[^:@]+@", ":****@"));
+            }
         }
         if (rtspUrl == null || rtspUrl.isEmpty()) {
-            logger.warn("设备无 RTSP 地址且无法根据 IP/端口生成: deviceId={}", deviceId);
+            logger.warn("设备无 RTSP 地址且无法根据 IP/端口生成: deviceId={}, ip={}, port={}", deviceId, device.getIp(), device.getPort());
             return null;
         }
         String streamId = sanitizeStreamId(deviceId);
         String key = deviceToKey.get(deviceId);
         if (key == null) {
             key = client.addStreamProxy(VHOST, APP, streamId, rtspUrl, true);
-            if (key == null) return null;
+            if (key == null) {
+                logger.warn("ZLM 添加拉流代理失败: deviceId={}, rtsp={}", deviceId, rtspUrl.replaceAll(":[^:@]+@", ":****@"));
+                return null;
+            }
             deviceToKey.put(deviceId, key);
         }
         String host = (hostForUrl != null && !hostForUrl.isEmpty()) ? hostForUrl : "127.0.0.1";

@@ -139,7 +139,15 @@ public class ZlmApiClient {
                 .GET()
                 .build();
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (resp.statusCode() != 200) return null;
-        return JSON.readTree(resp.body());
+        if (resp.statusCode() != 200) {
+            logger.warn("ZLM API 请求非 200: status={}, url={}, body={}", resp.statusCode(), url.replaceAll("secret=[^&]+", "secret=***"), resp.body());
+            return null;
+        }
+        String body = resp.body();
+        if (body == null || body.isEmpty()) {
+            logger.warn("ZLM API 响应体为空: url={}", url.replaceAll("secret=[^&]+", "secret=***"));
+            return null;
+        }
+        return JSON.readTree(body);
     }
 }
