@@ -20,6 +20,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,10 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 天地伟业SDK封装类
@@ -42,8 +47,18 @@ public class TiandySDK implements DeviceSDK {
     // 存储登录 ID 到 IP 的映射，用于 startRealPlay
     private final Map<Integer, String> loginIdToIpMap = new ConcurrentHashMap<>();
 
-    /** 预览启动同步锁:确保 startRealPlay 串行执行,避免SDK并发调用导致资源竞争 */
-    private static final java.util.concurrent.locks.ReentrantLock startRealPlayLock = new java.util.concurrent.locks.ReentrantLock();
+    /** 预览启动锁（按登录句柄隔离），避免全局串行导致 80 台设备启动相互阻塞 */
+    private final Map<Integer, java.util.concurrent.locks.ReentrantLock> startRealPlayLocks = new ConcurrentHashMap<>();
+
+    /** 统一受控线程池，避免每次调用 startRealPlay 都创建新线程 */
+    private final ExecutorService syncRealPlayExecutor = Executors.newFixedThreadPool(8, r -> {
+        Thread t = new Thread(r, "Tiandy-SyncRealPlay");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** 下载连接ID到登录句柄映射，用于 DOWNLOAD_CMD_CONTROL 严格按官方示例传 m_iLogonID */
+    private final Map<Integer, Integer> downloadIdToUserIdMap = new ConcurrentHashMap<>();
 
     // 回调对象（延迟初始化，在库加载后创建，确保JNA能正确映射）
     private NvssdkLibrary.MAIN_NOTIFY_V4 emptyMainNotify;
@@ -509,19 +524,20 @@ public class TiandySDK implements DeviceSDK {
             TiandySDKStructure.tagLogonPara logonPara = new TiandySDKStructure.tagLogonPara();
             logonPara.iSize = logonPara.size();
 
-            // 按照官方示例，直接使用getBytes()赋值（JNA会自动处理字节数组到固定大小数组的转换）
-            logonPara.cNvsIP = ip.getBytes("UTF-8");
+            // 使用 arraycopy 填充固定大小 byte[]，避免替换 JNA Structure 字段引用导致内存布局异常
+            fillBytes(logonPara.cNvsIP, ip);
             logonPara.iNvsPort = port;
-            logonPara.cUserName = username.getBytes("UTF-8");
-            logonPara.cUserPwd = password.getBytes("UTF-8");
-            logonPara.cCharSet = strCharSet.getBytes("UTF-8");
+            fillBytes(logonPara.cUserName, username);
+            fillBytes(logonPara.cUserPwd, password);
+            fillBytes(logonPara.cCharSet, strCharSet);
 
             // 其他字段保持默认值（null或0）
             // cProxy, cNvsName, cProductID, cAccontName, cAccontPasswd, cNvsIPV6 使用默认值
 
             logonPara.write();
 
-            logger.info("开始登录天地伟业设备: {}:{}, 用户: {}", ip, port, username);
+            logger.info("开始登录天地伟业设备: {}:{}, 用户: {}, tagLogonPara.size={}",
+                    ip, port, username, logonPara.iSize);
             logger.debug("登录参数: iSize={}, iNvsPort={}, cNvsIP长度={}, cUserName长度={}, cUserPwd长度={}",
                     logonPara.iSize, logonPara.iNvsPort,
                     new String(logonPara.cNvsIP).trim().length(),
@@ -593,6 +609,8 @@ public class TiandySDK implements DeviceSDK {
         if (ret == NvssdkLibrary.RET_SUCCESS) {
             logger.info("天地伟业设备登出成功: {}", userId);
             loginIdToIpMap.remove(userId); // Remove IP on logout
+            startRealPlayLocks.remove(userId);
+            downloadIdToUserIdMap.entrySet().removeIf(e -> e.getValue() != null && e.getValue() == userId);
             return true;
         } else {
             logger.error("天地伟业设备登出失败: {}, 错误码: {}", userId, ret);
@@ -637,6 +655,14 @@ public class TiandySDK implements DeviceSDK {
     }
 
     /** 抓图接口返回值描述（与 RetValue.h 一致，便于日志排查） */
+    private static void fillBytes(byte[] dest, String value) {
+        java.util.Arrays.fill(dest, (byte) 0);
+        if (value != null) {
+            byte[] src = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            System.arraycopy(src, 0, dest, 0, Math.min(src.length, dest.length));
+        }
+    }
+
     private static String getCaptureErrorDesc(int iRet) {
         switch (iRet) {
             case NvssdkLibrary.RET_FAILED:
@@ -650,6 +676,27 @@ public class TiandySDK implements DeviceSDK {
         }
     }
 
+    /** 按 SDK C 字符串规则写入本地路径（UTF-8 + '\0'） */
+    private static byte[] toCStringBytes(String value) {
+        String safeValue = value == null ? "" : value.replace("\0", "");
+        return (safeValue + "\0").getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** 是否为可重试错误码（网络抖动、设备短暂忙、同步预览超时等） */
+    private static boolean isRetriableError(int iRet) {
+        return iRet == NvssdkLibrary.RET_FAILED
+                || iRet == NvssdkLibrary.RET_SYNCLOGON_TIMEOUT
+                || iRet == NvssdkLibrary.RET_SYNCLOGON_NET_ERROR
+                || iRet == NvssdkLibrary.RET_SYNCREALPLAY_TIMEOUT
+                || iRet == NvssdkLibrary.RET_SYNCREALPLAY_FAIL;
+    }
+
+    private static boolean isRetriableCaptureError(int iRet) {
+        return iRet == NvssdkLibrary.RET_FAILED
+                || iRet == NvssdkLibrary.RET_DEVICE_CAPTURE_FAIL
+                || iRet == NvssdkLibrary.RET_DEVICE_CAPTURE_TIMEOUT;
+    }
+
     @Override
     public void cleanup() {
         if (initialized && nvssdkLibrary != null) {
@@ -657,6 +704,9 @@ public class TiandySDK implements DeviceSDK {
             initialized = false;
             logger.info("天地伟业SDK清理完成");
         }
+        downloadIdToUserIdMap.clear();
+        startRealPlayLocks.clear();
+        syncRealPlayExecutor.shutdownNow();
     }
 
     @Override
@@ -679,12 +729,14 @@ public class TiandySDK implements DeviceSDK {
             return -1;
         }
 
+        java.util.concurrent.locks.ReentrantLock realPlayLock = startRealPlayLocks.computeIfAbsent(userId,
+                k -> new java.util.concurrent.locks.ReentrantLock());
         boolean locked = false;
         try {
             logger.debug("TiandySDK start locking");
             logger.info("天地伟业预览启动: 准备获取锁 userId={}, channel={}", userId, channel);
             // 使用 tryLock 避免死锁，等待时间需大于 SyncRealPlay 的超时时间(60s)
-            locked = startRealPlayLock.tryLock(65, java.util.concurrent.TimeUnit.SECONDS);
+            locked = realPlayLock.tryLock(65, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             logger.debug("TiandySDK lock interrupted");
             e.printStackTrace();
@@ -765,9 +817,19 @@ public class TiandySDK implements DeviceSDK {
             tVideoPara.iSize = tVideoPara.size();
             tVideoPara.tCltInfo.m_iServerID = userId;
             tVideoPara.tCltInfo.m_iChannelNo = channelNo;
-            tVideoPara.tCltInfo.m_iStreamNO = streamType; // 0=主码流(高清抓图), 1=子码流
-            tVideoPara.tCltInfo.m_iNetMode = 1; // UDP（与 TiandyCaptureDemo 一致，mode 4 RTSP 不被 SDK V5.5 支持）
-            tVideoPara.tCltInfo.m_iTimeout = 20; // 20s 超时
+            tVideoPara.tCltInfo.m_iStreamNO = 0;
+            tVideoPara.tCltInfo.m_iNetMode = 1; // UDP
+            tVideoPara.tCltInfo.m_iTimeout = 20;
+
+            // 填充 m_cRemoteIP：SDK 需要设备 IP 来建立数据连接（登录3000, 数据3001, SDK自动处理端口）
+            String deviceIp = loginIdToIpMap.get(userId);
+            if (deviceIp != null && !deviceIp.isEmpty()) {
+                fillBytes(tVideoPara.tCltInfo.m_cRemoteIP, deviceIp);
+                logger.info("天地伟业预览启动: userId={}, channelNo={}, streamNO=1, m_cRemoteIP={}, structSize={}",
+                        userId, channelNo, deviceIp, tVideoPara.size());
+            } else {
+                logger.warn("天地伟业预览启动: userId={} 无 IP 映射, structSize={}", userId, tVideoPara.size());
+            }
 
             logger.debug("VideoPara streamType={} netMode={} timeout={} channelNo={} cltInfoSize={}",
                     tVideoPara.tCltInfo.m_iStreamNO, tVideoPara.tCltInfo.m_iNetMode, tVideoPara.tCltInfo.m_iTimeout,
@@ -784,13 +846,15 @@ public class TiandySDK implements DeviceSDK {
              * tVideoPara.tCltInfo.m_iSpeed = 0;
              */
 
-            // 回调
+            tVideoPara.iCryptType = 0;
             tVideoPara.pCbkFullFrm = CallbackReference.getFunctionPointer(realPlayCbkFullFrame);
             tVideoPara.pvCbkFullFrmUsrData = null;
             tVideoPara.pCbkRawFrm = CallbackReference.getFunctionPointer(realPlayCbkRawFrame);
             tVideoPara.pvCbkRawFrmUsrData = null;
             tVideoPara.iIsForbidDecode = NvssdkLibrary.RAW_NOTIFY_ALLOW_DECODE;
             tVideoPara.pvWnd = null;
+            tVideoPara.iVideoRenderFlag = 1;
+            tVideoPara.m_iBitRateFlag = 0;
 
             // 写入
             tVideoPara.tCltInfo.write();
@@ -804,30 +868,28 @@ public class TiandySDK implements DeviceSDK {
             final com.sun.jna.Pointer paraPtr = tVideoPara.getPointer();
             final int paraSize = tVideoPara.iSize;
 
-            java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "SyncRealPlay-" + userId);
-                t.setDaemon(true);
-                return t;
-            });
             long startTime = System.currentTimeMillis();
-            int iRet;
-            try {
-                java.util.concurrent.Future<Integer> future = executor.submit(
-                        () -> nvssdkLibrary.NetClient_SyncRealPlay(piConnectID, paraPtr, paraSize));
-                iRet = future.get(SYNC_REALPLAY_HARD_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (java.util.concurrent.TimeoutException te) {
-                long elapsed = System.currentTimeMillis() - startTime;
-                logger.debug("SyncRealPlay HARD TIMEOUT after {}ms", elapsed);
-                logger.error("天地伟业预览启动: SyncRealPlay Java层硬超时({}s), userId={}, channel={}",
-                        SYNC_REALPLAY_HARD_TIMEOUT_SEC, userId, channel);
-                executor.shutdownNow();
-                return -1;
-            } catch (java.util.concurrent.ExecutionException ee) {
-                logger.error("天地伟业预览启动: SyncRealPlay执行异常 userId={}", userId, ee.getCause());
-                executor.shutdownNow();
-                return -1;
-            } finally {
-                executor.shutdownNow();
+            int iRet = NvssdkLibrary.RET_FAILED;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    Future<Integer> future = syncRealPlayExecutor.submit(
+                            () -> nvssdkLibrary.NetClient_SyncRealPlay(piConnectID, paraPtr, paraSize));
+                    iRet = future.get(SYNC_REALPLAY_HARD_TIMEOUT_SEC, TimeUnit.SECONDS);
+                } catch (java.util.concurrent.TimeoutException te) {
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    logger.error("天地伟业预览启动: SyncRealPlay Java层硬超时({}s), userId={}, channel={}, attempt={}, elapsedMs={}",
+                            SYNC_REALPLAY_HARD_TIMEOUT_SEC, userId, channel, attempt, elapsed);
+                    return -1;
+                } catch (java.util.concurrent.ExecutionException ee) {
+                    logger.error("天地伟业预览启动: SyncRealPlay执行异常 userId={}, attempt={}", userId, attempt, ee.getCause());
+                    return -1;
+                }
+                if (iRet == NvssdkLibrary.RET_SUCCESS || !isRetriableError(iRet) || attempt == 2) {
+                    break;
+                }
+                logger.warn("天地伟业预览启动首次失败，准备重试: userId={}, channel={}, iRet={}, attempt={}",
+                        userId, channel, iRet, attempt);
+                Thread.sleep(300L * attempt);
             }
             long endTime = System.currentTimeMillis();
             logger.debug("SyncRealPlay returns {} (took {}ms)", iRet, endTime - startTime);
@@ -850,7 +912,7 @@ public class TiandySDK implements DeviceSDK {
             return -1;
         } finally {
             if (locked) {
-                startRealPlayLock.unlock();
+                realPlayLock.unlock();
                 logger.debug("TiandySDK unlocked");
                 logger.info("天地伟业预览启动: 释放锁 userId={}, channel={}", userId, channel);
             }
@@ -896,21 +958,19 @@ public class TiandySDK implements DeviceSDK {
         try {
             // 参考Channel.java:401-425的实现
             // 确保文件路径以.sdv结尾（天地伟业默认格式），并添加\0结尾
-            String actualFilePath = filePath;
+            String actualFilePath = filePath == null ? "" : filePath.replace("\0", "");
             if (!actualFilePath.endsWith(".sdv")) {
-                actualFilePath = filePath + ".sdv";
+                actualFilePath = actualFilePath + ".sdv";
             }
             // 参考Channel.java:414，文件名需要以\0结尾
-            actualFilePath += "\0";
-
-            ByteBuffer strBuffer = ByteBuffer.wrap(actualFilePath.getBytes());
+            ByteBuffer strBuffer = ByteBuffer.wrap(toCStringBytes(actualFilePath));
             int iRet = nvssdkLibrary.NetClient_StartCaptureFile(connectId, strBuffer, NvssdkLibrary.REC_FILE_TYPE_SDV);
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                logger.info("天地伟业录制启动成功: connectID={}, filePath={}", connectId, actualFilePath.trim());
+                logger.info("天地伟业录制启动成功: connectID={}, filePath={}", connectId, actualFilePath);
                 return true;
             } else {
-                logger.error("天地伟业录制启动失败: connectID={}, filePath={}, 错误码={}", connectId, actualFilePath.trim(), iRet);
+                logger.error("天地伟业录制启动失败: connectID={}, filePath={}, 错误码={}", connectId, actualFilePath, iRet);
                 return false;
             }
         } catch (Exception e) {
@@ -969,16 +1029,24 @@ public class TiandySDK implements DeviceSDK {
 
             logger.info("天地伟业抓图: connectId={}, filePath={}", connectId, actualFilePath);
 
-            ByteBuffer buf = ByteBuffer.wrap(actualFilePath.getBytes());
-            int capRet = nvssdkLibrary.NetClient_CapturePicture(connectId, NvssdkLibrary.CAPTURE_PICTURE_TYPE_JPG, buf);
-
-            if (capRet > 0) {
-                logger.info("天地伟业抓图成功: connectId={}, 字节数={}, filePath={}", connectId, capRet, actualFilePath);
-                return true;
-            } else {
-                logger.error("天地伟业抓图失败: connectId={}, 返回值={}{}", connectId, capRet, getCaptureErrorDesc(capRet));
-                return false;
+            int capRet = NvssdkLibrary.RET_FAILED;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                ByteBuffer buf = ByteBuffer.wrap(toCStringBytes(actualFilePath));
+                capRet = nvssdkLibrary.NetClient_CapturePicture(connectId, NvssdkLibrary.CAPTURE_PICTURE_TYPE_JPG, buf);
+                if (capRet > 0) {
+                    logger.info("天地伟业抓图成功: connectId={}, 字节数={}, filePath={}, attempt={}",
+                            connectId, capRet, actualFilePath, attempt);
+                    return true;
+                }
+                if (!isRetriableCaptureError(capRet) || attempt == 2) {
+                    break;
+                }
+                logger.warn("天地伟业抓图失败准备重试: connectId={}, filePath={}, capRet={}, attempt={}",
+                        connectId, actualFilePath, capRet, attempt);
+                Thread.sleep(120L * attempt);
             }
+            logger.error("天地伟业抓图失败: connectId={}, 返回值={}{}", connectId, capRet, getCaptureErrorDesc(capRet));
+            return false;
         } catch (Exception e) {
             logger.error("天地伟业抓图异常: connectId={}, filePath={}", connectId, filePath, e);
             return false;
@@ -1105,32 +1173,38 @@ public class TiandySDK implements DeviceSDK {
 
             // ⚠️ 关键修复：使用DeviceCtrlEx API（协议模式），参考官方示例
             // 官方示例：JavaVideoCtrlDemo/src/src/VideoCtrl.java:466-487行
-            int iRet;
-
             // 停止动作通常速度设为0（或者SDK内部忽略）
             int currentSpeed = "stop".equalsIgnoreCase(action) ? 0 : speed;
 
-            // 根据官方示例，不同方向的速度参数位置不同
-            if (actionCode == NvssdkLibrary.PROTOCOL_MOVE_UP ||
-                    actionCode == NvssdkLibrary.PROTOCOL_MOVE_DOWN) {
-                // 上下移动：速度在param2（第5个参数）
-                // DeviceCtrlEx(logonID, channel, action, 0, speed, 0)
-                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, currentSpeed, 0);
-                logger.debug("云台上下控制: actionCode={}, speed在param2={}, action={}", actionCode, currentSpeed, action);
+            int iRet = NvssdkLibrary.RET_FAILED;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                // 根据官方示例，不同方向的速度参数位置不同
+                if (actionCode == NvssdkLibrary.PROTOCOL_MOVE_UP ||
+                        actionCode == NvssdkLibrary.PROTOCOL_MOVE_DOWN) {
+                    // 上下移动：速度在param2（第5个参数）
+                    // DeviceCtrlEx(logonID, channel, action, 0, speed, 0)
+                    iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, currentSpeed, 0);
+                    logger.debug("云台上下控制: actionCode={}, speed在param2={}, action={}", actionCode, currentSpeed, action);
 
-            } else if (actionCode == NvssdkLibrary.PROTOCOL_MOVE_LEFT ||
-                    actionCode == NvssdkLibrary.PROTOCOL_MOVE_RIGHT) {
-                // 左右移动：速度在param1（第4个参数）
-                // DeviceCtrlEx(logonID, channel, action, speed, 0, 0)
-                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, currentSpeed, 0, 0);
-                logger.debug("云台左右控制: actionCode={}, speed在param1={}, action={}", actionCode, currentSpeed, action);
+                } else if (actionCode == NvssdkLibrary.PROTOCOL_MOVE_LEFT ||
+                        actionCode == NvssdkLibrary.PROTOCOL_MOVE_RIGHT) {
+                    // 左右移动：速度在param1（第4个参数）
+                    // DeviceCtrlEx(logonID, channel, action, speed, 0, 0)
+                    iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, currentSpeed, 0, 0);
+                    logger.debug("云台左右控制: actionCode={}, speed在param1={}, action={}", actionCode, currentSpeed, action);
 
-            } else {
-                // 其他命令（停止、自动、缩放等）：所有参数为0
-                // DeviceCtrlEx(logonID, channel, action, 0, 0, 0)
-                // 变倍控制即使有速度通常也在 param2 或 param1，但官方示例提示中变倍并未提及速度，传0是最安全的
-                iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, 0, 0);
-                logger.debug("云台其他控制: actionCode={}, action={}", actionCode, action);
+                } else {
+                    // 其他命令（停止、自动、缩放等）：所有参数为0
+                    // DeviceCtrlEx(logonID, channel, action, 0, 0, 0)
+                    iRet = nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, actionCode, 0, 0, 0);
+                    logger.debug("云台其他控制: actionCode={}, action={}", actionCode, action);
+                }
+                if (iRet == NvssdkLibrary.RET_SUCCESS || !isRetriableError(iRet) || attempt == 2) {
+                    break;
+                }
+                logger.warn("天地伟业云台控制失败准备重试: userId={}, channel={}, command={}, iRet={}, attempt={}",
+                        userId, channel, command, iRet, attempt);
+                Thread.sleep(120L * attempt);
             }
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
@@ -1414,7 +1488,7 @@ public class TiandySDK implements DeviceSDK {
             tDownloadTimeSpan.m_iFileAttr = 0; // 0-NVR本地存储
 
             // 设置本地保存文件名
-            byte[] filenameBytes = localFilePath.getBytes();
+            byte[] filenameBytes = toCStringBytes(localFilePath);
             int copyLen = Math.min(filenameBytes.length, tDownloadTimeSpan.m_cLocalFilename.length - 1);
             System.arraycopy(filenameBytes, 0, tDownloadTimeSpan.m_cLocalFilename, 0, copyLen);
             tDownloadTimeSpan.m_cLocalFilename[copyLen] = 0; // 字符串结束符
@@ -1441,11 +1515,21 @@ public class TiandySDK implements DeviceSDK {
             tDownloadTimeSpan.write();
 
             IntByReference iConnID = new IntByReference();
-            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId,
-                    NvssdkLibrary.DOWNLOAD_CMD_TIMESPAN, tDownloadTimeSpan.getPointer(), tDownloadTimeSpan.size());
+            int iRet = NvssdkLibrary.RET_FAILED;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId,
+                        NvssdkLibrary.DOWNLOAD_CMD_TIMESPAN, tDownloadTimeSpan.getPointer(), tDownloadTimeSpan.size());
+                if (iRet == NvssdkLibrary.RET_SUCCESS || !isRetriableError(iRet) || attempt == 2) {
+                    break;
+                }
+                logger.warn("天地伟业按时间范围下载首次失败，准备重试: userId={}, channel={}, iRet={}, attempt={}",
+                        userId, channel, iRet, attempt);
+                Thread.sleep(200L * attempt);
+            }
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 int downloadId = iConnID.getValue();
+                downloadIdToUserIdMap.put(downloadId, userId);
                 logger.info("天地伟业按时间范围下载启动成功: userId={}, channel={}(0-based: {}), " +
                         "startTime={}, endTime={}, localFile={}, downloadId={}",
                         userId, channel, channelNo, startTime, endTime, localFilePath, downloadId);
@@ -1489,10 +1573,14 @@ public class TiandySDK implements DeviceSDK {
             tControl.m_iReqMode = 1; // 帧模式
             tControl.write();
 
+            Integer userId = downloadIdToUserIdMap.get(downloadId);
+            if (userId == null || userId < 0) {
+                logger.error("下载调速失败: 未找到downloadId对应的userId, downloadId={}", downloadId);
+                return false;
+            }
             IntByReference iConnID = new IntByReference(downloadId);
-            // 注意：DOWNLOAD_CMD_CONTROL 使用现有的 downloadId，不需要 userId 参数
-            // 但官方API需要传入userId，这里传入0（SDK内部会使用已有连接）
-            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, 0,
+            // 官方 Java Demo(Playback/Channel/SyncBusiness) 均使用 m_iLogonID 作为 DOWNLOAD_CMD_CONTROL 第二个参数
+            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId,
                     NvssdkLibrary.DOWNLOAD_CMD_CONTROL, tControl.getPointer(), tControl.size());
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
@@ -1589,7 +1677,7 @@ public class TiandySDK implements DeviceSDK {
             tDownloadTimeSpan.m_iFileAttr = 0;
 
             // 设置本地保存文件名
-            byte[] filenameBytes = localFilePath.getBytes();
+            byte[] filenameBytes = toCStringBytes(localFilePath);
             int copyLen = Math.min(filenameBytes.length, tDownloadTimeSpan.m_cLocalFilename.length - 1);
             System.arraycopy(filenameBytes, 0, tDownloadTimeSpan.m_cLocalFilename, 0, copyLen);
             tDownloadTimeSpan.m_cLocalFilename[copyLen] = 0;
@@ -1615,11 +1703,21 @@ public class TiandySDK implements DeviceSDK {
             tDownloadTimeSpan.write();
 
             IntByReference iConnID = new IntByReference();
-            int iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId,
-                    NvssdkLibrary.DOWNLOAD_CMD_TIMESPAN, tDownloadTimeSpan.getPointer(), tDownloadTimeSpan.size());
+            int iRet = NvssdkLibrary.RET_FAILED;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                iRet = nvssdkLibrary.NetClient_NetFileDownload(iConnID, userId,
+                        NvssdkLibrary.DOWNLOAD_CMD_TIMESPAN, tDownloadTimeSpan.getPointer(), tDownloadTimeSpan.size());
+                if (iRet == NvssdkLibrary.RET_SUCCESS || !isRetriableError(iRet) || attempt == 2) {
+                    break;
+                }
+                logger.warn("天地伟业按时间范围下载(指定类型)首次失败，准备重试: userId={}, channel={}, iRet={}, attempt={}",
+                        userId, channel, iRet, attempt);
+                Thread.sleep(200L * attempt);
+            }
 
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 int downloadId = iConnID.getValue();
+                downloadIdToUserIdMap.put(downloadId, userId);
 
                 // 参考官方示例：下载启动成功后调整为16倍速
                 adjustDownloadSpeed(downloadId, 16);
@@ -1650,6 +1748,7 @@ public class TiandySDK implements DeviceSDK {
         try {
             int iRet = nvssdkLibrary.NetClient_NetFileStopDownloadFile(downloadId);
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
+                downloadIdToUserIdMap.remove(downloadId);
                 logger.info("天地伟业下载停止成功: downloadId={}", downloadId);
                 return true;
             } else {
@@ -1677,14 +1776,14 @@ public class TiandySDK implements DeviceSDK {
             IntByReference piDLSize = new IntByReference();
             int iRet = nvssdkLibrary.NetClient_NetFileGetDownloadPos(downloadId, piPos, piDLSize);
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
-                int downloadedBytes = piPos.getValue(); // 已下载字节数
-                int totalBytes = piDLSize.getValue(); // 总字节数
+                long downloadedBytes = Integer.toUnsignedLong(piPos.getValue()); // 已下载字节数（按无符号处理）
+                long totalBytes = Integer.toUnsignedLong(piDLSize.getValue()); // 总字节数（按无符号处理）
 
                 // 计算百分比（0-100）
                 int progress;
                 if (totalBytes > 0) {
                     // 使用long避免溢出
-                    long progressLong = (long) downloadedBytes * 100 / totalBytes;
+                    long progressLong = downloadedBytes * 100 / totalBytes;
                     progress = (int) Math.min(progressLong, 100); // 限制在0-100之间
                 } else {
                     // 如果总大小为0，返回0或根据已下载字节数判断

@@ -252,55 +252,93 @@ public class SDKFactory {
     }
     
     /**
-     * 自动检测设备品牌
-     * 依次尝试海康、天地伟业、大华SDK登录
-     * 
-     * @param ip 设备IP
-     * @param port 设备端口
-     * @param username 用户名
-     * @param password 密码
-     * @return 检测到的品牌和登录句柄，如果都失败返回null
+     * 自动检测设备品牌（int端口版）
+     * 默认顺序：海康 -> 天地伟业 -> 大华；
+     * 对高端口（>32767）场景优先尝试大华，再尝试天地伟业(int端口)。
+     */
+    public static BrandDetectionResult detectBrand(String ip, int port, String username, String password) {
+        logger.info("开始自动检测设备品牌: {}:{}", ip, port);
+        short shortPort = (short) port;
+        boolean highPort = port > 32767 || port < -32768;
+
+        if (highPort) {
+            BrandDetectionResult dahuaResult = tryDahua(ip, shortPort, username, password);
+            if (dahuaResult != null) {
+                return dahuaResult;
+            }
+            BrandDetectionResult tiandyResult = tryTiandy(ip, port, username, password);
+            if (tiandyResult != null) {
+                return tiandyResult;
+            }
+            BrandDetectionResult hikResult = tryHikvision(ip, shortPort, username, password);
+            if (hikResult != null) {
+                return hikResult;
+            }
+        } else {
+            BrandDetectionResult hikResult = tryHikvision(ip, shortPort, username, password);
+            if (hikResult != null) {
+                return hikResult;
+            }
+            BrandDetectionResult tiandyResult = tryTiandy(ip, port, username, password);
+            if (tiandyResult != null) {
+                return tiandyResult;
+            }
+            BrandDetectionResult dahuaResult = tryDahua(ip, shortPort, username, password);
+            if (dahuaResult != null) {
+                return dahuaResult;
+            }
+        }
+
+        logger.warn("所有SDK登录都失败，无法检测设备品牌: {}:{}", ip, port);
+        return null;
+    }
+
+    /**
+     * 兼容旧调用（short端口）
      */
     public static BrandDetectionResult detectBrand(String ip, short port, String username, String password) {
-        logger.info("开始自动检测设备品牌: {}:{}", ip, port);
-        
-        // 1. 尝试海康SDK
-        if (hikvisionSDK != null) {
-            logger.debug("尝试使用海康SDK登录...");
-            int userId = hikvisionSDK.login(ip, port, username, password);
-            if (userId != -1) {
-                logger.info("设备品牌检测成功: 海康威视 (userId: {})", userId);
-                return new BrandDetectionResult("hikvision", userId, hikvisionSDK);
-            } else {
-                logger.debug("海康SDK登录失败，错误: {}", hikvisionSDK.getLastErrorString());
-            }
+        return detectBrand(ip, (int) port, username, password);
+    }
+
+    private static BrandDetectionResult tryHikvision(String ip, short port, String username, String password) {
+        if (hikvisionSDK == null) {
+            return null;
         }
-        
-        // 2. 尝试天地伟业SDK
-        if (tiandySDK != null) {
-            logger.debug("尝试使用天地伟业SDK登录...");
-            int userId = tiandySDK.login(ip, port, username, password);
-            if (userId != -1) {
-                logger.info("设备品牌检测成功: 天地伟业 (logonID: {})", userId);
-                return new BrandDetectionResult("tiandy", userId, tiandySDK);
-            } else {
-                logger.debug("天地伟业SDK登录失败，错误: {}", tiandySDK.getLastErrorString());
-            }
+        logger.debug("尝试使用海康SDK登录...");
+        int userId = hikvisionSDK.login(ip, port, username, password);
+        if (userId != -1) {
+            logger.info("设备品牌检测成功: 海康威视 (userId: {})", userId);
+            return new BrandDetectionResult("hikvision", userId, hikvisionSDK);
         }
-        
-        // 3. 尝试大华SDK
-        if (dahuaSDK != null) {
-            logger.debug("尝试使用大华SDK登录...");
-            int userId = dahuaSDK.login(ip, port, username, password);
-            if (userId != -1) {
-                logger.info("设备品牌检测成功: 大华 (userId: {})", userId);
-                return new BrandDetectionResult("dahua", userId, dahuaSDK);
-            } else {
-                logger.debug("大华SDK登录失败，错误: {}", dahuaSDK.getLastErrorString());
-            }
+        logger.debug("海康SDK登录失败，错误: {}", hikvisionSDK.getLastErrorString());
+        return null;
+    }
+
+    private static BrandDetectionResult tryTiandy(String ip, int port, String username, String password) {
+        if (tiandySDK == null) {
+            return null;
         }
-        
-        logger.warn("所有SDK登录都失败，无法检测设备品牌: {}:{}", ip, port);
+        logger.debug("尝试使用天地伟业SDK登录(int端口)...");
+        int userId = tiandySDK.loginWithIntPort(ip, port, username, password);
+        if (userId != -1) {
+            logger.info("设备品牌检测成功: 天地伟业 (logonID: {})", userId);
+            return new BrandDetectionResult("tiandy", userId, tiandySDK);
+        }
+        logger.debug("天地伟业SDK登录失败，错误: {}", tiandySDK.getLastErrorString());
+        return null;
+    }
+
+    private static BrandDetectionResult tryDahua(String ip, short port, String username, String password) {
+        if (dahuaSDK == null) {
+            return null;
+        }
+        logger.debug("尝试使用大华SDK登录...");
+        int userId = dahuaSDK.login(ip, port, username, password);
+        if (userId != -1) {
+            logger.info("设备品牌检测成功: 大华 (userId: {})", userId);
+            return new BrandDetectionResult("dahua", userId, dahuaSDK);
+        }
+        logger.debug("大华SDK登录失败，错误: {}", dahuaSDK.getLastErrorString());
         return null;
     }
     

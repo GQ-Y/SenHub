@@ -5,6 +5,8 @@ import com.digital.video.gateway.device.DeviceSDK;
 import com.digital.video.gateway.database.DeviceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 云台控制服务
@@ -12,8 +14,10 @@ import org.slf4j.LoggerFactory;
  */
 public class PTZService {
     private static final Logger logger = LoggerFactory.getLogger(PTZService.class);
+    private static final long PTZ_DUPLICATE_SUPPRESS_MS = 120L;
 
     private final DeviceManager deviceManager;
+    private final Map<String, Long> ptzCommandTsMap = new ConcurrentHashMap<>();
 
     public PTZService(DeviceManager deviceManager) {
         this.deviceManager = deviceManager;
@@ -90,7 +94,12 @@ public class PTZService {
             }
 
             // 执行云台控制
-            boolean result = sdk.ptzControl(userId, actualChannel, command, action, speed);
+            if (shouldSuppressDuplicateCommand(deviceId, actualChannel, command, action, speed)) {
+                logger.debug("云台重复命令已抑制: deviceId={}, channel={}, command={}, action={}, speed={}",
+                        deviceId, actualChannel, command, action, speed);
+                return true;
+            }
+            boolean result = executePtzWithRetry(sdk, userId, actualChannel, command, action, speed, brand);
             if (result) {
                 logger.info("云台控制成功: deviceId={}, channel={}, command={}, action={}, speed={}",
                         deviceId, actualChannel, command, action, speed);
@@ -200,5 +209,29 @@ public class PTZService {
         return "up".equals(cmd) || "down".equals(cmd) ||
                 "left".equals(cmd) || "right".equals(cmd) ||
                 "zoom_in".equals(cmd) || "zoom_out".equals(cmd);
+    }
+
+    private boolean shouldSuppressDuplicateCommand(String deviceId, int channel, String command, String action, int speed) {
+        if (!"start".equalsIgnoreCase(action)) {
+            return false;
+        }
+        String key = deviceId + "|" + channel + "|" + command + "|" + action + "|" + speed;
+        long now = System.currentTimeMillis();
+        Long lastTs = ptzCommandTsMap.put(key, now);
+        return lastTs != null && now - lastTs < PTZ_DUPLICATE_SUPPRESS_MS;
+    }
+
+    private boolean executePtzWithRetry(DeviceSDK sdk, int userId, int channel, String command, String action, int speed, String brand)
+            throws InterruptedException {
+        int maxAttempts = "tiandy".equals(brand) ? 2 : 1;
+        for (int i = 1; i <= maxAttempts; i++) {
+            if (sdk.ptzControl(userId, channel, command, action, speed)) {
+                return true;
+            }
+            if (i < maxAttempts) {
+                Thread.sleep(120L * i);
+            }
+        }
+        return false;
     }
 }

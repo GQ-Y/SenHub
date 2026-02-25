@@ -75,7 +75,7 @@ public class TiandySDKStructure {
         public int m_iChannelNo;
         public byte[] m_cNetFile = new byte[255];
         public byte[] m_cRemoteIP = new byte[16];
-        public byte padding; // 64位对齐补位(255+16=271, 补1字节到272以对齐int)
+        public byte padding;
         public int m_iNetMode;
         public int m_iTimeout;
         public int m_iTTL;
@@ -126,12 +126,15 @@ public class TiandySDKStructure {
     public static class tagNetClientPara extends Structure {
         public int iSize;
         public CLIENTINFO tCltInfo;
+        public int iCryptType;
         public Pointer pCbkFullFrm;
         public Pointer pvCbkFullFrmUsrData;
         public Pointer pCbkRawFrm;
         public Pointer pvCbkRawFrmUsrData;
         public int iIsForbidDecode;
         public Pointer pvWnd;
+        public int iVideoRenderFlag;
+        public int m_iBitRateFlag;
 
         public tagNetClientPara() {
             tCltInfo = new CLIENTINFO();
@@ -139,8 +142,9 @@ public class TiandySDKStructure {
 
         @Override
         protected List<String> getFieldOrder() {
-            return Arrays.asList("iSize", "tCltInfo", "pCbkFullFrm", "pvCbkFullFrmUsrData",
-                    "pCbkRawFrm", "pvCbkRawFrmUsrData", "iIsForbidDecode", "pvWnd");
+            return Arrays.asList("iSize", "tCltInfo", "iCryptType", "pCbkFullFrm", "pvCbkFullFrmUsrData",
+                    "pCbkRawFrm", "pvCbkRawFrmUsrData", "iIsForbidDecode", "pvWnd",
+                    "iVideoRenderFlag", "m_iBitRateFlag");
         }
     }
 

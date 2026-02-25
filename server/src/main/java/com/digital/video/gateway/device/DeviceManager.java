@@ -13,6 +13,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 设备管理器
@@ -36,6 +39,21 @@ public class DeviceManager {
     private final Map<String, Integer> tiandyPreviewConnectMap = new ConcurrentHashMap<>();
     /** 设备健康状态（天地伟业：仅 HEALTHY 时处理事件/抓图） */
     private final Map<String, DeviceInfo.HealthStatus> deviceHealthStatusMap = new ConcurrentHashMap<>();
+    /** 设备运行时状态（用于观察登录/预览/下载等阶段） */
+    private final Map<String, RuntimeState> deviceRuntimeStateMap = new ConcurrentHashMap<>();
+    /** 天地伟业预览启动线程池，避免登录风暴时一设备一线程 */
+    private final ExecutorService tiandyPreviewStarterExecutor = Executors.newFixedThreadPool(8, r -> {
+        Thread t = new Thread(r, "TiandyPreviewStarter");
+        t.setDaemon(true);
+        return t;
+    });
+
+    public enum RuntimeState {
+        OFFLINE,
+        LOGGED_IN,
+        PREVIEWING,
+        DEGRADED
+    }
 
     public DeviceManager(Database database, Config.DeviceConfig config) {
         this.database = database;
@@ -109,7 +127,7 @@ public class DeviceManager {
                     return false;
                 }
                 logger.debug("使用指定品牌SDK登录: {} (品牌: {})", deviceId, brand);
-                // 天地伟业SDK需要使用int类型端口（支持所有端口，包括3000和37777）
+                // 天地伟业SDK需要使用int类型端口（默认常见为3000，也支持自定义端口）
                 // 因为其结构体中端口是int类型，而不是short类型
                 if ("tiandy".equals(brand)) {
                     TiandySDK tiandySDK = (TiandySDK) sdk;
@@ -120,34 +138,42 @@ public class DeviceManager {
             } else {
                 // 只有品牌为auto时才进行自动检测
                 logger.debug("品牌为auto，开始自动检测设备品牌: {}", deviceId);
-                // 如果端口大于32767，优先尝试天地伟业SDK（因为天地伟业默认端口37777）
-                if (port > 32767) {
-                    DeviceSDK tiandySDK = SDKFactory.getSDK("tiandy");
-                    if (tiandySDK != null && tiandySDK instanceof TiandySDK) {
-                        logger.debug("端口大于32767，优先尝试天地伟业SDK");
-                        int tiandyUserId = ((TiandySDK) tiandySDK).loginWithIntPort(device.getIp(), port, username,
-                                password);
-                        if (tiandyUserId != -1) {
-                            sdk = tiandySDK;
-                            userId = tiandyUserId;
-                            detectedBrand = "tiandy";
-                            device.setBrand(detectedBrand);
-                            logger.info("自动检测到设备品牌: {} (品牌: tiandy, 端口: {})", deviceId, port);
-                        } else {
-                            // 天地伟业失败，继续尝试其他SDK
-                            logger.debug("天地伟业SDK登录失败，继续尝试其他SDK");
-                        }
-                    }
-                }
 
                 // 如果还没有成功，尝试标准检测流程
                 if (userId == -1) {
-                    // 对于端口大于32767的情况，优先尝试天地伟业SDK
-                    if (port > 32767) {
+                    // 1) 先走SDKFactory统一探测流程（支持int端口）
+                    SDKFactory.BrandDetectionResult result = SDKFactory.detectBrand(
+                            device.getIp(), port, username, password);
+                    if (result != null) {
+                        sdk = result.getSdk();
+                        userId = result.getUserId();
+                        detectedBrand = result.getBrand();
+                        // 保存检测到的品牌
+                        device.setBrand(detectedBrand);
+                        logger.info("自动检测到设备品牌: {} (品牌: {})", deviceId, detectedBrand);
+                    }
+
+                    // 2) 高端口场景兜底：37777 更常见于大华，优先尝试大华
+                    if (userId == -1 && port > 32767) {
+                        DeviceSDK dahuaSDK = SDKFactory.getSDK("dahua");
+                        if (dahuaSDK != null) {
+                            int dahuaUserId = dahuaSDK.login(device.getIp(), (short) port, username, password);
+                            if (dahuaUserId != -1) {
+                                sdk = dahuaSDK;
+                                userId = dahuaUserId;
+                                detectedBrand = "dahua";
+                                device.setBrand(detectedBrand);
+                                logger.info("自动检测到设备品牌: {} (品牌: dahua, 端口: {})", deviceId, port);
+                            }
+                        }
+                    }
+
+                    // 3) 天地伟业兜底：使用 int 端口尝试，避免 short 端口截断问题
+                    if (userId == -1) {
                         DeviceSDK tiandySDK = SDKFactory.getSDK("tiandy");
-                        if (tiandySDK != null && tiandySDK instanceof TiandySDK) {
-                            int tiandyUserId = ((TiandySDK) tiandySDK).loginWithIntPort(device.getIp(), port, username,
-                                    password);
+                        if (tiandySDK instanceof TiandySDK) {
+                            int tiandyUserId = ((TiandySDK) tiandySDK).loginWithIntPort(
+                                    device.getIp(), port, username, password);
                             if (tiandyUserId != -1) {
                                 sdk = tiandySDK;
                                 userId = tiandyUserId;
@@ -155,20 +181,6 @@ public class DeviceManager {
                                 device.setBrand(detectedBrand);
                                 logger.info("自动检测到设备品牌: {} (品牌: tiandy, 端口: {})", deviceId, port);
                             }
-                        }
-                    }
-
-                    // 如果还没有成功，尝试标准检测流程（使用short端口）
-                    if (userId == -1 && port <= 32767) {
-                        SDKFactory.BrandDetectionResult result = SDKFactory.detectBrand(
-                                device.getIp(), (short) port, username, password);
-                        if (result != null) {
-                            sdk = result.getSdk();
-                            userId = result.getUserId();
-                            detectedBrand = result.getBrand();
-                            // 保存检测到的品牌
-                            device.setBrand(detectedBrand);
-                            logger.info("自动检测到设备品牌: {} (品牌: {})", deviceId, detectedBrand);
                         }
                     }
 
@@ -190,6 +202,7 @@ public class DeviceManager {
             if (userId != -1) {
                 deviceLoginMap.put(deviceId, userId);
                 deviceSDKMap.put(deviceId, sdk);
+                deviceRuntimeStateMap.put(deviceId, RuntimeState.LOGGED_IN);
                 device.setUserId(userId);
                 device.setStatus(1);
                 device.setBrand(detectedBrand);
@@ -211,7 +224,7 @@ public class DeviceManager {
                     final int finalUserId = userId;
                     final TiandySDK finalSdk = (TiandySDK) sdk;
 
-                    new Thread(() -> {
+                    tiandyPreviewStarterExecutor.submit(() -> {
                         try {
                             logger.info("天地伟业设备登录成功,启动预览: deviceId={}, userId={}", finalDeviceId, finalUserId);
 
@@ -224,16 +237,19 @@ public class DeviceManager {
                             if (connectId >= 0) {
                                 tiandyPreviewConnectMap.put(finalDeviceId, connectId);
                                 deviceHealthStatusMap.put(finalDeviceId, DeviceInfo.HealthStatus.HEALTHY);
+                                deviceRuntimeStateMap.put(finalDeviceId, RuntimeState.PREVIEWING);
                                 logger.info("天地伟业预览已启动: deviceId={}, connectId={}, channel={}", finalDeviceId,
                                         connectId, channel);
                             } else {
                                 deviceHealthStatusMap.put(finalDeviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+                                deviceRuntimeStateMap.put(finalDeviceId, RuntimeState.DEGRADED);
                                 logger.warn("天地伟业预览启动失败: deviceId={}, userId={}", finalDeviceId, finalUserId);
                             }
                         } catch (Exception e) {
+                            deviceRuntimeStateMap.put(finalDeviceId, RuntimeState.DEGRADED);
                             logger.error("天地伟业预览启动异常: deviceId={}", finalDeviceId, e);
                         }
-                    }, "TiandyPreviewStarter-" + deviceId).start();
+                    });
 
                     // 登录时先标记为预览不可用,等待延迟启动完成
                     deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
@@ -281,12 +297,14 @@ public class DeviceManager {
                 logger.info("天地伟业预览已停止: deviceId={}, connectId={}", deviceId, previewConnectId);
             }
             deviceHealthStatusMap.remove(deviceId);
+            deviceRuntimeStateMap.put(deviceId, RuntimeState.OFFLINE);
         }
 
         boolean result = sdk.logout(userId);
         // 无论 SDK 登出是否成功，都清除本地登录状态，避免“登出后仍显示已登录”
         deviceLoginMap.remove(deviceId);
         deviceSDKMap.remove(deviceId);
+        deviceRuntimeStateMap.put(deviceId, RuntimeState.OFFLINE);
         database.updateDeviceStatus(deviceId, 0, -1);
         if (result) {
             logger.info("设备登出成功: {}", deviceId);
@@ -342,6 +360,7 @@ public class DeviceManager {
                 logger.info("天地伟业预览复用已清除(抓图失败或连接无效): deviceId={}, connectId={}", deviceId, previewConnectId);
             }
             deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+            deviceRuntimeStateMap.put(deviceId, RuntimeState.DEGRADED);
         }
     }
 
@@ -359,9 +378,11 @@ public class DeviceManager {
         int connectId = getTiandyPreviewConnectId(deviceId);
         if (connectId >= 0) {
             deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.HEALTHY);
+            deviceRuntimeStateMap.put(deviceId, RuntimeState.PREVIEWING);
             return DeviceInfo.HealthStatus.HEALTHY;
         }
         deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE);
+        deviceRuntimeStateMap.put(deviceId, RuntimeState.DEGRADED);
         return DeviceInfo.HealthStatus.PREVIEW_UNAVAILABLE;
     }
 
@@ -396,10 +417,17 @@ public class DeviceManager {
         if (connectId >= 0) {
             tiandyPreviewConnectMap.put(deviceId, connectId);
             deviceHealthStatusMap.put(deviceId, DeviceInfo.HealthStatus.HEALTHY);
+            deviceRuntimeStateMap.put(deviceId, RuntimeState.PREVIEWING);
             logger.info("天地伟业预览已重新建立: deviceId={}, connectId={}, channel={}", deviceId, connectId, channel);
             return connectId;
         }
+        deviceRuntimeStateMap.put(deviceId, RuntimeState.DEGRADED);
         return -1;
+    }
+
+    /** 获取设备运行时状态（未记录时返回 OFFLINE） */
+    public RuntimeState getDeviceRuntimeState(String deviceId) {
+        return deviceRuntimeStateMap.getOrDefault(deviceId, RuntimeState.OFFLINE);
     }
 
     /**
@@ -505,7 +533,10 @@ public class DeviceManager {
             }
             deviceLoginMap.remove(deviceId);
             deviceSDKMap.remove(deviceId);
+            deviceRuntimeStateMap.put(deviceId, RuntimeState.OFFLINE);
             logger.info("设备离线，已从登录映射中移除: {} (userId: {})", deviceId, userId);
+        } else if (status == 1) {
+            deviceRuntimeStateMap.put(deviceId, RuntimeState.LOGGED_IN);
         }
 
         logger.info("设备状态已更新: {} ({} -> {})", deviceId, oldStatus, status);
@@ -518,6 +549,15 @@ public class DeviceManager {
     public void logoutAll() {
         for (String deviceId : deviceLoginMap.keySet()) {
             logoutDevice(deviceId);
+        }
+        tiandyPreviewStarterExecutor.shutdown();
+        try {
+            if (!tiandyPreviewStarterExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                tiandyPreviewStarterExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            tiandyPreviewStarterExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 

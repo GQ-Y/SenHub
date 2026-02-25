@@ -35,11 +35,15 @@ public class RecordingTaskService {
     
     // 任务是否需要发送Webhook通知的标记 (key: taskId, value: webhookEnabled)
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> taskWebhookSettings = new java.util.concurrent.ConcurrentHashMap<>();
+    // 下载进度读取失败计数（短暂抖动容错，避免一次异常就把任务打成失败）
+    private final java.util.concurrent.ConcurrentHashMap<String, Integer> downloadProgressFailCount = new java.util.concurrent.ConcurrentHashMap<>();
 
     // 用于执行下载任务的线程池
     private final ExecutorService executorService = Executors.newFixedThreadPool(5);
     // 用于轮询下载进度的调度器
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    // 下载并发闸门：避免批量任务同时抢占磁盘与SDK资源导致抖动
+    private final Semaphore downloadConcurrencyLimiter = new Semaphore(3);
 
     // 任务状态常量
     public static final int STATUS_PENDING = 0;
@@ -113,6 +117,7 @@ public class RecordingTaskService {
 
             int progress = sdk.getDownloadProgress(task.getDownloadHandle());
             if (progress >= 0 && progress <= 100) {
+                downloadProgressFailCount.remove(task.getTaskId());
                 task.setProgress(progress);
                 if (progress == 100) {
                     handleDownloadComplete(task);
@@ -120,11 +125,20 @@ public class RecordingTaskService {
                     updateRecordingTask(task.getTaskId(), task);
                 }
             } else if (progress < 0) {
-                logger.error("下载进度异常, taskId={}, progress={}", task.getTaskId(), progress);
+                int failCount = downloadProgressFailCount.compute(task.getTaskId(),
+                        (k, v) -> v == null ? 1 : v + 1);
+                if (failCount < 3) {
+                    logger.warn("下载进度异常(可恢复)，等待下次轮询: taskId={}, progress={}, failCount={}",
+                            task.getTaskId(), progress, failCount);
+                    continue;
+                }
+                logger.error("下载进度连续异常，任务置失败: taskId={}, progress={}, failCount={}",
+                        task.getTaskId(), progress, failCount);
                 task.setStatus(STATUS_FAILED);
-                task.setErrorMessage("SDK 下载进度检测异常");
+                task.setErrorMessage("SDK 下载进度检测异常(连续失败)");
                 updateRecordingTask(task.getTaskId(), task);
                 sdk.stopDownload(task.getDownloadHandle());
+                downloadProgressFailCount.remove(task.getTaskId());
             }
         }
     }
@@ -135,6 +149,7 @@ public class RecordingTaskService {
     private void handleDownloadComplete(RecordingTask task) {
         logger.info("录像下载完成, 开始处理: taskId={}, file={}", task.getTaskId(), task.getLocalFilePath());
         task.setStatus(STATUS_COMPLETED);
+        downloadProgressFailCount.remove(task.getTaskId());
 
         // 停止 SDK 内部句柄
         DeviceSDK sdk = deviceManager.getDeviceSDK(task.getDeviceId());
@@ -597,8 +612,13 @@ public class RecordingTaskService {
      * 执行实际的下载逻辑
      */
     private void executeDownload(RecordingTask task) {
+        boolean permitAcquired = false;
         try {
             logger.info("开始执行录像下载任务: taskId={}, deviceId={}", task.getTaskId(), task.getDeviceId());
+            permitAcquired = downloadConcurrencyLimiter.tryAcquire(30, TimeUnit.SECONDS);
+            if (!permitAcquired) {
+                throw new Exception("下载并发繁忙，请稍后重试");
+            }
 
             // 1. 确保设备在线并登录
             DeviceInfo device = deviceManager.getDevice(task.getDeviceId());
@@ -649,6 +669,10 @@ public class RecordingTaskService {
             task.setStatus(STATUS_FAILED);
             task.setErrorMessage(e.getMessage());
             updateRecordingTask(task.getTaskId(), task);
+        } finally {
+            if (permitAcquired) {
+                downloadConcurrencyLimiter.release();
+            }
         }
     }
 }

@@ -77,8 +77,8 @@ public class RecorderService {
             // 生成录制文件名
             SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
             String timestamp = sdf.format(new Date());
-            String filePath = config.getRecordPath() + "/record_" + 
-                deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".mp4";
+            String filePath = config.getRecordPath() + "/record_" +
+                deviceId.replace(".", "_").replace(":", "_") + "_" + timestamp + ".sdv";
             
             // 确保目录存在
             File recordDir = new File(config.getRecordPath());
@@ -129,14 +129,17 @@ public class RecorderService {
         
         try {
             // 停止录制
-            boolean result = sdk.stopRecording(session.getConnectId());
-            if (result) {
-                logger.info("设备 {} 录制已停止: {}", deviceId, session.getFilePath());
-                return true;
-            } else {
-                logger.error("设备 {} 录制停止失败", deviceId);
-                return false;
+            boolean stopRecordResult = sdk.stopRecording(session.getConnectId());
+            boolean stopPreviewResult = sdk.stopRealPlay(session.getConnectId());
+            if (!stopPreviewResult) {
+                logger.warn("设备 {} 录制停止后预览释放失败: connectId={}", deviceId, session.getConnectId());
             }
+            if (stopRecordResult) {
+                logger.info("设备 {} 录制已停止并释放预览: {}", deviceId, session.getFilePath());
+                return true;
+            }
+            logger.error("设备 {} 录制停止失败", deviceId);
+            return false;
         } catch (Exception e) {
             logger.error("停止录制异常: deviceId={}", deviceId, e);
             return false;
