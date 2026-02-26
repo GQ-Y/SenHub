@@ -223,9 +223,8 @@ public class DeviceController {
             String brand = (String) body.getOrDefault("brand", DeviceInfo.BRAND_AUTO);
             device.setBrand(brand != null ? brand : DeviceInfo.BRAND_AUTO);
 
-            // 生成包含认证信息的RTSP URL
-            String rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(),
-                    device.getPassword());
+            // 生成包含认证信息的RTSP URL（按品牌使用正确路径：天地伟业 /video1，海康等 /Streaming/Channels/101）
+            String rtspUrl = generateRtspUrlWithAuth(device);
             device.setRtspUrl(rtspUrl);
 
             // 保存到数据库
@@ -309,9 +308,8 @@ public class DeviceController {
                 }
             }
 
-            // 更新RTSP URL
-            String rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(),
-                    device.getPassword());
+            // 更新RTSP URL（按品牌使用正确路径）
+            String rtspUrl = generateRtspUrlWithAuth(device);
             device.setRtspUrl(rtspUrl);
 
             // 保存到数据库
@@ -487,11 +485,10 @@ public class DeviceController {
         map.put("lastSeen", formatLastSeen(device.getLastSeen()));
         map.put("firmware", ""); // 可以从设备信息中获取
 
-        // 如果rtspUrl不包含认证信息，生成包含认证信息的URL
+        // 如果rtspUrl不包含认证信息，生成包含认证信息的URL（按品牌路径）
         String rtspUrl = device.getRtspUrl();
         if (rtspUrl == null || rtspUrl.isEmpty() || !rtspUrl.contains("@")) {
-            rtspUrl = generateRtspUrlWithAuth(device.getIp(), device.getPort(), device.getUsername(),
-                    device.getPassword());
+            rtspUrl = generateRtspUrlWithAuth(device);
         }
         map.put("rtspUrl", rtspUrl);
         map.put("username", device.getUsername());
@@ -535,31 +532,40 @@ public class DeviceController {
         return ip + ":" + port;
     }
 
+    private static final int DEFAULT_RTSP_PORT = 554;
+
     /**
-     * 生成RTSP URL
+     * 根据品牌返回 RTSP 路径。
+     * 天地伟业：/video1；大华：/cam/realmonitor?channel=N&subtype=0；海康/默认：/Streaming/Channels/101
      */
-    private String generateRtspUrl(String ip, int port) {
-        // 默认RTSP端口是554，如果port是8000（SDK端口），则使用554
-        int rtspPort = (port == 8000) ? 554 : port;
-        return "rtsp://" + ip + ":" + rtspPort + "/Streaming/Channels/101";
+    private static String getRtspPathByBrand(DeviceInfo device) {
+        String brand = device.getBrand();
+        if (brand == null) brand = "";
+        switch (brand.toLowerCase()) {
+            case "tiandy":
+                return "/video1";
+            case "dahua":
+                int ch = device.getChannel() > 0 ? device.getChannel() : 1;
+                return "/cam/realmonitor?channel=" + ch + "&subtype=0";
+            default:
+                return "/Streaming/Channels/101";
+        }
     }
 
     /**
-     * 生成包含认证信息的RTSP URL
+     * 根据设备生成包含认证信息的 RTSP URL（按品牌路径 + 统一默认 RTSP 端口 554）
      */
-    private String generateRtspUrlWithAuth(String ip, int port, String username, String password) {
-        // 默认RTSP端口是554，如果port是8000（SDK端口），则使用554
-        int rtspPort = (port == 8000) ? 554 : port;
-
+    private String generateRtspUrlWithAuth(DeviceInfo device) {
+        String ip = device.getIp();
+        String path = getRtspPathByBrand(device);
+        String username = device.getUsername();
+        String password = device.getPassword();
         if (username != null && !username.isEmpty() && password != null && !password.isEmpty()) {
-            // URL编码用户名和密码，避免特殊字符问题
             String encodedUsername = java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8);
             String encodedPassword = java.net.URLEncoder.encode(password, java.nio.charset.StandardCharsets.UTF_8);
-            return "rtsp://" + encodedUsername + ":" + encodedPassword + "@" + ip + ":" + rtspPort
-                    + "/Streaming/Channels/101";
-        } else {
-            return generateRtspUrl(ip, port);
+            return "rtsp://" + encodedUsername + ":" + encodedPassword + "@" + ip + ":" + DEFAULT_RTSP_PORT + path;
         }
+        return "rtsp://" + ip + ":" + DEFAULT_RTSP_PORT + path;
     }
 
     /**
@@ -824,9 +830,9 @@ public class DeviceController {
             if (host.contains(":")) host = host.substring(0, host.indexOf(':'));
             Map<String, String> urls = zlmProxyService.getLiveUrl(deviceId, host);
             if (urls == null) {
-                logger.warn("获取直播地址返回 404: deviceId={} (设备不存在或无 RTSP 地址)", deviceId);
+                logger.warn("获取直播地址返回 404: deviceId={} (设备不存在、无 RTSP 地址或拉流失败/超时，见服务端日志)", deviceId);
                 response.status(404);
-                return createErrorResponse(404, "设备不存在或无 RTSP 地址");
+                return createErrorResponse(404, "设备不存在、无 RTSP 地址或拉流失败");
             }
             Map<String, Object> data = new HashMap<>(urls);
             response.status(200);

@@ -18,6 +18,8 @@ public class ZlmMediaService {
     private final Config.ZlmConfig config;
     private ZLMApi api;
     private MK_INI mkIni;
+    /** 保持对 MK_EVENTS 的强引用，防止 JNA 回调被 GC 回收 */
+    private MK_EVENTS mkEvents;
     private boolean started;
 
     public ZlmMediaService(Config.ZlmConfig config) {
@@ -26,7 +28,7 @@ public class ZlmMediaService {
 
     private static Config.ZlmConfig defaultConfig() {
         Config.ZlmConfig c = new Config.ZlmConfig();
-        c.setEnabled(true);  // 未读取到 config 时也默认启动 ZLM
+        c.setEnabled(true);
         return c;
     }
 
@@ -44,6 +46,7 @@ public class ZlmMediaService {
 
     /**
      * 启动 ZLM 内嵌服务（HTTP/RTSP/RTMP 端口）
+     * 按 zlm4j 示例：先 mk_ini_default + 设置全局协议参数 → 再 mk_env_init1 初始化
      */
     public void start() {
         if (!isEnabled()) {
@@ -52,17 +55,33 @@ public class ZlmMediaService {
         }
         try {
             api = Native.load("mk_api", ZLMApi.class);
-            // mk_env_init2(logLevel, logMask, logFileDay, logDir, maxLogSize, logLevelFile, ...)
-            api.mk_env_init2(1, 1, 1, null, 0, 0, null, 0, null, null);
+
+            // 1. 先获取默认 INI 并设置全局协议配置（与 zlm4j demo 一致）
             mkIni = api.mk_ini_default();
             if (config.getMediaServerId() != null && !config.getMediaServerId().isEmpty()) {
                 api.mk_ini_set_option(mkIni, "general.mediaServerId", config.getMediaServerId());
             }
-            MK_EVENTS events = new MK_EVENTS();
-            events.on_mk_media_changed = (regist, sender) ->
-                    logger.debug("ZLM 流状态变化: regist={}, sender={}", regist, sender);
-            api.mk_events_listen(events);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_rtsp", 1);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_rtmp", 1);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_hls", 1);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_ts", 1);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_fmp4", 1);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_audio", 1);
+            api.mk_ini_set_option_int(mkIni, "protocol.enable_mp4", 0);
+            api.mk_ini_set_option_int(mkIni, "protocol.auto_close", 0);
+            api.mk_ini_set_option_int(mkIni, "general.streamNoneReaderDelayMS", 30000);
+            api.mk_ini_set_option_int(mkIni, "general.maxStreamWaitMS", 5000);
 
+            // 2. 再调用 mk_env_init1 初始化（使用已设置的 INI 配置）
+            api.mk_env_init1(0, 2, 1, null, 1, 0, null, 0, null, null);
+
+            // 3. 注册全局事件回调（保持强引用防止 GC）
+            mkEvents = new MK_EVENTS();
+            mkEvents.on_mk_media_changed = (regist, sender) ->
+                    logger.info("ZLM 流状态变化: regist={}, sender={}", regist, sender);
+            api.mk_events_listen(mkEvents);
+
+            // 4. 启动各协议端口
             short httpPort = api.mk_http_server_start((short) config.getHttpPort(), 0);
             if (httpPort <= 0) {
                 logger.warn("ZLM HTTP 服务启动失败，端口可能占用: {}", config.getHttpPort());
@@ -95,6 +114,7 @@ public class ZlmMediaService {
                 api.mk_ini_release(mkIni);
                 mkIni = null;
             }
+            mkEvents = null;
             started = false;
             logger.info("ZLM 内嵌服务已停止");
         } catch (Throwable e) {

@@ -938,7 +938,8 @@ public class Main {
                     "http://127.0.0.1:" + zlmMediaService.getConfig().getHttpPort(),
                     zlmMediaService.getConfig().getApiSecret());
             zlmProxyService = new com.digital.video.gateway.service.ZlmProxyService(
-                    zlmApiClient, deviceManager, zlmMediaService.getConfig().getHttpPort(), zlmMediaService.getConfig().getRtmpPort());
+                    zlmMediaService.getApi(), zlmApiClient, deviceManager,
+                    zlmMediaService.getConfig().getHttpPort(), zlmMediaService.getConfig().getRtmpPort());
         }
         DeviceController deviceController = new DeviceController(deviceManager, database, recorder,
                 captureService, ptzService, ptzMonitorService, playbackService, hikvisionSDKForController,
