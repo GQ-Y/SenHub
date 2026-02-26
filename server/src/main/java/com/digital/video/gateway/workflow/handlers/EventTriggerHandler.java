@@ -107,9 +107,7 @@ public class EventTriggerHandler implements FlowNodeHandler {
         if (lastTime != null) {
             long elapsedSeconds = (now - lastTime) / 1000;
             if (elapsedSeconds < debounceSeconds) {
-                logger.info("事件触发器防抖: flowId={}, deviceId={}, alarmType={}, 距上次触发{}秒, 防抖间隔{}秒, 跳过执行",
-                        flowId, deviceId, alarmType, elapsedSeconds, debounceSeconds);
-                return false;  // 返回false阻止后续节点执行
+                return false;  // 被防抖间隔过滤，不执行、不打日志
             }
         }
         

@@ -109,7 +109,7 @@ public class AlarmRuleService {
             actions = "{}";
         }
         
-        String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, flow_id, event_type_ids, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO alarm_rules (rule_id, name, alarm_type, scope, device_id, assembly_id, enabled, priority, flow_id, event_type_ids, event_keys, actions, conditions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getRuleId());
@@ -122,8 +122,9 @@ public class AlarmRuleService {
             pstmt.setInt(8, rule.getPriority());
             pstmt.setString(9, rule.getFlowId());
             pstmt.setString(10, rule.getEventTypeIds());
-            pstmt.setString(11, actions);
-            pstmt.setString(12, rule.getConditions());
+            pstmt.setString(11, rule.getEventKeys());
+            pstmt.setString(12, actions);
+            pstmt.setString(13, rule.getConditions());
             pstmt.executeUpdate();
             return getAlarmRule(rule.getRuleId());
         } catch (SQLException e) {
@@ -136,6 +137,11 @@ public class AlarmRuleService {
      * 更新规则
      */
     public AlarmRule updateAlarmRule(String ruleId, AlarmRule rule) {
+        // 兼容：未传 eventKeys 时保留库中原值，避免被覆盖为 null
+        AlarmRule existing = getAlarmRule(ruleId);
+        if (existing != null && rule.getEventKeys() == null) {
+            rule.setEventKeys(existing.getEventKeys());
+        }
         // 兼容新版本：如果没有alarmType但有eventTypeIds，使用默认值
         String alarmType = rule.getAlarmType();
         if (alarmType == null || alarmType.isEmpty()) {
@@ -147,7 +153,7 @@ public class AlarmRuleService {
             actions = "{}";
         }
         
-        String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, flow_id = ?, event_type_ids = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
+        String sql = "UPDATE alarm_rules SET name = ?, alarm_type = ?, scope = ?, device_id = ?, assembly_id = ?, enabled = ?, priority = ?, flow_id = ?, event_type_ids = ?, event_keys = ?, actions = ?, conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_id = ?";
         Connection conn = database.getConnection(); try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, rule.getName());
@@ -159,9 +165,10 @@ public class AlarmRuleService {
             pstmt.setInt(7, rule.getPriority());
             pstmt.setString(8, rule.getFlowId());
             pstmt.setString(9, rule.getEventTypeIds());
-            pstmt.setString(10, actions);
-            pstmt.setString(11, rule.getConditions());
-            pstmt.setString(12, ruleId);
+            pstmt.setString(10, rule.getEventKeys());
+            pstmt.setString(11, actions);
+            pstmt.setString(12, rule.getConditions());
+            pstmt.setString(13, ruleId);
             pstmt.executeUpdate();
             return getAlarmRule(ruleId);
         } catch (SQLException e) {
@@ -358,32 +365,39 @@ public class AlarmRuleService {
     }
     
     /**
-     * 获取规则的事件键列表
-     * 如果规则配置了eventKeys，直接返回
-     * 如果规则只有eventTypeIds，将其转换为eventKeys
+     * 获取规则的事件键列表（显式 eventKeys 与 eventTypeIds 转换结果取并集，便于规则同时匹配多种事件）
      */
     private List<String> getRuleEventKeys(AlarmRule rule) {
-        // 优先使用eventKeys
+        List<String> merged = new ArrayList<>();
+        
+        // 1. 解析显式配置的 eventKeys
         String eventKeysStr = rule.getEventKeys();
         if (eventKeysStr != null && !eventKeysStr.isEmpty() && !eventKeysStr.trim().equals("null")) {
             try {
                 List<String> eventKeys = objectMapper.readValue(eventKeysStr, 
                         new TypeReference<List<String>>() {});
-                if (eventKeys != null && !eventKeys.isEmpty()) {
-                    return eventKeys;
+                if (eventKeys != null) {
+                    for (String k : eventKeys) {
+                        if (k != null && !k.isEmpty() && !merged.contains(k)) merged.add(k);
+                    }
                 }
             } catch (Exception e) {
                 logger.error("解析eventKeys失败: ruleId={}, eventKeys={}", rule.getRuleId(), eventKeysStr, e);
             }
         }
         
-        // 如果没有eventKeys，尝试从eventTypeIds转换
+        // 2. 从 eventTypeIds 转换并合并（不重复）
         String eventTypeIdsStr = rule.getEventTypeIds();
         if (eventTypeIdsStr != null && !eventTypeIdsStr.isEmpty() && !eventTypeIdsStr.trim().equals("null")) {
-            return convertEventTypeIdsToEventKeys(eventTypeIdsStr);
+            List<String> fromIds = convertEventTypeIdsToEventKeys(eventTypeIdsStr);
+            if (fromIds != null) {
+                for (String k : fromIds) {
+                    if (k != null && !k.isEmpty() && !merged.contains(k)) merged.add(k);
+                }
+            }
         }
         
-        return null;
+        return merged.isEmpty() ? null : merged;
     }
     
     /**

@@ -103,19 +103,23 @@ public class DashboardController {
             List<Map<String, Object>> alarmTrendData = database.getAlarmEventTrend24h();
             List<Map<String, Object>> workflowTrendData = database.getWorkflowExecutionTrend24h();
             List<Map<String, Object>> chartData = new ArrayList<>();
-            String[] timePoints = { "00:00", "04:00", "08:00", "12:00", "16:00", "20:00" };
+            // 24 小时整点，与趋势接口一致，保证报警/工作流在每个小时都有展示
+            String[] timePoints = new String[24];
+            for (int i = 0; i < 24; i++) {
+                timePoints[i] = String.format("%02d:00", i);
+            }
 
             Map<String, Integer> alarmMap = new HashMap<>();
             for (Map<String, Object> data : alarmTrendData) {
                 String name = (String) data.get("name");
-                Integer alarms = (Integer) data.get("alarms");
-                alarmMap.put(name, alarms != null ? alarms : 0);
+                Object a = data.get("alarms");
+                alarmMap.put(name, a instanceof Number ? ((Number) a).intValue() : 0);
             }
             Map<String, Integer> workflowMap = new HashMap<>();
             for (Map<String, Object> data : workflowTrendData) {
                 String name = (String) data.get("name");
-                Integer workflows = (Integer) data.get("workflows");
-                workflowMap.put(name, workflows != null ? workflows : 0);
+                Object w = data.get("workflows");
+                workflowMap.put(name, w instanceof Number ? ((Number) w).intValue() : 0);
             }
             for (String time : timePoints) {
                 Map<String, Object> dataPoint = new HashMap<>();

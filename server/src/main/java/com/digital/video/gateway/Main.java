@@ -525,7 +525,7 @@ public class Main {
 
         // WebhookHandler 传入 ConfigService，从数据库读取全局通知配置
         executor.registerHandler("webhook", new WebhookHandler(configService));
-        executor.registerHandler("record", new RecordHandler(recordingTaskService));
+        executor.registerHandler("record", new RecordHandler(recordingTaskService, ossService));
         executor.registerHandler("ptz_control", new PTZControlHandler(ptzService));
         executor.registerHandler("delay", new com.digital.video.gateway.workflow.handlers.DelayHandler());
         executor.registerHandler("condition", new com.digital.video.gateway.workflow.handlers.ConditionHandler());

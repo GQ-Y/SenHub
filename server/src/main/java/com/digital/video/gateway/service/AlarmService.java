@@ -216,10 +216,9 @@ public class AlarmService {
             }
             return now; // 超过防抖期或首次，更新为当前时间
         });
-        boolean shouldProcess = (previousTime == null || (now - previousTime) >= alarmDebounceIntervalMs);
+        // 只有本次“通过防抖”时 compute 才返回 now，此时应处理；被防抖时返回的是旧的 lastTime（被防抖的不打日志）
+        boolean shouldProcess = (previousTime != null && previousTime == now);
         if (!shouldProcess) {
-            logger.debug("报警防抖，跳过处理: deviceId={}, eventKey={}, alarmType={}, 防抖间隔: {}ms",
-                    deviceId, eventKey, alarmType, alarmDebounceIntervalMs);
             return;
         }
         
@@ -324,8 +323,8 @@ public class AlarmService {
                 logger.info("已设置alarmTypeName到context: {} (原始: {})", alarmTypeName, alarmType);
             }
             
+            Set<String> executedFlows = new HashSet<>();
             if (!matchedRules.isEmpty()) {
-                Set<String> executedFlows = new HashSet<>();
                 for (int i = 0; i < matchedRules.size(); i++) {
                     AlarmRule rule = matchedRules.get(i);
                     String flowId = rule.getFlowId();
@@ -356,7 +355,8 @@ public class AlarmService {
             alarmRecord.setCaptureUrl(captureUrl);
             alarmRecord.setVideoUrl(videoUrl);
             alarmRecord.setStatus("processed");
-            if (alarmRecordService != null) {
+            // 报警统计只统计：触发了规则且至少执行了一个工作流（未被同事件防抖过滤）的报警
+            if (!executedFlows.isEmpty() && alarmRecordService != null) {
                 alarmRecordService.createAlarmRecord(alarmRecord);
             }
         } catch (Exception e) {
@@ -484,8 +484,6 @@ public class AlarmService {
             // 如果会被防抖，则完全跳过不执行任何工作流
             context.setFlowId(rule.getFlowId());
             if (shouldSkipFlowDueToDebounce(definition, context)) {
-                logger.info("事件触发器防抖，完全跳过工作流执行: flowId={}, deviceId={}, alarmType={}", 
-                        rule.getFlowId(), context.getDeviceId(), context.getAlarmType());
                 return false;
             }
             
@@ -565,9 +563,7 @@ public class AlarmService {
                     long now = System.currentTimeMillis();
                     long elapsedSeconds = (now - lastTime) / 1000;
                     if (elapsedSeconds < debounceSeconds) {
-                        logger.info("事件触发器防抖，完全跳过工作流执行: flowId={}, deviceId={}, alarmType={}, 距上次触发{}秒, 防抖间隔{}秒", 
-                                flowId, deviceId, alarmType, elapsedSeconds, debounceSeconds);
-                        return true; // 被防抖，应该跳过
+                        return true; // 被防抖，应该跳过（不打日志）
                     }
                 }
             } catch (Exception e) {

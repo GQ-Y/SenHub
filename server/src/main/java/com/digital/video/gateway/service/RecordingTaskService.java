@@ -35,6 +35,8 @@ public class RecordingTaskService {
     
     // 任务是否需要发送Webhook通知的标记 (key: taskId, value: webhookEnabled)
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> taskWebhookSettings = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 仅下载不上传 OSS 的 taskId 集合（用于工作流录像节点：先下载前后两段再合并后单独上传） */
+    private final java.util.concurrent.ConcurrentHashMap<String, Boolean> taskSkipOssUpload = new java.util.concurrent.ConcurrentHashMap<>();
     // 下载进度读取失败计数（短暂抖动容错，避免一次异常就把任务打成失败）
     private final java.util.concurrent.ConcurrentHashMap<String, Integer> downloadProgressFailCount = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -157,6 +159,11 @@ public class RecordingTaskService {
             sdk.stopDownload(task.getDownloadHandle());
         }
 
+        // 仅下载不上传（工作流录像节点会自行合并后上传）
+        if (Boolean.TRUE.equals(taskSkipOssUpload.remove(task.getTaskId()))) {
+            updateRecordingTask(task.getTaskId(), task);
+            return;
+        }
         // 异步转码并上传 OSS
         CompletableFuture.runAsync(() -> {
             try {
@@ -526,6 +533,14 @@ public class RecordingTaskService {
      * @return 完成的录像任务，如果超时或失败返回对应状态的任务
      */
     public RecordingTask downloadRecordingSync(String deviceId, int channel, String startTime, String endTime, int timeoutSeconds) {
+        return downloadRecordingSync(deviceId, channel, startTime, endTime, timeoutSeconds, true);
+    }
+
+    /**
+     * 下载指定时间段录像 (同步等待完成)，可选是否上传 OSS。
+     * @param uploadToOss false 时仅下载到本地，不转码、不上传（用于工作流中前后两段合并后统一上传）
+     */
+    public RecordingTask downloadRecordingSync(String deviceId, int channel, String startTime, String endTime, int timeoutSeconds, boolean uploadToOss) {
         RecordingTask task = new RecordingTask();
         task.setDeviceId(deviceId);
         task.setChannel(channel);
@@ -539,9 +554,11 @@ public class RecordingTaskService {
             logger.error("创建录像任务失败: deviceId={}", deviceId);
             return null;
         }
-        
+        if (!uploadToOss) {
+            taskSkipOssUpload.put(savedTask.getTaskId(), Boolean.TRUE);
+        }
         String taskId = savedTask.getTaskId();
-        logger.info("同步录像下载开始: taskId={}, deviceId={}, 超时={}秒", taskId, deviceId, timeoutSeconds);
+        logger.info("同步录像下载开始: taskId={}, deviceId={}, 超时={}秒, uploadToOss={}", taskId, deviceId, timeoutSeconds, uploadToOss);
         
         // 提交到线程池执行下载
         executorService.submit(() -> executeDownload(savedTask));

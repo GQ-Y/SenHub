@@ -1,6 +1,7 @@
 package com.digital.video.gateway.workflow.handlers;
 
 import com.digital.video.gateway.database.RecordingTask;
+import com.digital.video.gateway.service.OssService;
 import com.digital.video.gateway.service.RecordingTaskService;
 import com.digital.video.gateway.workflow.FlowContext;
 import com.digital.video.gateway.workflow.FlowNodeDefinition;
@@ -12,6 +13,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map;
@@ -22,20 +25,26 @@ import java.util.concurrent.TimeUnit;
  * 
  * 功能：
  * 1. 以报警时间为中心，取前后N秒的录像
- * 2. 延迟执行：等待afterSeconds秒后再开始下载，确保录像已录制完成
- * 3. 同步等待：等待录像下载和上传完成后才返回，以便后续节点可以使用录像结果
+ * 2. 延迟执行：先等待 afterSeconds 秒再下载，否则“后段”录像尚未录完，下载不完整
+ * 3. 前后两段分别下载后合并为一个视频，再上传 OSS
  * 4. 时间范围：[报警时间 - beforeSeconds, 报警时间 + afterSeconds]
  * 5. 针对海康设备自动进行ffmpeg转码（海康IPC下载的是私有PS流格式）
  */
 public class RecordHandler implements FlowNodeHandler {
     private static final Logger logger = LoggerFactory.getLogger(RecordHandler.class);
     private final RecordingTaskService recordingTaskService;
+    private final OssService ossService;
     
     // 最大等待时间（秒）
     private static final int MAX_WAIT_SECONDS = 180;  // 3分钟
 
     public RecordHandler(RecordingTaskService recordingTaskService) {
+        this(recordingTaskService, null);
+    }
+
+    public RecordHandler(RecordingTaskService recordingTaskService, OssService ossService) {
         this.recordingTaskService = recordingTaskService;
+        this.ossService = ossService;
     }
 
     @Override
@@ -88,19 +97,21 @@ public class RecordHandler implements FlowNodeHandler {
 
         final long alarmTime = System.currentTimeMillis();
         final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        
+        final String alarmTimeStr = sdf.format(new Date(alarmTime));
         final String startTime = sdf.format(new Date(alarmTime - beforeSeconds * 1000));
         final String endTime = sdf.format(new Date(alarmTime + afterSeconds * 1000));
+        final String midTime = alarmTimeStr;  // 报警时刻，用于前后分段
         
         final String deviceId = context.getDeviceId();
-        final long delaySeconds = afterSeconds + 5;
+        // 后多少秒就必须先等待多少秒再下载，否则“后段”录像未录完，下载不完整
+        final long delaySeconds = afterSeconds + 1;
         
-        logger.info("录像下载节点开始: deviceId={}, channel={}, 报警时间={}, 时间范围=[{} ~ {}], 先延迟{}秒等待录像完成",
-                deviceId, channel, sdf.format(new Date(alarmTime)), startTime, endTime, delaySeconds);
+        logger.info("录像下载节点开始: deviceId={}, channel={}, 报警时间={}, 时间范围=[{} ~ {}], 先延迟{}秒等待后段录制完成",
+                deviceId, channel, alarmTimeStr, startTime, endTime, delaySeconds);
         
-        // 1. 先延迟等待，确保录像已录制完成
+        // 1. 先延迟等待，确保“后段”录像已录制完成
         try {
-            logger.info("等待{}秒，确保录像录制完成...", delaySeconds);
+            logger.info("等待{}秒（后段{}秒），再开始下载...", delaySeconds, afterSeconds);
             Thread.sleep(delaySeconds * 1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -108,63 +119,129 @@ public class RecordHandler implements FlowNodeHandler {
             return false;
         }
         
-        // 2. 同步下载录像（带超时等待）
-        logger.info("开始下载录像: deviceId={}, 时间范围=[{} ~ {}]", deviceId, startTime, endTime);
+        String localPath;
+        String ossUrl = null;
+        boolean twoSegmentMerge = beforeSeconds > 0 && afterSeconds > 0;
         
-        RecordingTask task = recordingTaskService.downloadRecordingSync(deviceId, channel, startTime, endTime, MAX_WAIT_SECONDS);
-        
-        if (task == null) {
-            logger.error("录像下载任务创建失败: deviceId={}", deviceId);
-            return false;
-        }
-        
-        // 3. 检查下载结果
-        if (task.getStatus() == RecordingTaskService.STATUS_COMPLETED) {
-            String localPath = task.getLocalFilePath();
-            String ossUrl = task.getOssUrl();
-            
-            logger.info("录像下载完成: taskId={}, localPath={}, ossUrl={}", task.getTaskId(), localPath, ossUrl);
-            
-            // 4. 检查是否需要转码（海康设备的私有PS流格式）
+        if (twoSegmentMerge) {
+            // 2a. 前后两段分别下载（仅下载不上传），再合并为一个视频后上传
+            String seg1Start = startTime;
+            String seg1End = midTime;
+            String seg2Start = midTime;
+            String seg2End = endTime;
+            logger.info("分段下载: 前段[{} ~ {}], 后段[{} ~ {}]", seg1Start, seg1End, seg2Start, seg2End);
+            RecordingTask task1 = recordingTaskService.downloadRecordingSync(deviceId, channel, seg1Start, seg1End, MAX_WAIT_SECONDS, false);
+            RecordingTask task2 = recordingTaskService.downloadRecordingSync(deviceId, channel, seg2Start, seg2End, MAX_WAIT_SECONDS, false);
+            if (task1 == null || task2 == null || task1.getStatus() != RecordingTaskService.STATUS_COMPLETED || task2.getStatus() != RecordingTaskService.STATUS_COMPLETED) {
+                logger.error("分段下载失败: task1={}, task2={}", task1 != null ? task1.getStatus() : null, task2 != null ? task2.getStatus() : null);
+                return false;
+            }
+            String path1 = task1.getLocalFilePath();
+            String path2 = task2.getLocalFilePath();
+            if (path1 == null || path2 == null || !new File(path1).exists() || !new File(path2).exists()) {
+                logger.error("分段文件不存在: path1={}, path2={}", path1, path2);
+                return false;
+            }
+            String deviceBrand = (String) context.getVariables().get("deviceBrand");
+            if ("hikvision".equalsIgnoreCase(deviceBrand)) {
+                if (needsTranscoding(new File(path1))) path1 = transcodeToMp4(path1);
+                if (path1 != null && needsTranscoding(new File(path2))) path2 = transcodeToMp4(path2);
+            }
+            if (path1 == null || path2 == null) {
+                logger.error("分段转码失败，无法合并");
+                return false;
+            }
+            String mergedPath = mergeVideosWithFfmpeg(path1, path2, deviceId, alarmTimeStr);
+            if (mergedPath == null) {
+                logger.error("前后两段合并失败");
+                return false;
+            }
+            localPath = mergedPath;
+            if (ossService != null && ossService.isEnabled()) {
+                String ossPath = "recordings/" + deviceId + "/" + new File(mergedPath).getName();
+                ossUrl = ossService.uploadFile(mergedPath, ossPath);
+            }
+        } else {
+            // 2b. 单段或仅前/仅后：一次下载并走原有逻辑（含上传）
+            RecordingTask task = recordingTaskService.downloadRecordingSync(deviceId, channel, startTime, endTime, MAX_WAIT_SECONDS);
+            if (task == null) {
+                logger.error("录像下载任务创建失败: deviceId={}", deviceId);
+                return false;
+            }
+            if (task.getStatus() != RecordingTaskService.STATUS_COMPLETED) {
+                if (task.getStatus() == RecordingTaskService.STATUS_FAILED) {
+                    logger.error("录像下载失败: taskId={}, error={}", task.getTaskId(), task.getErrorMessage());
+                } else {
+                    logger.warn("录像下载超时或状态未知: taskId={}, status={}", task.getTaskId(), task.getStatus());
+                }
+                return false;
+            }
+            localPath = task.getLocalFilePath();
+            ossUrl = task.getOssUrl();
             String deviceBrand = (String) context.getVariables().get("deviceBrand");
             if (localPath != null && "hikvision".equalsIgnoreCase(deviceBrand)) {
                 File videoFile = new File(localPath);
                 if (videoFile.exists() && needsTranscoding(videoFile)) {
-                    logger.info("检测到海康私有格式，开始ffmpeg转码: taskId={}", task.getTaskId());
                     String transcodedPath = transcodeToMp4(localPath);
                     if (transcodedPath != null) {
-                        // 转码成功，删除原始文件，更新路径
-                        if (videoFile.delete()) {
-                            logger.debug("已删除原始私有格式文件: {}", localPath);
-                        }
+                        if (videoFile.delete()) logger.debug("已删除原始私有格式文件: {}", localPath);
                         localPath = transcodedPath;
-                        task.setLocalFilePath(transcodedPath);
-                        logger.info("ffmpeg转码成功: taskId={}, newPath={}", task.getTaskId(), transcodedPath);
-                    } else {
-                        logger.warn("ffmpeg转码失败，将使用原始文件: taskId={}", task.getTaskId());
                     }
                 }
             }
-            
-            // 保存到context，供后续节点使用
-            context.putVariable("recordFilePath", localPath);
-            context.putVariable("recordTaskId", task.getTaskId());
-            context.putVariable("recordStartTime", startTime);
-            context.putVariable("recordEndTime", endTime);
-            
-            // 如果已经上传到OSS，保存URL
-            if (ossUrl != null && !ossUrl.isEmpty()) {
-                context.putVariable("recordOssUrl", ossUrl);
-                context.putVariable("ossUrl", ossUrl);  // 兼容OssUploadHandler的变量名
+        }
+        
+        context.putVariable("recordFilePath", localPath);
+        context.putVariable("recordStartTime", startTime);
+        context.putVariable("recordEndTime", endTime);
+        if (ossUrl != null && !ossUrl.isEmpty()) {
+            context.putVariable("recordOssUrl", ossUrl);
+            context.putVariable("ossUrl", ossUrl);
+        }
+        return true;
+    }
+    
+    /**
+     * 使用 ffmpeg concat 将两段视频合并为一个（按顺序拼接）
+     */
+    private String mergeVideosWithFfmpeg(String path1, String path2, String deviceId, String alarmTimeStr) {
+        try {
+            File dir = new File("./storage/recordings");
+            if (!dir.exists()) dir.mkdirs();
+            String safeSuffix = alarmTimeStr.replaceAll("[: -]", "");
+            String listPath = dir.getAbsolutePath() + File.separator + "concat_" + deviceId + "_" + safeSuffix + ".txt";
+            String outputPath = dir.getAbsolutePath() + File.separator + "merged_" + deviceId + "_" + safeSuffix + ".mp4";
+            String abs1 = new File(path1).getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
+            String abs2 = new File(path2).getAbsolutePath().replace("\\", "/").replace("'", "'\\''");
+            String listContent = "file '" + abs1 + "'\nfile '" + abs2 + "'\n";
+            Files.write(java.nio.file.Paths.get(listPath), listContent.getBytes(StandardCharsets.UTF_8));
+            ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+                "-c", "copy", outputPath
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            StringBuilder out = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) out.append(line).append("\n");
             }
-            
-            return true;
-        } else if (task.getStatus() == RecordingTaskService.STATUS_FAILED) {
-            logger.error("录像下载失败: taskId={}, error={}", task.getTaskId(), task.getErrorMessage());
-            return false;
-        } else {
-            logger.warn("录像下载超时或状态未知: taskId={}, status={}", task.getTaskId(), task.getStatus());
-            return false;
+            boolean finished = process.waitFor(300, TimeUnit.SECONDS);
+            try { Files.deleteIfExists(java.nio.file.Paths.get(listPath)); } catch (Exception ignored) {}
+            if (!finished) {
+                process.destroyForcibly();
+                logger.error("ffmpeg合并超时");
+                return null;
+            }
+            if (process.exitValue() == 0 && new File(outputPath).exists()) {
+                logger.info("前后两段录像合并成功: {}", outputPath);
+                return outputPath;
+            }
+            logger.error("ffmpeg合并失败: exitCode={}, output={}", process.exitValue(), out.length() > 500 ? out.substring(out.length() - 500) : out);
+            return null;
+        } catch (Exception e) {
+            logger.error("合并录像异常", e);
+            return null;
         }
     }
     

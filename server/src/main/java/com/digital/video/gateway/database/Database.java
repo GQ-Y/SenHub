@@ -1086,10 +1086,10 @@ public class Database {
     }
 
     /**
-     * 获取24小时内的告警数量
+     * 获取24小时内的告警数量（与报警流程一致：从 alarm_records 表统计，和趋势图数据源相同）
      */
     public int getAlarmCount24h() {
-        String sql = "SELECT COUNT(*) as count FROM alarm_history WHERE recorded_at >= datetime('now', '-24 hours')";
+        String sql = "SELECT COUNT(*) as count FROM alarm_records WHERE datetime(recorded_at, 'localtime') >= datetime('now', 'localtime', '-24 hours')";
         try (Statement stmt = connection.createStatement();
                 ResultSet rs = stmt.executeQuery(sql)) {
             if (rs.next()) {
@@ -1128,28 +1128,19 @@ public class Database {
                 }
             }
 
-            // 生成固定的时间点（每4小时一个点：00, 04, 08, 12, 16, 20）
-            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
-            
-            for (int hourInt : timePoints) {
+            // 生成24小时整点，保证每个小时的报警都会在趋势图中体现
+            for (int hourInt = 0; hourInt < 24; hourInt++) {
                 Map<String, Object> dataPoint = new HashMap<>();
                 String hourStr = String.format("%02d", hourInt);
                 dataPoint.put("name", hourStr + ":00");
-                
-                // 获取该小时的报警数量，如果没有数据则为0
-                int alarmCount = hourData.getOrDefault(hourStr, 0);
-                dataPoint.put("alarms", alarmCount);
-                
+                dataPoint.put("alarms", hourData.getOrDefault(hourStr, 0));
                 trendData.add(dataPoint);
             }
         } catch (SQLException e) {
             logger.error("获取报警事件趋势失败", e);
-            // 返回空数据
-            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
-            for (int hourInt : timePoints) {
+            for (int hourInt = 0; hourInt < 24; hourInt++) {
                 Map<String, Object> dataPoint = new HashMap<>();
-                String hourStr = String.format("%02d", hourInt);
-                dataPoint.put("name", hourStr + ":00");
+                dataPoint.put("name", String.format("%02d:00", hourInt));
                 dataPoint.put("alarms", 0);
                 trendData.add(dataPoint);
             }
@@ -1201,28 +1192,19 @@ public class Database {
                 }
             }
 
-            // 生成固定的时间点（每4小时一个点：00, 04, 08, 12, 16, 20）
-            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
-            
-            for (int hourInt : timePoints) {
+            // 生成24小时整点，与报警趋势一致
+            for (int hourInt = 0; hourInt < 24; hourInt++) {
                 Map<String, Object> dataPoint = new HashMap<>();
                 String hourStr = String.format("%02d", hourInt);
                 dataPoint.put("name", hourStr + ":00");
-                
-                // 获取该小时的工作流执行数量，如果没有数据则为0
-                int workflowCount = hourData.getOrDefault(hourStr, 0);
-                dataPoint.put("workflows", workflowCount);
-                
+                dataPoint.put("workflows", hourData.getOrDefault(hourStr, 0));
                 trendData.add(dataPoint);
             }
         } catch (SQLException e) {
             logger.error("获取工作流执行趋势失败", e);
-            // 返回空数据
-            int[] timePoints = { 0, 4, 8, 12, 16, 20 };
-            for (int hourInt : timePoints) {
+            for (int hourInt = 0; hourInt < 24; hourInt++) {
                 Map<String, Object> dataPoint = new HashMap<>();
-                String hourStr = String.format("%02d", hourInt);
-                dataPoint.put("name", hourStr + ":00");
+                dataPoint.put("name", String.format("%02d:00", hourInt));
                 dataPoint.put("workflows", 0);
                 trendData.add(dataPoint);
             }
