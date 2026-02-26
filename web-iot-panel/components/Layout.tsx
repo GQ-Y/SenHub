@@ -414,10 +414,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
           </div>
         </header>
 
-        {/* Scrollable Content Area - 流程管理页充满内容区无内边距 */}
+        {/* Scrollable Content Area - 流程/装置管理页充满内容区 */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className={`flex-1 overflow-auto ${currentView === 'WORKFLOW' ? 'p-0' : 'p-6'}`}>
-            <div className={`h-full animate-fade-in ${currentView === 'WORKFLOW' ? 'w-full' : 'max-w-7xl mx-auto'}`}>
+            <div className={`h-full min-h-full animate-fade-in ${(currentView === 'WORKFLOW' || currentView === 'ASSEMBLY_MANAGEMENT') ? 'w-full' : 'max-w-7xl mx-auto'}`}>
               {children}
             </div>
           </div>

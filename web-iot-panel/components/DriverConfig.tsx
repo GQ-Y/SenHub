@@ -189,33 +189,33 @@ export const DriverConfig: React.FC = () => {
         onConfirm={alertModal.modalOptions?.onConfirm}
       />
       
-      <div className="space-y-6">
-       <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white shadow-xl shadow-blue-900/20">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold mb-2">{t('driver_mgmt')}</h2>
-            <p className="text-blue-100 max-w-2xl">
+      <div className="space-y-4">
+       <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-4 text-white shadow-lg shadow-blue-900/20">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold mb-1">{t('driver_mgmt')}</h2>
+            <p className="text-blue-100 text-sm max-w-xl">
                 管理系统集成的各类SDK驱动，包括摄像头、雷达等设备的SDK配置。启用前请确保库文件路径正确且具有访问权限。
             </p>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center shrink-0 space-x-2">
             <button
               onClick={handleLogs}
               disabled={isLoading}
-              className="flex items-center space-x-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-sm bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <FileCode size={20} />
+              <FileCode size={16} />
               <span>{t('driver_logs')}</span>
             </button>
             <button
               onClick={handleCheckAll}
               disabled={isLoading}
-              className="flex items-center space-x-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-sm bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <Loader2 size={20} className="animate-spin" />
+                <Loader2 size={16} className="animate-spin" />
               ) : (
-                <AlertCircle size={20} />
+                <AlertCircle size={16} />
               )}
               <span>一键检查全部</span>
             </button>
@@ -224,60 +224,60 @@ export const DriverConfig: React.FC = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex items-center justify-center h-40">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
         </div>
       ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {drivers.map((driver) => (
-          <div key={driver.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between h-full hover:shadow-lg transition-shadow duration-300">
+          <div key={driver.id} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex flex-col justify-between min-h-0 hover:shadow-md transition-shadow duration-200">
             <div>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className={`p-3 rounded-xl ${driver.status === 'ACTIVE' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                    <HardDrive size={24} />
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center space-x-2 min-w-0">
+                  <div className={`p-1.5 rounded-lg shrink-0 ${driver.status === 'ACTIVE' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                    <HardDrive size={18} />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-gray-800 text-lg">{driver.name}</h3>
-                    <p className="text-sm text-gray-500">v{driver.version}</p>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-gray-800 text-sm truncate">{driver.name}</h3>
+                    <p className="text-xs text-gray-500">v{driver.version}</p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-col items-end gap-1 shrink-0">
                   {/* SDK健康状态指示器 */}
                   {(() => {
                     const health = getDriverHealth(driver.id);
                     const isChecking = checkingDrivers.has(driver.id);
                     if (isChecking) {
                       return (
-                        <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border bg-gray-50 text-gray-600 border-gray-200">
-                          <Loader2 size={12} className="animate-spin" />
+                        <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-gray-50 text-gray-600 border-gray-200">
+                          <Loader2 size={10} className="animate-spin" />
                           <span>检查中</span>
                         </div>
                       );
                     }
                     if (health) {
                       return (
-                        <div className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+                        <div className={`flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                           health.isHealthy 
                             ? 'bg-green-50 text-green-700 border-green-200' 
                             : 'bg-red-50 text-red-700 border-red-200'
                         }`}>
-                          {health.isHealthy ? <CheckCircle2 size={12}/> : <AlertCircle size={12}/>}
+                          {health.isHealthy ? <CheckCircle2 size={10}/> : <AlertCircle size={10}/>}
                           <span>{health.isHealthy ? '健康' : '异常'}</span>
                         </div>
                       );
                     }
                     return null;
                   })()}
-                  <div className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${driver.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                   {driver.status === 'ACTIVE' ? <CheckCircle2 size={12}/> : <XCircle size={12}/>}
+                  <div className={`flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${driver.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                   {driver.status === 'ACTIVE' ? <CheckCircle2 size={10}/> : <XCircle size={10}/>}
                    <span>{driver.status}</span>
                 </div>
                 </div>
               </div>
 
-              <div className="space-y-3 mb-6">
-                <div className={`bg-gray-50 rounded-lg p-3 text-sm font-mono break-all border ${
+              <div className="space-y-2">
+                <div className={`bg-gray-50 rounded-md p-2 text-xs font-mono break-all border ${
                   (() => {
                     const health = getDriverHealth(driver.id);
                     if (health && !health.libOk) {
@@ -286,41 +286,41 @@ export const DriverConfig: React.FC = () => {
                     return 'border-gray-100';
                   })()
                 }`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-gray-400 select-none">LIB: </span>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-gray-400 select-none text-[10px]">LIB: </span>
                     {(() => {
                       const health = getDriverHealth(driver.id);
                       if (health) {
                         if (!health.libOk) {
-                          return <span className="text-xs text-red-600 flex items-center space-x-1">
-                            <AlertCircle size={12} />
-                            <span>文件异常</span>
+                          return <span className="text-[10px] text-red-600 flex items-center space-x-0.5">
+                            <AlertCircle size={10} />
+                            <span>异常</span>
                           </span>;
                         }
-                        return <span className="text-xs text-green-600 flex items-center space-x-1">
-                          <CheckCircle2 size={12} />
+                        return <span className="text-[10px] text-green-600 flex items-center space-x-0.5">
+                          <CheckCircle2 size={10} />
                           <span>正常</span>
                         </span>;
                       }
                       return null;
                     })()}
                   </div>
-                  <div className="text-gray-600">{driver.libPath}</div>
+                  <div className="text-gray-600 text-[11px] leading-tight">{driver.libPath}</div>
                   {(() => {
                     const health = getDriverHealth(driver.id);
                     if (health && health.details.libPath) {
                       const lib = health.details.libPath;
                       if (!lib.exists) {
-                        return <div className="text-xs text-red-600 mt-1">文件不存在</div>;
+                        return <div className="text-[10px] text-red-600 mt-0.5">文件不存在</div>;
                       }
                       if (!lib.readable) {
-                        return <div className="text-xs text-red-600 mt-1">无读取权限</div>;
+                        return <div className="text-[10px] text-red-600 mt-0.5">无读取权限</div>;
                       }
                     }
                     return null;
                   })()}
                 </div>
-                <div className={`bg-gray-50 rounded-lg p-3 text-sm font-mono break-all border ${
+                <div className={`bg-gray-50 rounded-md p-2 text-xs font-mono break-all border ${
                   (() => {
                     const health = getDriverHealth(driver.id);
                     if (health && !health.logOk) {
@@ -329,35 +329,35 @@ export const DriverConfig: React.FC = () => {
                     return 'border-gray-100';
                   })()
                 }`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-gray-400 select-none">LOG: </span>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-gray-400 select-none text-[10px]">LOG: </span>
                     {(() => {
                       const health = getDriverHealth(driver.id);
                       if (health) {
                         if (!health.logOk) {
-                          return <span className="text-xs text-red-600 flex items-center space-x-1">
-                            <AlertCircle size={12} />
-                            <span>路径异常</span>
+                          return <span className="text-[10px] text-red-600 flex items-center space-x-0.5">
+                            <AlertCircle size={10} />
+                            <span>异常</span>
                           </span>;
                         }
-                        return <span className="text-xs text-green-600 flex items-center space-x-1">
-                          <CheckCircle2 size={12} />
+                        return <span className="text-[10px] text-green-600 flex items-center space-x-0.5">
+                          <CheckCircle2 size={10} />
                           <span>正常</span>
                         </span>;
                       }
                       return null;
                     })()}
                   </div>
-                  <div className="text-gray-600">{driver.logPath}</div>
+                  <div className="text-gray-600 text-[11px] leading-tight">{driver.logPath}</div>
                   {(() => {
                     const health = getDriverHealth(driver.id);
                     if (health && health.details.logPath) {
                       const log = health.details.logPath;
                       if (!log.exists) {
-                        return <div className="text-xs text-red-600 mt-1">路径不存在</div>;
+                        return <div className="text-[10px] text-red-600 mt-0.5">路径不存在</div>;
                       }
                       if (!log.writable) {
-                        return <div className="text-xs text-red-600 mt-1">无写入权限</div>;
+                        return <div className="text-[10px] text-red-600 mt-0.5">无写入权限</div>;
                       }
                     }
                     return null;

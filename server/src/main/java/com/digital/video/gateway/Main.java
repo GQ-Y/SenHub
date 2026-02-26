@@ -268,21 +268,14 @@ public class Main {
                 if (config.getLog() != null) {
                     radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
                 }
-                /*
-                 * radarService.start();
-                 * RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
-                 * List<com.digital.video.gateway.database.RadarDevice> radarDevices =
-                 * radarDeviceDAO.getAll();
-                 * logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
-                 * 
-                 * radarTestService = new RadarTestService(radarService);
-                 * logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
-                 */
-                logger.info("雷达服务已暂时禁用（已注释掉启动代码）");
+                radarService.start();
+                RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+                List<com.digital.video.gateway.database.RadarDevice> radarDevices =
+                        radarDeviceDAO.getAll();
+                logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
 
-                // RadarTestService 不依赖 Livox SDK，可独立工作（UDP 连通性检测）
                 radarTestService = new RadarTestService(radarService);
-                logger.info("RadarTestService 已初始化（独立模式，不依赖 Livox SDK）");
+                logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
 
             } catch (Throwable e) {
                 // 捕获所有异常和错误（包括NoClassDefFoundError等Error类型）
@@ -877,11 +870,22 @@ public class Main {
 
         Spark.port(port);
 
-        // 注册WebSocket端点（必须在所有路由映射之前）
-        if (radarService != null) {
-            try {
+        // Web 面板静态资源：使用 Spark 内置静态文件服务
+        // 注意：必须在任何路由（包括 before/after 过滤器）之前调用
+        Spark.staticFiles.location("/static");
+
+        // 注册WebSocket端点（必须在所有路由映射之前）；始终注册路由，避免无路由时前端收到非 101 导致连接失败
+        try {
+            // 先注册 WebSocket 路由到 Spark，必须在任何 HTTP 路由之前
+            // 注意：使用 /ws 前缀而非 /api，避免与 HTTP 路由的 before 过滤器冲突
+            logger.info("正在调用 Spark.webSocket() 注册 /ws/radar/stream ...");
+            Spark.webSocket("/ws/radar/stream",
+                    com.digital.video.gateway.api.RadarWebSocketEndpoint.class);
+            logger.info("Spark.webSocket() 调用成功");
+            
+            // 然后注册处理器到端点类
+            if (radarService != null) {
                 com.digital.video.gateway.api.RadarWebSocketHandler wsHandler = radarService.getWebSocketHandler();
-                // 为每个设备注册WebSocket处理器
                 com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = new com.digital.video.gateway.database.RadarDeviceDAO(
                         database.getConnection());
                 List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
@@ -889,17 +893,15 @@ public class Main {
                     com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler(
                             device.getDeviceId(), wsHandler);
                 }
-                // 注册默认处理器（用于动态添加的设备）
                 com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler("default", wsHandler);
-
-                // 注册WebSocket路由（必须在所有HTTP路由之前）
-                // 注意：Spark WebSocket不支持路径参数，使用固定路径+查询参数
-                Spark.webSocket("/api/radar/stream",
-                        com.digital.video.gateway.api.RadarWebSocketEndpoint.class);
-                logger.info("雷达WebSocket端点已注册: /api/radar/stream?deviceId=xxx");
-            } catch (Exception e) {
-                logger.error("注册WebSocket端点失败", e);
+                logger.info("雷达WebSocket端点已注册（正常）: /ws/radar/stream?deviceId=xxx");
+            } else {
+                com.digital.video.gateway.api.RadarWebSocketHandler fallback = new com.digital.video.gateway.api.RadarWebSocketHandlerFallback();
+                com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler("default", fallback);
+                logger.info("雷达WebSocket端点已注册（降级）: /ws/radar/stream?deviceId=xxx，雷达服务不可用时将返回提示");
             }
+        } catch (Exception e) {
+            logger.error("注册WebSocket端点失败", e);
         }
 
         // 设置CORS（使用after过滤器，避免覆盖控制器设置的Content-Type）
@@ -910,10 +912,14 @@ public class Main {
             response.header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
         });
 
-        // 为 API 请求设置默认 Content-Type（排除非 /api 的面板与静态资源、以及视频/文件接口）
+        // 为 API 请求设置默认 Content-Type（排除非 /api、WebSocket 升级、视频/文件接口）
         Spark.before((request, response) -> {
             String path = request.pathInfo();
             if (path == null || !path.startsWith("/api")) {
+                return;
+            }
+            // WebSocket 升级请求不设置 Content-Type，由 Jetty 返回 101
+            if (path.contains("/radar/stream") && "websocket".equalsIgnoreCase(request.headers("Upgrade"))) {
                 return;
             }
             if (!path.contains("/video") && !path.contains("/snapshot/file") && !path.contains("/export/file")) {
@@ -967,7 +973,7 @@ public class Main {
         IntrusionDetectionService intrusionDetectionService = new IntrusionDetectionService(database);
         // radarService可能为null（如果没有雷达设备），需要处理
         radarController = new RadarController(radarTestService, database,
-                backgroundModelService, defenseZoneService, intrusionDetectionService, radarService);
+                backgroundModelService, defenseZoneService, intrusionDetectionService, radarService, assemblyService);
 
         // 初始化扫描控制器
         ScannerController scannerController = new ScannerController(scanner, deviceManager, database);
@@ -1164,52 +1170,19 @@ public class Main {
             return "";
         });
 
-        // Web 面板静态资源与 SPA 兜底：非 /api 的 GET 请求 → classpath static/ 或 index.html
-        Spark.get("/*", (request, response) -> {
+        // SPA 兜底：使用 notFound 处理器，不会干扰 WebSocket 路由
+        Spark.notFound((request, response) -> {
             String pathInfo = request.pathInfo();
-            if (pathInfo == null || pathInfo.startsWith("/api")) {
-                response.status(404);
-                return "";
+            // /api 和 /ws 请求不由 SPA 兜底处理
+            if (pathInfo != null && (pathInfo.startsWith("/api") || pathInfo.startsWith("/ws"))) {
+                response.type("application/json");
+                return "{\"code\":404,\"message\":\"Not found\",\"data\":null}";
             }
-            String path = pathInfo.replaceFirst("^/+", "").replace("\\", "/");
-            if (path.contains("..")) {
-                response.status(403);
-                return "Forbidden";
-            }
-            if (path.isEmpty()) {
-                path = "index.html";
-            }
-            String resourcePath = "static/" + path;
+            // 非 /api、非 /ws 的请求，返回 index.html（SPA 兜底）
             ClassLoader cl = Main.class.getClassLoader();
-            try (java.io.InputStream in = cl.getResourceAsStream(resourcePath)) {
-                if (in != null) {
-                    String lower = path.toLowerCase();
-                    if (lower.endsWith(".html")) response.type("text/html; charset=utf-8");
-                    else if (lower.endsWith(".js") || lower.endsWith(".mjs")) response.type("application/javascript; charset=utf-8");
-                    else if (lower.endsWith(".css")) response.type("text/css; charset=utf-8");
-                    else if (lower.endsWith(".json")) response.type("application/json");
-                    else if (lower.endsWith(".png")) response.type("image/png");
-                    else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) response.type("image/jpeg");
-                    else if (lower.endsWith(".gif")) response.type("image/gif");
-                    else if (lower.endsWith(".svg")) response.type("image/svg+xml");
-                    else if (lower.endsWith(".ico")) response.type("image/x-icon");
-                    else if (lower.endsWith(".woff2")) response.type("font/woff2");
-                    else if (lower.endsWith(".woff")) response.type("font/woff");
-                    else if (lower.endsWith(".ttf")) response.type("font/ttf");
-                    else if (lower.endsWith(".eot")) response.type("application/vnd.ms-fontobject");
-                    else response.type("application/octet-stream");
-                    java.io.OutputStream out = response.raw().getOutputStream();
-                    byte[] buf = new byte[8192];
-                    int n;
-                    while ((n = in.read(buf)) != -1) {
-                        out.write(buf, 0, n);
-                    }
-                    out.flush();
-                    return "";
-                }
-            }
             try (java.io.InputStream indexStream = cl.getResourceAsStream("static/index.html")) {
                 if (indexStream != null) {
+                    response.status(200);
                     response.type("text/html; charset=utf-8");
                     java.io.OutputStream out = response.raw().getOutputStream();
                     byte[] buf = new byte[8192];
@@ -1220,8 +1193,9 @@ public class Main {
                     out.flush();
                     return "";
                 }
+            } catch (Exception e) {
+                // ignore
             }
-            response.status(404);
             response.type("text/plain");
             return "Static panel not found. Build web-iot-panel and copy to server/src/main/resources/static.";
         });

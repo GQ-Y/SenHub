@@ -1,11 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, X, Package, MapPin, Camera } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Package, MapPin, ChevronRight, Wifi, WifiOff, Zap } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { assemblyService } from '../src/api/services';
-import { Assembly } from '../types';
+import { Assembly, AssemblyDevice } from '../types';
 import { Modal, ConfirmModal } from './Modal';
 import { useModal } from '../hooks/useModal';
+
+/** 根据装置内设备组合判断主题：防入侵 / 视频监控 / 监测装置 / 默认 */
+type AssemblyTheme = 'intrusion' | 'video_surveillance' | 'monitoring' | 'default';
+function getAssemblyTheme(devices?: AssemblyDevice[]): AssemblyTheme {
+  const roles = devices?.map((d) => d.role) ?? [];
+  const hasPtz = roles.includes('top_camera');
+  const hasGun = roles.includes('left_camera') || roles.includes('right_camera');
+  const hasRadar = roles.includes('radar');
+  const hasAnyCamera = hasPtz || hasGun;
+  if (hasAnyCamera && hasRadar) return 'intrusion';
+  if (hasPtz && hasGun) return 'video_surveillance';
+  if (hasPtz && !hasGun && !hasRadar) return 'monitoring';
+  return 'default';
+}
+
+const THEME_STYLES: Record<
+  AssemblyTheme,
+  { label: string; bg: string; border: string; leftBar: string; badge: string; badgeText: string }
+> = {
+  intrusion: {
+    label: '防入侵装置',
+    bg: 'bg-amber-50/80',
+    border: 'border-amber-200',
+    leftBar: 'bg-amber-500',
+    badge: 'bg-amber-100',
+    badgeText: 'text-amber-800',
+  },
+  video_surveillance: {
+    label: '视频监控装置',
+    bg: 'bg-indigo-50/80',
+    border: 'border-indigo-200',
+    leftBar: 'bg-indigo-500',
+    badge: 'bg-indigo-100',
+    badgeText: 'text-indigo-800',
+  },
+  monitoring: {
+    label: '监测装置',
+    bg: 'bg-sky-50/80',
+    border: 'border-sky-200',
+    leftBar: 'bg-sky-500',
+    badge: 'bg-sky-100',
+    badgeText: 'text-sky-800',
+  },
+  default: {
+    label: '装置',
+    bg: 'bg-gray-50/80',
+    border: 'border-gray-200',
+    leftBar: 'bg-gray-400',
+    badge: 'bg-gray-100',
+    badgeText: 'text-gray-700',
+  },
+};
 
 export const AssemblyManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -221,99 +273,112 @@ export const AssemblyManagement: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredAssemblies.map((assembly) => (
-              <div
-                key={assembly.id}
-                className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-gray-800 mb-1">{assembly.name}</h3>
-                    {assembly.location && (
-                      <div className="flex items-center text-sm text-gray-500">
-                        <MapPin size={14} className="mr-1" />
-                        <span>{assembly.location}</span>
+            {filteredAssemblies.map((assembly) => {
+              const deviceCount = assembly.deviceCount ?? assembly.devices?.length ?? 0;
+              const isActive = assembly.status === 'active';
+              const theme = getAssemblyTheme(assembly.devices);
+              const style = THEME_STYLES[theme];
+              return (
+                <div
+                  key={assembly.id}
+                  className={`relative border-l-4 ${style.leftBar} border ${style.border} ${style.bg} rounded-xl overflow-hidden`}
+                >
+                  <div className="p-5">
+                    <div className="flex justify-between items-start gap-3 mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-lg text-gray-900 truncate">{assembly.name}</h3>
+                        {assembly.location && (
+                          <div className="flex items-center text-sm text-gray-500 mt-1">
+                            <MapPin size={14} className="mr-1.5 flex-shrink-0 text-gray-400" />
+                            <span className="truncate">{assembly.location}</span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      assembly.status === 'active'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-700'
-                    }`}
-                  >
-                    {assembly.status === 'active' ? t('active') : t('inactive')}
-                  </span>
-                </div>
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium shrink-0 ${style.badge} ${style.badgeText}`}
+                      >
+                        {style.label}
+                      </span>
+                    </div>
 
-                {assembly.description && (
-                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">{assembly.description}</p>
-                )}
-
-                {assembly.ptzLinkageEnabled && (
-                  <div className="mb-4">
-                    <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-amber-50 text-amber-700">
-                      <Camera size={12} className="mr-1" />
-                      PTZ 联动已开启
-                    </span>
-                  </div>
-                )}
-
-                {/* 设备信息预览 */}
-                <div className="space-y-2 mb-4">
-                  <div className="text-sm text-gray-600">
-                    <span className="font-medium">{t('assembly_devices')}：</span>
-                    <span>{assembly.deviceCount || assembly.devices?.length || 0}</span>
-                  </div>
-                  {assembly.devices && assembly.devices.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {assembly.devices.slice(0, 3).map((device, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium"
-                        >
-                          {device.role === 'left_camera' ? t('left_camera') :
-                           device.role === 'right_camera' ? t('right_camera') :
-                           device.role === 'top_camera' ? t('top_camera') :
-                           device.role === 'speaker' ? t('speaker') :
-                           device.role === 'radar' ? t('radar') : device.role}
-                        </span>
-                      ))}
-                      {assembly.devices.length > 3 && (
-                        <span className="px-2 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs">
-                          +{assembly.devices.length - 3}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
+                          isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                        {isActive ? t('active') : t('inactive')}
+                      </span>
+                      {assembly.ptzLinkageEnabled && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                          <Zap size={12} />
+                          PTZ 联动
                         </span>
                       )}
                     </div>
-                  )}
-                </div>
 
-                {/* 操作按钮 */}
-                <div className="flex space-x-2 pt-4 border-t border-gray-100">
-                  <button
-                    onClick={() => navigate(`/assemblies/${assembly.assemblyId || assembly.id}`)}
-                    className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
-                  >
-                    {t('view_details')}
-                  </button>
-                  <button
-                    onClick={() => openEditModal(assembly)}
-                    className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                    title={t('edit_assembly')}
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button
-                    onClick={() => openDeleteModal(assembly)}
-                    className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    title={t('delete_assembly')}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                    {assembly.description && (
+                      <p className="text-sm text-gray-600 mb-4 line-clamp-2">{assembly.description}</p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                      <div
+                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${
+                          deviceCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {deviceCount > 0 ? <Wifi size={14} /> : <WifiOff size={14} />}
+                        <span>{t('assembly_devices')}：{deviceCount}</span>
+                      </div>
+                      {assembly.devices && assembly.devices.length > 0 && (
+                        <>
+                          {assembly.devices.slice(0, 3).map((device, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-white/70 text-gray-600 rounded text-xs font-medium border border-gray-200/80"
+                            >
+                              {device.role === 'left_camera' ? t('left_camera') :
+                               device.role === 'right_camera' ? t('right_camera') :
+                               device.role === 'top_camera' ? t('top_camera') :
+                               device.role === 'speaker' ? t('speaker') :
+                               device.role === 'radar' ? t('radar') : device.role}
+                            </span>
+                          ))}
+                          {assembly.devices.length > 3 && (
+                            <span className="px-2 py-0.5 text-gray-500 text-xs">+{assembly.devices.length - 3}</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-4 border-t border-gray-200/80">
+                      <button
+                        onClick={() => navigate(`/assemblies/${assembly.assemblyId || assembly.id}`)}
+                        className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                      >
+                        {t('view_details')}
+                        <ChevronRight size={16} />
+                      </button>
+                      <button
+                        onClick={() => openEditModal(assembly)}
+                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100/50 rounded-lg transition-colors"
+                        title={t('edit_assembly')}
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => openDeleteModal(assembly)}
+                        className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100/50 rounded-lg transition-colors"
+                        title={t('delete_assembly')}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

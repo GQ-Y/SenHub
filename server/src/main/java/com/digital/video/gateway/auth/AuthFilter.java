@@ -32,12 +32,10 @@ public class AuthFilter implements Filter {
             return;
         }
 
-        // WebSocket 升级请求免校验（浏览器 WebSocket 无法携带自定义 Header）
+        // 雷达 WebSocket 路径一律免校验（该路径仅用于 ws 升级，浏览器无法在握手时带 Token）
         if (path != null && path.contains("/radar/stream")) {
-            String upgradeHeader = request.headers("Upgrade");
-            if (upgradeHeader != null && upgradeHeader.equalsIgnoreCase("websocket")) {
-                return;
-            }
+            logger.debug("放行雷达 WebSocket 路径（免 Token）: {}", path);
+            return;
         }
 
         // 其余 /api 接口均需 JWT 校验

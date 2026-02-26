@@ -1045,10 +1045,10 @@ export const radarService = {
    * @param options.onBinaryPointCloud 若提供，点云二进制帧将直接传入（可转给 Worker），不再在主线程解析
    */
   connectWebSocket(deviceId: string, onMessage: (data: any) => void, options?: { onBinaryPointCloud?: (buffer: ArrayBuffer) => void }) {
-    const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://192.168.1.210:8084/api';
-    const baseUrl = apiBaseUrl.replace('/api', '').replace('http://', '').replace('https://', '');
+    const apiBaseUrl = API_CONFIG.BASE_URL;
+    const baseUrl = apiBaseUrl.replace(/\/api\/?$/, '').replace(/^https?:\/\//, '');
     const protocol = apiBaseUrl.startsWith('https') ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${baseUrl}/api/radar/stream?deviceId=${encodeURIComponent(deviceId)}`;
+    const wsUrl = `${protocol}//${baseUrl}/ws/radar/stream?deviceId=${encodeURIComponent(deviceId)}`;
 
     console.log('正在连接WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);

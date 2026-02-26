@@ -3,6 +3,7 @@ package com.digital.video.gateway.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.digital.video.gateway.database.Database;
+import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.RadarDeviceDAO;
 import com.digital.video.gateway.database.RadarBackground;
@@ -11,6 +12,7 @@ import com.digital.video.gateway.database.RadarIntrusionRecordDAO;
 import com.digital.video.gateway.driver.livox.model.DefenseZone;
 import com.digital.video.gateway.service.*;
 import com.digital.video.gateway.service.RadarTestService;
+import com.digital.video.gateway.database.Assembly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -20,7 +22,6 @@ import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.UUID;
 
 /**
  * 雷达控制API接口
@@ -38,13 +39,15 @@ public class RadarController {
     private final DefenseZoneService defenseZoneService;
     private final IntrusionDetectionService intrusionDetectionService;
     private final RadarService radarService;
+    private final AssemblyService assemblyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public RadarController(RadarTestService radarTestService, Database database,
             BackgroundModelService backgroundService,
             DefenseZoneService defenseZoneService,
             IntrusionDetectionService intrusionDetectionService,
-            RadarService radarService) {
+            RadarService radarService,
+            AssemblyService assemblyService) {
         this.radarTestService = radarTestService;
         this.database = database;
         this.connection = database.getConnection();
@@ -54,6 +57,7 @@ public class RadarController {
         this.defenseZoneService = defenseZoneService;
         this.intrusionDetectionService = intrusionDetectionService;
         this.radarService = radarService;
+        this.assemblyService = assemblyService;
     }
 
     /**
@@ -188,15 +192,47 @@ public class RadarController {
             device.setDeviceId(deviceId);
             device.setRadarIp(radarIp);
             device.setRadarName(radarName.trim());
-            device.setAssemblyId((String) body.get("assemblyId")); // 可选
+            String assemblyId = (String) body.get("assemblyId");
+            device.setAssemblyId(assemblyId); // 可选
             device.setRadarSerial(radarSerial); // 可能为 null
+
+            // 若指定了装置ID，需校验装置存在，避免外键约束失败
+            if (assemblyId != null && !assemblyId.trim().isEmpty() && assemblyService != null) {
+                Assembly assembly = assemblyService.getAssembly(assemblyId.trim());
+                if (assembly == null) {
+                    response.status(400);
+                    return createErrorResponse(400, "指定的装置不存在: " + assemblyId);
+                }
+                device.setAssemblyId(assemblyId.trim());
+            }
 
             if (isUpdate) {
                 RadarDevice existing = existingBySerial != null ? existingBySerial : existingByIp;
-                device.setStatus(existing.getStatus());
-                device.setCurrentBackgroundId(existing.getCurrentBackgroundId());
+                if (existing != null) {
+                    device.setStatus(existing.getStatus());
+                    device.setCurrentBackgroundId(existing.getCurrentBackgroundId());
+                }
             } else {
                 device.setStatus(0);
+            }
+
+            // radar_devices 表有外键 device_id -> devices(device_id)，保存前需确保 devices 中已有对应记录
+            DeviceInfo devInfo = new DeviceInfo();
+            devInfo.setDeviceId(deviceId);
+            devInfo.setIp(radarIp);
+            devInfo.setPort(0);
+            devInfo.setName(radarName.trim());
+            devInfo.setUsername("");
+            devInfo.setPassword("");
+            devInfo.setRtspUrl("");
+            devInfo.setStatus(device.getStatus());
+            devInfo.setUserId(-1);
+            devInfo.setChannel(1);
+            devInfo.setBrand("radar");
+            devInfo.setCameraType("radar");
+            devInfo.setSerialNumber(radarSerial);
+            if (!database.saveOrUpdateDevice(devInfo)) {
+                logger.warn("同步 devices 表失败，继续尝试保存雷达设备: deviceId={}", deviceId);
             }
 
             if (radarDeviceDAO.saveOrUpdate(device)) {
@@ -265,8 +301,17 @@ public class RadarController {
             
             if (body.containsKey("assemblyId")) {
                 existingDevice.setAssemblyId(assemblyId);
+                // 若指定了装置ID，需校验装置存在，避免外键约束失败
+                if (assemblyId != null && !assemblyId.trim().isEmpty() && assemblyService != null) {
+                    Assembly assembly = assemblyService.getAssembly(assemblyId.trim());
+                    if (assembly == null) {
+                        response.status(400);
+                        return createErrorResponse(400, "指定的装置不存在: " + assemblyId);
+                    }
+                    existingDevice.setAssemblyId(assemblyId.trim());
+                }
             }
-            
+
             if (radarDeviceDAO.saveOrUpdate(existingDevice)) {
                 logger.info("雷达设备已更新: deviceId={}", deviceId);
                 return createSuccessResponse(existingDevice.toMap());
