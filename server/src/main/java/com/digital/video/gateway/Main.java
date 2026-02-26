@@ -1138,8 +1138,8 @@ public class Main {
         app.delete("/api/flows/{flowId}", flowController::deleteFlow);
         app.post("/api/flows/{flowId}/test", flowController::testFlow);
 
-        // 静态文件服务：/api/static/{path}
-        app.get("/api/static/{path}", ctx -> {
+        // 静态文件服务：/api/static/<path>（<> 允许多段路径如 captures/xxx.png、tts/xxx.mp3）
+        app.get("/api/static/<path>", ctx -> {
             String path = ctx.pathParam("path");
             if (path.contains("..")) {
                 ctx.status(403).result("Forbidden");

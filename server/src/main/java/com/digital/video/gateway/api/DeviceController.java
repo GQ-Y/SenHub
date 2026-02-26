@@ -97,21 +97,25 @@ public class DeviceController {
             if (deviceId == null || deviceId.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "缺少设备 ID"));
+                return;
             }
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String gbId = (String) body.get("gb_id");
             if (gbId == null || gbId.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "缺少 gb_id"));
+                return;
             }
             DeviceInfo device = deviceManager.getDevice(deviceId);
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
             if (!database.setDeviceGbId(deviceId, gbId.trim())) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "设置国标 ID 失败（格式须为 20 位数字或该 ID 已存在）"));
+                return;
             }
             DeviceInfo updated = deviceManager.getDevice(gbId.trim());
             ctx.contentType("application/json");
@@ -179,6 +183,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             ctx.status(200);
@@ -255,6 +260,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             // 保存更新前的品牌信息，用于检测品牌变化
@@ -377,6 +383,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             // 登出设备
@@ -409,6 +416,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             // 确保设备已登录
@@ -416,6 +424,7 @@ public class DeviceController {
                 if (!deviceManager.loginDevice(device)) {
                     ctx.status(500);
                     ctx.result(createErrorResponse(500, "设备登录失败，无法重启"));
+                    return;
                 }
             }
 
@@ -425,6 +434,7 @@ public class DeviceController {
             if (hcNetSDK == null) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "SDK未初始化"));
+                return;
             }
 
             // 使用NET_DVR_RebootDVR进行远程重启（更简单直接）
@@ -448,6 +458,7 @@ public class DeviceController {
                 logger.error(errorMsg);
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, errorMsg));
+                return;
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -579,6 +590,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             // 确保设备已登录
@@ -590,6 +602,7 @@ public class DeviceController {
             if (picFilePath == null) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "抓图失败"));
+                return;
             }
 
             // 返回文件URL（相对路径，前端 img 直连无法带 Header，故把 token 放在 query 以便鉴权）
@@ -623,6 +636,7 @@ public class DeviceController {
             if (path == null || path.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "路径参数不能为空"));
+                return;
             }
 
             // 安全检查：确保路径在captures目录下
@@ -631,6 +645,7 @@ public class DeviceController {
                     || !file.getCanonicalPath().startsWith(new java.io.File("./storage/captures").getCanonicalPath())) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "文件不存在"));
+                return;
             }
 
             ctx.status(200);
@@ -659,6 +674,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
@@ -677,6 +693,7 @@ public class DeviceController {
             if (action == null || command == null) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "action和command参数不能为空"));
+                return;
             }
 
             int channel = device.getChannel() > 0 ? device.getChannel() : 1;
@@ -687,6 +704,7 @@ public class DeviceController {
             if (!result) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "PTZ控制失败"));
+                return;
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -718,6 +736,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
@@ -726,6 +745,7 @@ public class DeviceController {
             if (body.get("pan") == null || body.get("tilt") == null) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "pan和tilt参数不能为空"));
+                return;
             }
             
             float pan = ((Number) body.get("pan")).floatValue();   // 水平角度 0-360°
@@ -740,6 +760,7 @@ public class DeviceController {
             if (!result) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "PTZ绝对定位失败"));
+                return;
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -790,6 +811,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             // 从请求头中获取token（用于video标签访问）
@@ -800,6 +822,7 @@ public class DeviceController {
             if (videoUrl == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "暂无录制视频"));
+                return;
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -826,6 +849,7 @@ public class DeviceController {
             if (zlmProxyService == null) {
                 ctx.status(503);
                 ctx.result(createErrorResponse(503, "直播服务未启用（请配置 zlm.enabled）"));
+                return;
             }
             String deviceId = ctx.pathParam("id");
             String host = ctx.host() != null ? ctx.host() : "127.0.0.1";
@@ -835,6 +859,7 @@ public class DeviceController {
                 logger.warn("获取直播地址返回 404: deviceId={} (设备不存在、无 RTSP 地址或拉流失败/超时，见服务端日志)", deviceId);
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在、无 RTSP 地址或拉流失败"));
+                return;
             }
             Map<String, Object> data = new HashMap<>(urls);
             ctx.status(200);
@@ -870,6 +895,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             // 从请求头中获取token（用于video标签访问）
@@ -879,6 +905,7 @@ public class DeviceController {
             if (videoUrl == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "暂无录制视频"));
+                return;
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -1009,6 +1036,7 @@ public class DeviceController {
             if (fileName == null || fileName.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "文件名参数不能为空"));
+                return;
             }
 
             logger.debug("视频文件请求 - deviceId: {}, fileName: {}", deviceId, fileName);
@@ -1017,6 +1045,7 @@ public class DeviceController {
             if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "无效的文件名"));
+                return;
             }
 
             // 验证文件名格式
@@ -1033,6 +1062,7 @@ public class DeviceController {
             if (!validPrefix || !validExtension) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "文件不属于该设备"));
+                return;
             }
 
             // 确定文件路径（提取文件在extracts子目录）
@@ -1042,6 +1072,7 @@ public class DeviceController {
             if (!videoFile.exists() || !videoFile.isFile()) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "视频文件不存在"));
+                return;
             }
 
             // 检查文件是否正在写入（可能是当前正在录制的文件）
@@ -1269,6 +1300,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
@@ -1279,6 +1311,7 @@ public class DeviceController {
             if (startTimeStr == null || endTimeStr == null) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "startTime和endTime参数不能为空"));
+                return;
             }
 
             // 解析时间
@@ -1292,11 +1325,13 @@ public class DeviceController {
             if (timeDiff > oneMinuteInMillis) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "设备录像回放时间范围不能超过1分钟"));
+                return;
             }
 
             if (timeDiff <= 0) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "结束时间必须晚于开始时间"));
+                return;
             }
 
             // 按设备分目录 + 以分钟时间命名: ./storage/downloads/{sanitizedDeviceId}/{yyyyMMdd}_{HH}_{mm}.mp4
@@ -1329,6 +1364,7 @@ public class DeviceController {
                 ctx.status(200);
                 ctx.contentType("application/json");
                 ctx.result(createSuccessResponse(data));
+                return;
             }
 
             // 确保设备已登录
@@ -1336,6 +1372,7 @@ public class DeviceController {
                 if (!deviceManager.loginDevice(device)) {
                     ctx.status(500);
                     ctx.result(createErrorResponse(500, "设备登录失败，无法启动录像下载"));
+                    return;
                 }
             }
 
@@ -1344,12 +1381,14 @@ public class DeviceController {
             if (sdk == null) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "无法获取设备SDK"));
+                return;
             }
 
             int userId = deviceManager.getDeviceUserId(deviceId);
             if (userId < 0) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "设备未登录"));
+                return;
             }
 
             // 调用SDK启动下载（使用主码流，streamType=0）
@@ -1360,6 +1399,7 @@ public class DeviceController {
                         deviceId, channel, startTimeStr, endTimeStr);
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "启动录像下载失败，请检查设备连接和参数"));
+                return;
             }
 
             logger.info("录像下载启动成功: deviceId={}, channel={}, downloadHandle={}, filePath={}",
@@ -1431,6 +1471,7 @@ public class DeviceController {
             if (deviceSDK == null) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "无法获取设备SDK"));
+                return;
             }
 
             // 使用DeviceSDK接口查询下载进度（支持所有品牌）
@@ -1480,6 +1521,7 @@ public class DeviceController {
             if (filePath == null || filePath.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "filePath参数不能为空"));
+                return;
             }
 
             // URL解码
@@ -1495,11 +1537,13 @@ public class DeviceController {
             if (!file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
                 ctx.status(403);
                 ctx.result(createErrorResponse(403, "访问被拒绝：文件不在允许的目录中"));
+                return;
             }
 
             if (!file.exists()) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "录像文件不存在"));
+                return;
             }
 
             // 根据文件扩展名设置正确的Content-Type
@@ -1533,8 +1577,6 @@ public class DeviceController {
             ctx.res().setContentLengthLong(file.length());
             // 流式传输文件
             streamCompletedVideoFile(file, ctx);
-                return;
-
         } catch (Exception e) {
             logger.error("获取录像文件失败", e);
             ctx.status(500);
@@ -1551,12 +1593,14 @@ public class DeviceController {
             if (zlmProxyService == null) {
                 ctx.status(503);
                 ctx.result(createErrorResponse(503, "转码服务未启用（请配置 zlm.enabled 并安装 FFmpeg）"));
+                return;
             }
             String deviceId = ctx.pathParam("id");
             String filePath = ctx.queryParam("filePath");
             if (filePath == null || filePath.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "filePath参数不能为空"));
+                return;
             }
             try {
                 filePath = java.net.URLDecoder.decode(filePath, "UTF-8");
@@ -1591,12 +1635,14 @@ public class DeviceController {
             if (zlmProxyService == null) {
                 ctx.status(503);
                 ctx.result(createErrorResponse(503, "转码服务未启用"));
+                return;
             }
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String key = (String) body.get("key");
             if (key == null || key.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "key参数不能为空"));
+                return;
             }
             boolean ok = zlmProxyService.stopPlaybackTranscode(key);
             Map<String, Object> data = new HashMap<>();
@@ -1641,6 +1687,7 @@ public class DeviceController {
             if (hcNetSDK == null) {
                 ctx.status(500);
                 ctx.result(createErrorResponse(500, "SDK未初始化"));
+                return;
             }
 
             // 停止下载
@@ -1673,6 +1720,7 @@ public class DeviceController {
             if (device == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "设备不存在"));
+                return;
             }
 
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
@@ -1681,6 +1729,7 @@ public class DeviceController {
             if (filePath == null || filePath.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "filePath参数不能为空"));
+                return;
             }
 
             // 安全检查：确保文件在downloads目录下
@@ -1688,11 +1737,13 @@ public class DeviceController {
             if (!file.exists()) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "文件不存在"));
+                return;
             }
 
             if (!file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
                 ctx.status(403);
                 ctx.result(createErrorResponse(403, "无权访问该文件"));
+                return;
             }
 
             // 返回文件下载URL（带 token 以便前端 a 标签直连可鉴权）
@@ -1724,6 +1775,7 @@ public class DeviceController {
             if (path == null || path.isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "路径参数不能为空"));
+                return;
             }
 
             // 安全检查：确保路径在downloads目录下
@@ -1732,6 +1784,7 @@ public class DeviceController {
                     .startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "文件不存在"));
+                return;
             }
 
             ctx.status(200);

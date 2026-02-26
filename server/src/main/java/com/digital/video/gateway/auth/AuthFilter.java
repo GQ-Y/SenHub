@@ -53,10 +53,11 @@ public class AuthFilter {
         ctx.attribute("token", token);
     }
 
-    /** 是否为通过 query token 鉴权的文件直连路径（img/src、a/href 无法带 Authorization） */
+    /** 是否为通过 query token 鉴权的文件直连路径（img/src、a/href、audio src 无法带 Authorization） */
     private static boolean isFileServePath(String path) {
         if (path == null) return false;
-        return path.contains("/snapshot/file")
+        return path.startsWith("/api/static/")
+                || path.contains("/snapshot/file")
                 || path.contains("/playback/file")
                 || path.contains("/export/file")
                 || (path.contains("recording-tasks") && path.contains("/file"));

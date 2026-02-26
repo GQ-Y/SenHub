@@ -2,19 +2,20 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { aiAnalysisService, AiAnalysisRecord } from '../src/api/services';
-import { fetchWithAuthAsBlobUrl } from '../src/api/client';
+import { fetchWithAuthAsBlobUrl, appendTokenToStaticUrl } from '../src/api/client';
 import {
   Brain, Image as ImageIcon, Volume2, VolumeX, RefreshCw,
   Clock, ShieldCheck, ShieldX, Shield, AlertTriangle,
   Megaphone, X, ZoomIn, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
-/** 带鉴权的图片：对 /api 或相对路径用 fetch+token 取 blob 再展示 */
+/** 带鉴权的图片：/api/static/ 用 query token 直链，其它 /api 用 fetch+blob */
 const AuthImage: React.FC<{ url: string; alt: string; className?: string; loading?: 'lazy' | 'eager' }> = ({ url, alt, className, loading }) => {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [err, setErr] = useState(false);
   const blobRef = useRef<string | null>(null);
-  const needAuth = url.startsWith('/') || url.includes('/api/');
+  const isStaticUrl = url && url.includes('/api/static/');
+  const needAuth = !isStaticUrl && (url.startsWith('/') || url.includes('/api/'));
   useEffect(() => {
     if (!url || !needAuth) return;
     let cancelled = false;
@@ -37,7 +38,7 @@ const AuthImage: React.FC<{ url: string; alt: string; className?: string; loadin
     };
   }, [url, needAuth]);
   if (err) return <div className={className} style={{ background: '#f3f4f6' }} />;
-  const src = needAuth ? blobUrl : url;
+  const src = isStaticUrl ? appendTokenToStaticUrl(url) : (needAuth ? blobUrl : url);
   if (!src) return <div className={className} style={{ background: '#f3f4f6' }} />;
   return <img src={src} alt={alt} className={className} loading={loading} />;
 };
@@ -75,14 +76,16 @@ export const AiAnalysisRecords: React.FC = () => {
       if (playingId === id) { setPlayingId(null); return; }
     }
     try {
-      const needAuth = url.startsWith('/') || url.includes('/api/');
-      const src = needAuth ? await fetchWithAuthAsBlobUrl(url) : url;
+      const isStaticUrl = url.includes('/api/static/');
+      const needAuth = !isStaticUrl && (url.startsWith('/') || url.includes('/api/'));
+      const src = isStaticUrl ? appendTokenToStaticUrl(url) : (needAuth ? await fetchWithAuthAsBlobUrl(url) : url);
       const audio = new Audio(src);
       audioRef.current = audio;
       setPlayingId(id);
-      audio.play().catch(() => { audioRef.current = null; setPlayingId(null); if (needAuth && src) URL.revokeObjectURL(src); });
-      audio.onended = () => { audioRef.current = null; setPlayingId(null); if (needAuth && src) URL.revokeObjectURL(src); };
-      audio.onerror = () => { audioRef.current = null; setPlayingId(null); if (needAuth && src) URL.revokeObjectURL(src); };
+      const revoke = needAuth && src && !isStaticUrl;
+      audio.play().catch(() => { audioRef.current = null; setPlayingId(null); if (revoke) URL.revokeObjectURL(src); });
+      audio.onended = () => { audioRef.current = null; setPlayingId(null); if (revoke) URL.revokeObjectURL(src); };
+      audio.onerror = () => { audioRef.current = null; setPlayingId(null); if (revoke) URL.revokeObjectURL(src); };
     } catch {
       setPlayingId(null);
     }

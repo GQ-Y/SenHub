@@ -241,6 +241,17 @@ export async function del<T = any>(
 }
 
 /**
+ * 为 /api/static/ 等直链 URL 追加 query token，供 img/audio 等无法带 Authorization 头的场景使用
+ */
+export function appendTokenToStaticUrl(url: string): string {
+  if (!url || !url.includes('/api/static/')) return url;
+  const token = getToken();
+  if (!token) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
+}
+
+/**
  * 带 Token 请求媒体 URL，返回 Blob URL（用于 img/audio/video 等无法带 Header 的场景）
  * 调用方在不用时需自行 revokeObjectURL 释放
  */
