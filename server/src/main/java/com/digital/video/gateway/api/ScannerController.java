@@ -4,10 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.DeviceInfo;
 import com.digital.video.gateway.device.DeviceManager;
 import com.digital.video.gateway.scanner.DeviceScanner;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -129,7 +128,7 @@ public class ScannerController {
      * 启动手动扫描
      * POST /api/scanner/start
      */
-    public String startScan(Request request, Response response) {
+    public void startScan(Context ctx) {
         try {
             // 创建新的扫描会话
             String sessionId = "scan_" + sessionIdCounter.incrementAndGet() + "_" + System.currentTimeMillis();
@@ -162,16 +161,16 @@ public class ScannerController {
                 }
             }, "ManualScan-" + sessionId).start();
 
-            response.status(200);
-            response.type("application/json");
+            ctx.status(200);
+            ctx.contentType("application/json");
             Map<String, Object> result = new HashMap<>();
             result.put("sessionId", sessionId);
             result.put("status", "scanning");
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("启动扫描失败", e);
-            response.status(500);
-            return createErrorResponse(500, "启动扫描失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "启动扫描失败: " + e.getMessage()));
         }
     }
 
@@ -179,23 +178,22 @@ public class ScannerController {
      * 获取扫描进度和结果
      * GET /api/scanner/status/:sessionId
      */
-    public String getScanStatus(Request request, Response response) {
+    public void getScanStatus(Context ctx) {
         try {
-            String sessionId = request.params(":sessionId");
+            String sessionId = ctx.pathParam("sessionId");
             ScanSession session = scanSessions.get(sessionId);
-
             if (session == null) {
-                response.status(404);
-                return createErrorResponse(404, "扫描会话不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "扫描会话不存在"));
+                return;
             }
-
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(convertSessionToMap(session));
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(convertSessionToMap(session)));
         } catch (Exception e) {
             logger.error("获取扫描状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取扫描状态失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取扫描状态失败: " + e.getMessage()));
         }
     }
 
@@ -204,22 +202,23 @@ public class ScannerController {
      * POST /api/scanner/add-devices
      */
     @SuppressWarnings("unchecked")
-    public String addDevices(Request request, Response response) {
+    public void addDevices(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String sessionId = (String) body.get("sessionId");
             @SuppressWarnings("unchecked")
             List<String> deviceIps = (List<String>) body.get("deviceIps");
 
             if (sessionId == null || deviceIps == null || deviceIps.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "参数错误：需要sessionId和deviceIps");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "参数错误：需要sessionId和deviceIps"));
+                return;
             }
-
             ScanSession session = scanSessions.get(sessionId);
             if (session == null) {
-                response.status(404);
-                return createErrorResponse(404, "扫描会话不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "扫描会话不存在"));
+                return;
             }
 
             int addedCount = 0;
@@ -284,19 +283,19 @@ public class ScannerController {
                 }
             }
 
-            response.status(200);
-            response.type("application/json");
+            ctx.status(200);
+            ctx.contentType("application/json");
             Map<String, Object> result = new HashMap<>();
             result.put("addedCount", addedCount);
             result.put("skippedCount", skippedCount);
             result.put("failedCount", failedCount);
             result.put("addedDevices", addedDevices);
             result.put("errors", errors);
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("添加设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "添加设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "添加设备失败: " + e.getMessage()));
         }
     }
 

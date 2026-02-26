@@ -4,10 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.CameraEventTypeTable;
 import com.digital.video.gateway.database.CanonicalEventTable;
 import com.digital.video.gateway.database.Database;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.sql.Connection;
 import java.util.ArrayList;
@@ -35,11 +34,11 @@ public class EventTypeController {
      *   - standard=true: 返回标准事件（canonical_events）和品牌映射
      *   - brand=xxx: 仅返回指定品牌的映射
      */
-    public String getAllEventTypes(Request request, Response response) {
+    public void getAllEventTypes(Context ctx) {
         try {
             Connection conn = database.getConnection();
-            String standardParam = request.queryParams("standard");
-            String brandParam = request.queryParams("brand");
+            String standardParam = ctx.queryParam("standard");
+            String brandParam = ctx.queryParam("brand");
             
             // 如果请求标准事件格式
             if ("true".equalsIgnoreCase(standardParam)) {
@@ -60,9 +59,10 @@ public class EventTypeController {
                     result.put("brandMappings", allMappings);
                 }
                 
-                response.status(200);
-                response.type("application/json");
-                return createSuccessResponse(result);
+                ctx.status(200);
+                ctx.contentType("application/json");
+                ctx.result(createSuccessResponse(result));
+                return;
             }
             
             // 返回所有独立事件，包括基础报警和智能分析的二级事件
@@ -145,13 +145,13 @@ public class EventTypeController {
                 }
             }
             
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(groupedEvents);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(groupedEvents));
         } catch (Exception e) {
             logger.error("获取事件类型列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取事件类型列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取事件类型列表失败: " + e.getMessage()));
         }
     }
 
@@ -159,24 +159,23 @@ public class EventTypeController {
      * 获取指定品牌的事件类型
      * GET /api/event-types/:brand
      */
-    public String getEventTypesByBrand(Request request, Response response) {
+    public void getEventTypesByBrand(Context ctx) {
         try {
-            String brand = request.params(":brand");
+            String brand = ctx.pathParam("brand");
             if (brand == null || brand.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "品牌参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "品牌参数不能为空"));
+                return;
             }
-            
             Connection conn = database.getConnection();
             List<Map<String, Object>> events = CameraEventTypeTable.getEventTypesByBrand(conn, brand.toLowerCase());
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(events);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(events));
         } catch (Exception e) {
             logger.error("获取品牌事件类型失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取品牌事件类型失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取品牌事件类型失败: " + e.getMessage()));
         }
     }
 
@@ -184,18 +183,17 @@ public class EventTypeController {
      * 获取所有事件类型（平铺列表）
      * GET /api/event-types/all
      */
-    public String getAllEventTypesList(Request request, Response response) {
+    public void getAllEventTypesList(Context ctx) {
         try {
             Connection conn = database.getConnection();
             List<Map<String, Object>> allEvents = CameraEventTypeTable.getAllEventTypes(conn);
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(allEvents);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(allEvents));
         } catch (Exception e) {
             logger.error("获取所有事件类型失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取所有事件类型失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取所有事件类型失败: " + e.getMessage()));
         }
     }
 

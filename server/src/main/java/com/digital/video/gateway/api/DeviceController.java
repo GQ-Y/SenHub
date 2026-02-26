@@ -24,8 +24,7 @@ import java.io.File;
 import java.io.RandomAccessFile;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import spark.Request;
-import spark.Response;
+import io.javalin.http.Context;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,17 +73,17 @@ public class DeviceController {
      * 建议一个可用的设备国标 20 位 ID（供前端「自动生成」按钮使用，不在后台自动赋值）
      * GET /api/devices/suggest-gb-id
      */
-    public String suggestGbId(Request request, Response response) {
+    public void suggestGbId(Context ctx) {
         try {
             String suggested = database.suggestDeviceGbId();
             Map<String, Object> data = new HashMap<>();
             data.put("suggested_gb_id", suggested);
-            response.type("application/json");
-            return objectMapper.writeValueAsString(Map.of("code", 0, "data", data));
+            ctx.contentType("application/json");
+            ctx.result(objectMapper.writeValueAsString(Map.of("code", 0, "data", data)));
         } catch (Exception e) {
             logger.error("建议国标 ID 失败", e);
-            response.status(500);
-            return createErrorResponse(500, "建议国标 ID 失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "建议国标 ID 失败: " + e.getMessage()));
         }
     }
 
@@ -92,35 +91,35 @@ public class DeviceController {
      * 用户主动设置设备国标 ID（将当前 device_id 更新为 20 位国标 ID，并同步所有关联表）
      * PUT /api/devices/:id/set-gb-id   body: { "gb_id": "34017101041320000001" }
      */
-    public String setDeviceGbId(Request request, Response response) {
+    public void setDeviceGbId(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             if (deviceId == null || deviceId.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "缺少设备 ID");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少设备 ID"));
             }
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String gbId = (String) body.get("gb_id");
             if (gbId == null || gbId.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "缺少 gb_id");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少 gb_id"));
             }
             DeviceInfo device = deviceManager.getDevice(deviceId);
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
             if (!database.setDeviceGbId(deviceId, gbId.trim())) {
-                response.status(400);
-                return createErrorResponse(400, "设置国标 ID 失败（格式须为 20 位数字或该 ID 已存在）");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "设置国标 ID 失败（格式须为 20 位数字或该 ID 已存在）"));
             }
             DeviceInfo updated = deviceManager.getDevice(gbId.trim());
-            response.type("application/json");
-            return createSuccessResponse(convertDeviceToMap(updated));
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(convertDeviceToMap(updated)));
         } catch (Exception e) {
             logger.error("设置设备国标 ID 失败", e);
-            response.status(500);
-            return createErrorResponse(500, "设置国标 ID 失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "设置国标 ID 失败: " + e.getMessage()));
         }
     }
 
@@ -128,13 +127,13 @@ public class DeviceController {
      * 获取设备列表
      * GET /api/devices
      */
-    public String getDevices(Request request, Response response) {
+    public void getDevices(Context ctx) {
         try {
             List<DeviceInfo> devices = deviceManager.getAllDevices();
 
             // 支持搜索和过滤
-            String search = request.queryParams("search");
-            String statusFilter = request.queryParams("status");
+            String search = ctx.queryParam("search");
+            String statusFilter = ctx.queryParam("status");
 
             List<Map<String, Object>> deviceList = new ArrayList<>();
             for (DeviceInfo device : devices) {
@@ -158,13 +157,13 @@ public class DeviceController {
                 deviceList.add(convertDeviceToMap(device));
             }
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(deviceList);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(deviceList));
         } catch (Exception e) {
             logger.error("获取设备列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取设备列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取设备列表失败: " + e.getMessage()));
         }
     }
 
@@ -172,23 +171,23 @@ public class DeviceController {
      * 获取设备详情
      * GET /api/devices/:id
      */
-    public String getDevice(Request request, Response response) {
+    public void getDevice(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(convertDeviceToMap(device));
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(convertDeviceToMap(device)));
         } catch (Exception e) {
             logger.error("获取设备详情失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取设备详情失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取设备详情失败: " + e.getMessage()));
         }
     }
 
@@ -196,9 +195,9 @@ public class DeviceController {
      * 添加设备
      * POST /api/devices
      */
-    public String addDevice(Request request, Response response) {
+    public void addDevice(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
 
             String ip = (String) body.get("ip");
             int port = ((Number) body.get("port")).intValue();
@@ -234,13 +233,13 @@ public class DeviceController {
             logger.info("设备保存成功，立即尝试登录: {}", device.getDeviceId());
             deviceManager.loginDevice(device);
 
-            response.status(201);
-            response.type("application/json");
-            return createSuccessResponse(convertDeviceToMap(device));
+            ctx.status(201);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(convertDeviceToMap(device)));
         } catch (Exception e) {
             logger.error("添加设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "添加设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "添加设备失败: " + e.getMessage()));
         }
     }
 
@@ -248,14 +247,14 @@ public class DeviceController {
      * 更新设备
      * PUT /api/devices/:id
      */
-    public String updateDevice(Request request, Response response) {
+    public void updateDevice(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 保存更新前的品牌信息，用于检测品牌变化
@@ -264,7 +263,7 @@ public class DeviceController {
                 oldBrand = DeviceInfo.BRAND_AUTO;
             }
 
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
 
             // 更新设备信息
             if (body.containsKey("name")) {
@@ -356,13 +355,13 @@ public class DeviceController {
                 deviceManager.loginDevice(device);
             }
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(convertDeviceToMap(device));
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(convertDeviceToMap(device)));
         } catch (Exception e) {
             logger.error("更新设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "更新设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "更新设备失败: " + e.getMessage()));
         }
     }
 
@@ -370,14 +369,14 @@ public class DeviceController {
      * 删除设备
      * DELETE /api/devices/:id
      */
-    public String deleteDevice(Request request, Response response) {
+    public void deleteDevice(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 登出设备
@@ -388,13 +387,13 @@ public class DeviceController {
             // 从数据库删除
             database.deleteDevice(deviceId);
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(Map.of("message", "设备已删除"));
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(Map.of("message", "设备已删除")));
         } catch (Exception e) {
             logger.error("删除设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "删除设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "删除设备失败: " + e.getMessage()));
         }
     }
 
@@ -402,21 +401,21 @@ public class DeviceController {
      * 重启设备
      * POST /api/devices/:id/reboot
      */
-    public String rebootDevice(Request request, Response response) {
+    public void rebootDevice(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 确保设备已登录
             if (!deviceManager.isDeviceLoggedIn(deviceId)) {
                 if (!deviceManager.loginDevice(device)) {
-                    response.status(500);
-                    return createErrorResponse(500, "设备登录失败，无法重启");
+                    ctx.status(500);
+                    ctx.result(createErrorResponse(500, "设备登录失败，无法重启"));
                 }
             }
 
@@ -424,8 +423,8 @@ public class DeviceController {
             HCNetSDK hcNetSDK = sdk.getSDK();
 
             if (hcNetSDK == null) {
-                response.status(500);
-                return createErrorResponse(500, "SDK未初始化");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "SDK未初始化"));
             }
 
             // 使用NET_DVR_RebootDVR进行远程重启（更简单直接）
@@ -447,21 +446,21 @@ public class DeviceController {
                     errorMsg += " (参数错误，可能是设备不支持重启功能或用户权限不足)";
                 }
                 logger.error(errorMsg);
-                response.status(500);
-                return createErrorResponse(500, errorMsg);
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, errorMsg));
             }
 
             Map<String, Object> data = new HashMap<>();
             data.put("message", "设备重启命令已发送");
             data.put("device_id", deviceId);
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("重启设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "重启设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "重启设备失败: " + e.getMessage()));
         }
     }
 
@@ -572,14 +571,14 @@ public class DeviceController {
      * 设备快照/抓图
      * POST /api/devices/:id/snapshot
      */
-    public String captureSnapshot(Request request, Response response) {
+    public void captureSnapshot(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 确保设备已登录
@@ -589,25 +588,28 @@ public class DeviceController {
             String picFilePath = captureService.captureSnapshot(deviceId, channel);
 
             if (picFilePath == null) {
-                response.status(500);
-                return createErrorResponse(500, "抓图失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "抓图失败"));
             }
 
-            // 返回文件URL（相对路径，前端可以通过代理访问）
+            // 返回文件URL（相对路径，前端 img 直连无法带 Header，故把 token 放在 query 以便鉴权）
+            String snapshotUrl = "/api/devices/" + deviceId + "/snapshot/file?path="
+                    + java.net.URLEncoder.encode(picFilePath, "UTF-8");
+            String token = (String) ctx.attribute("token");
+            if (token != null) snapshotUrl += "&token=" + token;
             Map<String, Object> data = new HashMap<>();
-            data.put("url", "/api/devices/" + deviceId + "/snapshot/file?path="
-                    + java.net.URLEncoder.encode(picFilePath, "UTF-8"));
+            data.put("url", snapshotUrl);
             data.put("filePath", picFilePath);
             SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
             data.put("timestamp", sdf.format(new Date()));
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("抓图失败", e);
-            response.status(500);
-            return createErrorResponse(500, "抓图失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "抓图失败: " + e.getMessage()));
         }
     }
 
@@ -615,33 +617,33 @@ public class DeviceController {
      * 获取快照文件
      * GET /api/devices/:id/snapshot/file?path=...
      */
-    public Object getSnapshotFile(Request request, Response response) {
+    public void getSnapshotFile(Context ctx) {
         try {
-            String path = request.queryParams("path");
+            String path = ctx.queryParam("path");
             if (path == null || path.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "路径参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "路径参数不能为空"));
             }
 
             // 安全检查：确保路径在captures目录下
             java.io.File file = new java.io.File(path);
             if (!file.exists()
                     || !file.getCanonicalPath().startsWith(new java.io.File("./storage/captures").getCanonicalPath())) {
-                response.status(404);
-                return createErrorResponse(404, "文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "文件不存在"));
             }
 
-            response.status(200);
-            response.type("image/jpeg");
-            response.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
+            ctx.status(200);
+            ctx.contentType("image/jpeg");
+            ctx.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
 
             // 读取文件并返回
-            java.nio.file.Files.copy(file.toPath(), response.raw().getOutputStream());
-            return "";
+            java.nio.file.Files.copy(file.toPath(), ctx.res().getOutputStream());
+            return;
         } catch (Exception e) {
             logger.error("获取快照文件失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取快照文件失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取快照文件失败: " + e.getMessage()));
         }
     }
 
@@ -649,17 +651,17 @@ public class DeviceController {
      * PTZ控制
      * POST /api/devices/:id/ptz
      */
-    public String ptzControl(Request request, Response response) {
+    public void ptzControl(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String action = (String) body.get("action"); // start/stop
             String command = (String) body.get("command"); // up/down/left/right/zoom_in/zoom_out
 
@@ -673,8 +675,8 @@ public class DeviceController {
             }
 
             if (action == null || command == null) {
-                response.status(400);
-                return createErrorResponse(400, "action和command参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "action和command参数不能为空"));
             }
 
             int channel = device.getChannel() > 0 ? device.getChannel() : 1;
@@ -683,8 +685,8 @@ public class DeviceController {
             boolean result = ptzService.ptzControl(deviceId, channel, command, action, speed);
 
             if (!result) {
-                response.status(500);
-                return createErrorResponse(500, "PTZ控制失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "PTZ控制失败"));
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -693,13 +695,13 @@ public class DeviceController {
             data.put("command", command);
             data.put("speed", speed);
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("PTZ控制失败", e);
-            response.status(500);
-            return createErrorResponse(500, "PTZ控制失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "PTZ控制失败: " + e.getMessage()));
         }
     }
 
@@ -708,22 +710,22 @@ public class DeviceController {
      * POST /api/devices/:id/ptz/goto
      * 直接指定水平角度、垂直角度、变倍参数控制球机
      */
-    public String ptzGoto(Request request, Response response) {
+    public void ptzGoto(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             
             // 获取PTZ参数
             if (body.get("pan") == null || body.get("tilt") == null) {
-                response.status(400);
-                return createErrorResponse(400, "pan和tilt参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "pan和tilt参数不能为空"));
             }
             
             float pan = ((Number) body.get("pan")).floatValue();   // 水平角度 0-360°
@@ -736,8 +738,8 @@ public class DeviceController {
             boolean result = ptzService.gotoAngle(deviceId, channel, pan, tilt, zoom);
 
             if (!result) {
-                response.status(500);
-                return createErrorResponse(500, "PTZ绝对定位失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "PTZ绝对定位失败"));
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -746,13 +748,13 @@ public class DeviceController {
             data.put("tilt", tilt);
             data.put("zoom", zoom);
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("PTZ绝对定位失败", e);
-            response.status(500);
-            return createErrorResponse(500, "PTZ绝对定位失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "PTZ绝对定位失败: " + e.getMessage()));
         }
     }
 
@@ -780,24 +782,24 @@ public class DeviceController {
      * 获取视频流地址（返回最新录制的视频）
      * GET /api/devices/:id/stream
      */
-    public String getStreamUrl(Request request, Response response) {
+    public void getStreamUrl(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 从请求头中获取token（用于video标签访问）
-            String token = getTokenFromRequest(request);
+            String token = getTokenFromRequest(ctx);
 
             // 返回录制视频URL（包含token参数）
             String videoUrl = getLatestRecordVideo(deviceId, token);
             if (videoUrl == null) {
-                response.status(404);
-                return createErrorResponse(404, "暂无录制视频");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "暂无录制视频"));
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -805,13 +807,13 @@ public class DeviceController {
             data.put("streamType", "mp4");
             data.put("message", "返回最新录制的视频文件");
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("获取视频流地址失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取视频流地址失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取视频流地址失败: " + e.getMessage()));
         }
     }
 
@@ -819,37 +821,37 @@ public class DeviceController {
      * 获取设备直播地址（ZLM 拉流代理 → HTTP-FLV/HLS）
      * GET /api/devices/:id/live/url
      */
-    public String getLiveUrl(Request request, Response response) {
+    public void getLiveUrl(Context ctx) {
         try {
             if (zlmProxyService == null) {
-                response.status(503);
-                return createErrorResponse(503, "直播服务未启用（请配置 zlm.enabled）");
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "直播服务未启用（请配置 zlm.enabled）"));
             }
-            String deviceId = request.params(":id");
-            String host = request.host() != null ? request.host() : "127.0.0.1";
+            String deviceId = ctx.pathParam("id");
+            String host = ctx.host() != null ? ctx.host() : "127.0.0.1";
             if (host.contains(":")) host = host.substring(0, host.indexOf(':'));
             Map<String, String> urls = zlmProxyService.getLiveUrl(deviceId, host);
             if (urls == null) {
                 logger.warn("获取直播地址返回 404: deviceId={} (设备不存在、无 RTSP 地址或拉流失败/超时，见服务端日志)", deviceId);
-                response.status(404);
-                return createErrorResponse(404, "设备不存在、无 RTSP 地址或拉流失败");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在、无 RTSP 地址或拉流失败"));
             }
             Map<String, Object> data = new HashMap<>(urls);
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("获取直播地址失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取直播地址失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取直播地址失败: " + e.getMessage()));
         }
     }
 
     /**
      * 从请求中获取JWT token
      */
-    private String getTokenFromRequest(Request request) {
-        String authHeader = request.headers("Authorization");
+    private String getTokenFromRequest(Context ctx) {
+        String authHeader = ctx.header("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         }
@@ -860,23 +862,23 @@ public class DeviceController {
      * 获取设备的最新录制视频文件
      * GET /api/devices/:id/record-video
      */
-    public String getRecordVideo(Request request, Response response) {
+    public void getRecordVideo(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 从请求头中获取token（用于video标签访问）
-            String token = getTokenFromRequest(request);
+            String token = getTokenFromRequest(ctx);
 
             String videoUrl = getLatestRecordVideo(deviceId, token);
             if (videoUrl == null) {
-                response.status(404);
-                return createErrorResponse(404, "暂无录制视频");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "暂无录制视频"));
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -884,13 +886,13 @@ public class DeviceController {
             data.put("deviceId", deviceId);
             data.put("message", "返回最新录制的视频文件");
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("获取录制视频失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取录制视频失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取录制视频失败: " + e.getMessage()));
         }
     }
 
@@ -982,10 +984,10 @@ public class DeviceController {
      * 提供视频文件HTTP访问
      * GET /api/devices/:id/video?file=xxx.mp4
      */
-    public Object getVideoFile(Request request, Response response) {
+    public void getVideoFile(Context ctx) {
         try {
             // URL解码设备ID（Spark会自动解码，但为了安全起见，我们再次解码）
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             try {
                 deviceId = java.net.URLDecoder.decode(deviceId, "UTF-8");
             } catch (Exception e) {
@@ -994,7 +996,7 @@ public class DeviceController {
             }
 
             // URL解码文件名
-            String fileName = request.queryParams("file");
+            String fileName = ctx.queryParam("file");
             if (fileName != null && !fileName.isEmpty()) {
                 try {
                     fileName = java.net.URLDecoder.decode(fileName, "UTF-8");
@@ -1005,16 +1007,16 @@ public class DeviceController {
             }
 
             if (fileName == null || fileName.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "文件名参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "文件名参数不能为空"));
             }
 
             logger.debug("视频文件请求 - deviceId: {}, fileName: {}", deviceId, fileName);
 
             // 安全检查：防止路径遍历攻击
             if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
-                response.status(400);
-                return createErrorResponse(400, "无效的文件名");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "无效的文件名"));
             }
 
             // 验证文件名格式
@@ -1029,8 +1031,8 @@ public class DeviceController {
                     || fileName.startsWith(expectedPrefix3);
             boolean validExtension = fileName.endsWith(".mp4");
             if (!validPrefix || !validExtension) {
-                response.status(400);
-                return createErrorResponse(400, "文件不属于该设备");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "文件不属于该设备"));
             }
 
             // 确定文件路径（提取文件在extracts子目录）
@@ -1038,8 +1040,8 @@ public class DeviceController {
                     : "./storage/records/" + fileName;
             File videoFile = new File(filePath);
             if (!videoFile.exists() || !videoFile.isFile()) {
-                response.status(404);
-                return createErrorResponse(404, "视频文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "视频文件不存在"));
             }
 
             // 检查文件是否正在写入（可能是当前正在录制的文件）
@@ -1049,42 +1051,45 @@ public class DeviceController {
             // 设置响应头（必须在写入输出流之前设置）
             // 根据文件扩展名设置Content-Type
             String contentType = "video/mp4";
-            response.raw().setContentType(contentType);
-            response.raw().setHeader("Accept-Ranges", "bytes");
+            ctx.res().setContentType(contentType);
+            ctx.res().setHeader("Accept-Ranges", "bytes");
 
             // 如果文件正在录制中，不设置Content-Length，允许流式传输
             // 这样可以支持实时播放正在写入的MP4文件
             if (!isRecording) {
-                response.raw().setContentLengthLong(videoFile.length());
+                ctx.res().setContentLengthLong(videoFile.length());
             } else {
                 // 对于正在录制的文件，使用Transfer-Encoding: chunked
-                response.raw().setHeader("Transfer-Encoding", "chunked");
+                ctx.res().setHeader("Transfer-Encoding", "chunked");
                 // 移除Content-Length，允许流式传输
             }
 
             // 支持Range请求（视频拖拽）
-            String rangeHeader = request.headers("Range");
+            String rangeHeader = ctx.header("Range");
             logger.debug("视频文件请求 - deviceId: {}, fileName: {}, Range: {}, isRecording: {}",
                     deviceId, fileName, rangeHeader, isRecording);
             if (rangeHeader != null && rangeHeader.startsWith("bytes=") && !isRecording) {
                 // 只有在文件未在录制时才支持Range请求
                 logger.debug("处理Range请求: {}", rangeHeader);
-                return handleRangeRequest(videoFile, rangeHeader, response);
+                handleRangeRequest(videoFile, rangeHeader, ctx);
+                return;
             }
 
             // 对于所有文件都使用流式传输（避免大文件一次性读取到内存）
             // 对于正在录制的文件，使用特殊的流式读取（支持实时追加）
             if (isRecording) {
-                return streamVideoFile(videoFile, response);
+                streamVideoFile(videoFile, ctx);
+                return;
             } else {
                 // 对于已完成的文件，使用普通流式传输
-                return streamCompletedVideoFile(videoFile, response);
+                streamCompletedVideoFile(videoFile, ctx);
+                return;
             }
 
         } catch (Exception e) {
             logger.error("获取视频文件失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取视频文件失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取视频文件失败: " + e.getMessage()));
         }
     }
 
@@ -1092,20 +1097,20 @@ public class DeviceController {
      * 流式传输已完成的视频文件（非录制中）
      * 注意：使用流式传输，确保正确设置Content-Length
      */
-    private Object streamCompletedVideoFile(File videoFile, Response response) {
+    private void streamCompletedVideoFile(File videoFile, Context ctx) {
         try {
             logger.debug("开始流式传输视频文件: {}, 大小: {} bytes", videoFile.getName(), videoFile.length());
 
             // 设置响应头（必须在写入输出流之前设置）
-            // 使用response.type()和response.header()确保不会被CORS过滤器覆盖
-            response.type("video/mp4");
-            response.header("Content-Length", String.valueOf(videoFile.length()));
-            response.header("Accept-Ranges", "bytes");
-            response.raw().setStatus(200);
+            // 使用ctx.contentType()和ctx.header()确保不会被CORS过滤器覆盖
+            ctx.contentType("video/mp4");
+            ctx.header("Content-Length", String.valueOf(videoFile.length()));
+            ctx.header("Accept-Ranges", "bytes");
+            ctx.res().setStatus(200);
 
             // 使用流式传输，避免一次性加载到内存
             try (java.io.FileInputStream fis = new java.io.FileInputStream(videoFile);
-                    java.io.OutputStream os = response.raw().getOutputStream()) {
+                    java.io.OutputStream os = ctx.res().getOutputStream()) {
                 byte[] buffer = new byte[8192]; // 8KB缓冲区
                 int bytesRead;
                 long totalBytes = 0;
@@ -1117,7 +1122,7 @@ public class DeviceController {
                 logger.debug("视频文件传输完成: {} bytes", totalBytes);
             }
 
-            return "";
+            return;
         } catch (java.io.IOException e) {
             // 客户端断开连接是正常的，不需要记录为错误
             if (e.getMessage() != null
@@ -1127,32 +1132,32 @@ public class DeviceController {
                 logger.error("流式传输视频文件失败: {}", videoFile.getName(), e);
             }
             try {
-                response.raw().getOutputStream().close();
+                ctx.res().getOutputStream().close();
             } catch (Exception ex) {
                 // Ignore
             }
-            return "";
+            return;
         } catch (Exception e) {
             logger.error("流式传输视频文件失败: {}", videoFile.getName(), e);
             try {
-                response.raw().getOutputStream().close();
+                ctx.res().getOutputStream().close();
             } catch (Exception ex) {
                 // Ignore
             }
-            response.status(500);
-            return createErrorResponse(500, "流式传输视频文件失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "流式传输视频文件失败: " + e.getMessage()));
         }
     }
 
     /**
      * 流式传输正在录制的视频文件（支持实时播放）
      */
-    private Object streamVideoFile(File videoFile, Response response) {
+    private void streamVideoFile(File videoFile, Context ctx) {
         try {
             // 使用流式读取，每次读取一定大小的数据块
             // 这样可以支持播放正在写入的MP4文件
             java.io.FileInputStream fis = new java.io.FileInputStream(videoFile);
-            java.io.OutputStream os = response.raw().getOutputStream();
+            java.io.OutputStream os = ctx.res().getOutputStream();
 
             byte[] buffer = new byte[8192]; // 8KB缓冲区
             int bytesRead;
@@ -1183,22 +1188,22 @@ public class DeviceController {
             }
 
             fis.close();
-            return "";
+            return;
         } catch (Exception e) {
             logger.error("流式传输视频文件失败", e);
             try {
-                response.raw().getOutputStream().close();
+                ctx.res().getOutputStream().close();
             } catch (Exception ex) {
                 // Ignore
             }
-            return "";
+            return;
         }
     }
 
     /**
      * 处理Range请求（支持视频拖拽）
      */
-    private Object handleRangeRequest(File videoFile, String rangeHeader, Response response) {
+    private void handleRangeRequest(File videoFile, String rangeHeader, Context ctx) {
         try {
             long fileSize = videoFile.length();
             String range = rangeHeader.substring(6); // 移除 "bytes="
@@ -1215,21 +1220,21 @@ public class DeviceController {
             }
 
             if (start > end || start < 0 || end >= fileSize) {
-                response.status(416);
-                response.header("Content-Range", "bytes */" + fileSize);
-                return "";
+                ctx.status(416);
+                ctx.header("Content-Range", "bytes */" + fileSize);
+                return;
             }
 
             long contentLength = end - start + 1;
-            response.status(206);
-            response.header("Content-Range", String.format("bytes %d-%d/%d", start, end, fileSize));
-            response.header("Content-Length", String.valueOf(contentLength));
-            response.header("Accept-Ranges", "bytes");
-            response.type("video/mp4");
+            ctx.status(206);
+            ctx.header("Content-Range", String.format("bytes %d-%d/%d", start, end, fileSize));
+            ctx.header("Content-Length", String.valueOf(contentLength));
+            ctx.header("Accept-Ranges", "bytes");
+            ctx.contentType("video/mp4");
 
             // 使用RandomAccessFile进行高效的文件片断读取和流式传输
             try (RandomAccessFile raf = new RandomAccessFile(videoFile, "r");
-                    java.io.OutputStream os = response.raw().getOutputStream()) {
+                    java.io.OutputStream os = ctx.res().getOutputStream()) {
                 raf.seek(start);
                 byte[] buffer = new byte[8192];
                 long remaining = contentLength;
@@ -1244,11 +1249,11 @@ public class DeviceController {
                 os.flush();
             }
 
-            return "";
+            return;
         } catch (Exception e) {
             logger.error("处理Range请求失败", e);
-            response.status(500);
-            return "";
+            ctx.status(500);
+            return;
         }
     }
 
@@ -1256,24 +1261,24 @@ public class DeviceController {
      * 录像回放
      * POST /api/devices/:id/playback
      */
-    public String playback(Request request, Response response) {
+    public void playback(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String startTimeStr = (String) body.get("startTime");
             String endTimeStr = (String) body.get("endTime");
             int channel = body.get("channel") != null ? ((Number) body.get("channel")).intValue() : device.getChannel();
 
             if (startTimeStr == null || endTimeStr == null) {
-                response.status(400);
-                return createErrorResponse(400, "startTime和endTime参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "startTime和endTime参数不能为空"));
             }
 
             // 解析时间
@@ -1285,13 +1290,13 @@ public class DeviceController {
             long timeDiff = endTime.getTime() - startTime.getTime();
             long oneMinuteInMillis = 60 * 1000;
             if (timeDiff > oneMinuteInMillis) {
-                response.status(400);
-                return createErrorResponse(400, "设备录像回放时间范围不能超过1分钟");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "设备录像回放时间范围不能超过1分钟"));
             }
 
             if (timeDiff <= 0) {
-                response.status(400);
-                return createErrorResponse(400, "结束时间必须晚于开始时间");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "结束时间必须晚于开始时间"));
             }
 
             // 按设备分目录 + 以分钟时间命名: ./storage/downloads/{sanitizedDeviceId}/{yyyyMMdd}_{HH}_{mm}.mp4
@@ -1321,30 +1326,30 @@ public class DeviceController {
                 data.put("endTime", endTimeStr);
                 data.put("cached", true);
                 data.put("message", "录像已从缓存返回");
-                response.status(200);
-                response.type("application/json");
-                return createSuccessResponse(data);
+                ctx.status(200);
+                ctx.contentType("application/json");
+                ctx.result(createSuccessResponse(data));
             }
 
             // 确保设备已登录
             if (!deviceManager.isDeviceLoggedIn(deviceId)) {
                 if (!deviceManager.loginDevice(device)) {
-                    response.status(500);
-                    return createErrorResponse(500, "设备登录失败，无法启动录像下载");
+                    ctx.status(500);
+                    ctx.result(createErrorResponse(500, "设备登录失败，无法启动录像下载"));
                 }
             }
 
             // 获取设备SDK
             DeviceSDK sdk = deviceManager.getDeviceSDK(deviceId);
             if (sdk == null) {
-                response.status(500);
-                return createErrorResponse(500, "无法获取设备SDK");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "无法获取设备SDK"));
             }
 
             int userId = deviceManager.getDeviceUserId(deviceId);
             if (userId < 0) {
-                response.status(500);
-                return createErrorResponse(500, "设备未登录");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "设备未登录"));
             }
 
             // 调用SDK启动下载（使用主码流，streamType=0）
@@ -1353,8 +1358,8 @@ public class DeviceController {
             if (downloadHandle < 0) {
                 logger.error("启动录像下载失败: deviceId={}, channel={}, startTime={}, endTime={}",
                         deviceId, channel, startTimeStr, endTimeStr);
-                response.status(500);
-                return createErrorResponse(500, "启动录像下载失败，请检查设备连接和参数");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "启动录像下载失败，请检查设备连接和参数"));
             }
 
             logger.info("录像下载启动成功: deviceId={}, channel={}, downloadHandle={}, filePath={}",
@@ -1371,17 +1376,17 @@ public class DeviceController {
             data.put("cached", false);
             data.put("message", "录像下载已启动");
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (java.text.ParseException e) {
             logger.error("时间解析失败", e);
-            response.status(400);
-            return createErrorResponse(400, "时间格式错误，请使用 yyyy-MM-dd HH:mm:ss 格式");
+            ctx.status(400);
+            ctx.result(createErrorResponse(400, "时间格式错误，请使用 yyyy-MM-dd HH:mm:ss 格式"));
         } catch (Exception e) {
             logger.error("启动录像下载失败", e);
-            response.status(500);
-            return createErrorResponse(500, "启动录像下载失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "启动录像下载失败: " + e.getMessage()));
         }
     }
 
@@ -1389,22 +1394,24 @@ public class DeviceController {
      * 查询录像下载进度
      * GET /api/devices/:id/playback/progress?downloadHandle=xxx
      */
-    public String getPlaybackProgress(Request request, Response response) {
+    public void getPlaybackProgress(Context ctx) {
         try {
-            String deviceId = request.params(":id");
-            String downloadHandleStr = request.queryParams("downloadHandle");
+            String deviceId = ctx.pathParam("id");
+            String downloadHandleStr = ctx.queryParam("downloadHandle");
 
             if (downloadHandleStr == null || downloadHandleStr.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "downloadHandle参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "downloadHandle参数不能为空"));
+                return;
             }
 
             int downloadHandle;
             try {
                 downloadHandle = Integer.parseInt(downloadHandleStr);
             } catch (NumberFormatException e) {
-                response.status(400);
-                return createErrorResponse(400, "downloadHandle参数格式错误");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "downloadHandle参数格式错误"));
+                return;
             }
 
             // 缓存命中场景：handle=-2 表示文件已就绪，直接返回完成
@@ -1414,16 +1421,16 @@ public class DeviceController {
                 data.put("progress", 100);
                 data.put("isCompleted", true);
                 data.put("isError", false);
-                response.status(200);
-                response.type("application/json");
-                return createSuccessResponse(data);
+                ctx.status(200);
+                ctx.contentType("application/json");
+                ctx.result(createSuccessResponse(data));
             }
 
             // 获取设备SDK（支持所有品牌）
             DeviceSDK deviceSDK = deviceManager.getDeviceSDK(deviceId);
             if (deviceSDK == null) {
-                response.status(500);
-                return createErrorResponse(500, "无法获取设备SDK");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "无法获取设备SDK"));
             }
 
             // 使用DeviceSDK接口查询下载进度（支持所有品牌）
@@ -1451,13 +1458,13 @@ public class DeviceController {
                 playbackHandleToPath.remove(pathKey);
             }
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("查询下载进度失败", e);
-            response.status(500);
-            return createErrorResponse(500, "查询下载进度失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "查询下载进度失败: " + e.getMessage()));
         }
     }
 
@@ -1465,14 +1472,14 @@ public class DeviceController {
      * 获取已下载的录像文件
      * GET /api/devices/:id/playback/file?filePath=xxx
      */
-    public Object getPlaybackFile(Request request, Response response) {
+    public void getPlaybackFile(Context ctx) {
         try {
-            String deviceId = request.params(":id");
-            String filePath = request.queryParams("filePath");
+            String deviceId = ctx.pathParam("id");
+            String filePath = ctx.queryParam("filePath");
 
             if (filePath == null || filePath.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "filePath参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "filePath参数不能为空"));
             }
 
             // URL解码
@@ -1486,13 +1493,13 @@ public class DeviceController {
 
             // 安全检查：确保文件在downloads目录下
             if (!file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
-                response.status(403);
-                return createErrorResponse(403, "访问被拒绝：文件不在允许的目录中");
+                ctx.status(403);
+                ctx.result(createErrorResponse(403, "访问被拒绝：文件不在允许的目录中"));
             }
 
             if (!file.exists()) {
-                response.status(404);
-                return createErrorResponse(404, "录像文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "录像文件不存在"));
             }
 
             // 根据文件扩展名设置正确的Content-Type
@@ -1512,24 +1519,26 @@ public class DeviceController {
                 contentType = "video/mp4"; // 默认使用mp4
             }
 
-            response.type(contentType);
-            response.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
-            response.header("Accept-Ranges", "bytes");
+            ctx.contentType(contentType);
+            ctx.header("Content-Disposition", "inline; filename=\"" + file.getName() + "\"");
+            ctx.header("Accept-Ranges", "bytes");
 
             // 支持Range请求（视频拖拽）
-            String rangeHeader = request.headers("Range");
+            String rangeHeader = ctx.header("Range");
             if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-                return handleRangeRequest(file, rangeHeader, response);
+                handleRangeRequest(file, rangeHeader, ctx);
+                return;
             }
 
-            response.raw().setContentLengthLong(file.length());
+            ctx.res().setContentLengthLong(file.length());
             // 流式传输文件
-            return streamCompletedVideoFile(file, response);
+            streamCompletedVideoFile(file, ctx);
+                return;
 
         } catch (Exception e) {
             logger.error("获取录像文件失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取录像文件失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取录像文件失败: " + e.getMessage()));
         }
     }
 
@@ -1537,38 +1546,39 @@ public class DeviceController {
      * 获取回放转码流地址（MP4 → ZLM+FFmpeg → HTTP-FLV，供浏览器播放 H.265 等不兼容编码）
      * GET /api/devices/:id/playback/transcode-url?filePath=xxx
      */
-    public String getPlaybackTranscodeUrl(Request request, Response response) {
+    public void getPlaybackTranscodeUrl(Context ctx) {
         try {
             if (zlmProxyService == null) {
-                response.status(503);
-                return createErrorResponse(503, "转码服务未启用（请配置 zlm.enabled 并安装 FFmpeg）");
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "转码服务未启用（请配置 zlm.enabled 并安装 FFmpeg）"));
             }
-            String deviceId = request.params(":id");
-            String filePath = request.queryParams("filePath");
+            String deviceId = ctx.pathParam("id");
+            String filePath = ctx.queryParam("filePath");
             if (filePath == null || filePath.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "filePath参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "filePath参数不能为空"));
             }
             try {
                 filePath = java.net.URLDecoder.decode(filePath, "UTF-8");
             } catch (Exception e) {
                 logger.debug("transcode-url filePath 解码失败，使用原始值");
             }
-            String host = request.host() != null ? request.host() : "127.0.0.1";
+            String host = ctx.host() != null ? ctx.host() : "127.0.0.1";
             if (host.contains(":")) host = host.substring(0, host.indexOf(':'));
             Map<String, String> result = zlmProxyService.getPlaybackTranscodeUrl(deviceId, filePath, host);
             if (result == null) {
-                response.status(400);
-                return createErrorResponse(400, "文件无效或转码启动失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "文件无效或转码启动失败"));
+                return;
             }
             Map<String, Object> data = new HashMap<>(result);
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("获取回放转码地址失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取回放转码地址失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取回放转码地址失败: " + e.getMessage()));
         }
     }
 
@@ -1576,28 +1586,28 @@ public class DeviceController {
      * 停止回放转码任务
      * POST /api/devices/:id/playback/transcode-stop  body: {"key":"xxx"}
      */
-    public String postPlaybackTranscodeStop(Request request, Response response) {
+    public void postPlaybackTranscodeStop(Context ctx) {
         try {
             if (zlmProxyService == null) {
-                response.status(503);
-                return createErrorResponse(503, "转码服务未启用");
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "转码服务未启用"));
             }
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String key = (String) body.get("key");
             if (key == null || key.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "key参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "key参数不能为空"));
             }
             boolean ok = zlmProxyService.stopPlaybackTranscode(key);
             Map<String, Object> data = new HashMap<>();
             data.put("stopped", ok);
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("停止回放转码失败", e);
-            response.status(500);
-            return createErrorResponse(500, "停止回放转码失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "停止回放转码失败: " + e.getMessage()));
         }
     }
 
@@ -1605,30 +1615,32 @@ public class DeviceController {
      * 停止录像下载
      * POST /api/devices/:id/playback/stop?downloadHandle=xxx
      */
-    public String stopPlayback(Request request, Response response) {
+    public void stopPlayback(Context ctx) {
         try {
-            String deviceId = request.params(":id");
-            String downloadHandleStr = request.queryParams("downloadHandle");
+            String deviceId = ctx.pathParam("id");
+            String downloadHandleStr = ctx.queryParam("downloadHandle");
 
             if (downloadHandleStr == null || downloadHandleStr.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "downloadHandle参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "downloadHandle参数不能为空"));
+                return;
             }
 
             int downloadHandle;
             try {
                 downloadHandle = Integer.parseInt(downloadHandleStr);
             } catch (NumberFormatException e) {
-                response.status(400);
-                return createErrorResponse(400, "downloadHandle参数格式错误");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "downloadHandle参数格式错误"));
+                return;
             }
 
             playbackHandleToPath.remove(deviceId + ":" + downloadHandle);
 
             HCNetSDK hcNetSDK = sdk.getSDK();
             if (hcNetSDK == null) {
-                response.status(500);
-                return createErrorResponse(500, "SDK未初始化");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "SDK未初始化"));
             }
 
             // 停止下载
@@ -1639,13 +1651,13 @@ public class DeviceController {
             data.put("stopped", result);
             data.put("message", result ? "下载已停止" : "停止下载失败");
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("停止下载失败", e);
-            response.status(500);
-            return createErrorResponse(500, "停止下载失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "停止下载失败: " + e.getMessage()));
         }
     }
 
@@ -1653,50 +1665,52 @@ public class DeviceController {
      * 导出录像
      * POST /api/devices/:id/export
      */
-    public String exportVideo(Request request, Response response) {
+    public void exportVideo(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String filePath = (String) body.get("filePath");
 
             if (filePath == null || filePath.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "filePath参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "filePath参数不能为空"));
             }
 
             // 安全检查：确保文件在downloads目录下
             java.io.File file = new java.io.File(filePath);
             if (!file.exists()) {
-                response.status(404);
-                return createErrorResponse(404, "文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "文件不存在"));
             }
 
             if (!file.getCanonicalPath().startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
-                response.status(403);
-                return createErrorResponse(403, "无权访问该文件");
+                ctx.status(403);
+                ctx.result(createErrorResponse(403, "无权访问该文件"));
             }
 
-            // 返回文件下载URL
+            // 返回文件下载URL（带 token 以便前端 a 标签直连可鉴权）
+            String exportUrl = "/api/devices/" + deviceId + "/export/file?path=" + java.net.URLEncoder.encode(filePath, "UTF-8");
+            String token = (String) ctx.attribute("token");
+            if (token != null) exportUrl += "&token=" + token;
             Map<String, Object> data = new HashMap<>();
-            data.put("downloadUrl",
-                    "/api/devices/" + deviceId + "/export/file?path=" + java.net.URLEncoder.encode(filePath, "UTF-8"));
+            data.put("downloadUrl", exportUrl);
             data.put("fileName", file.getName());
             data.put("fileSize", file.length());
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("导出录像失败", e);
-            response.status(500);
-            return createErrorResponse(500, "导出录像失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "导出录像失败: " + e.getMessage()));
         }
     }
 
@@ -1704,33 +1718,33 @@ public class DeviceController {
      * 获取导出文件
      * GET /api/devices/:id/export/file?path=...
      */
-    public Object getExportFile(Request request, Response response) {
+    public void getExportFile(Context ctx) {
         try {
-            String path = request.queryParams("path");
+            String path = ctx.queryParam("path");
             if (path == null || path.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "路径参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "路径参数不能为空"));
             }
 
             // 安全检查：确保路径在downloads目录下
             java.io.File file = new java.io.File(path);
             if (!file.exists() || !file.getCanonicalPath()
                     .startsWith(new java.io.File("./storage/downloads").getCanonicalPath())) {
-                response.status(404);
-                return createErrorResponse(404, "文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "文件不存在"));
             }
 
-            response.status(200);
-            response.type("video/mp4");
-            response.header("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
+            ctx.status(200);
+            ctx.contentType("video/mp4");
+            ctx.header("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
 
             // 读取文件并返回
-            java.nio.file.Files.copy(file.toPath(), response.raw().getOutputStream());
-            return "";
+            java.nio.file.Files.copy(file.toPath(), ctx.res().getOutputStream());
+            return;
         } catch (Exception e) {
             logger.error("获取导出文件失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取导出文件失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取导出文件失败: " + e.getMessage()));
         }
     }
 
@@ -1770,7 +1784,7 @@ public class DeviceController {
      * 获取支持的品牌列表
      * GET /api/devices/brands
      */
-    public String getBrands(Request request, Response response) {
+    public void getBrands(Context ctx) {
         try {
             Map<String, Object> brands = new HashMap<>();
             brands.put("supported", Arrays.asList(
@@ -1780,13 +1794,13 @@ public class DeviceController {
                     DeviceInfo.BRAND_AUTO));
             brands.put("default", DeviceInfo.BRAND_AUTO);
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(brands);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(brands));
         } catch (Exception e) {
             logger.error("获取品牌列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取品牌列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取品牌列表失败: " + e.getMessage()));
         }
     }
 
@@ -1794,13 +1808,13 @@ public class DeviceController {
      * 获取设备配置（装置关联、报警规则等）
      * GET /api/devices/:id/config
      */
-    public String getDeviceConfig(Request request, Response response) {
+    public void getDeviceConfig(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -1821,12 +1835,12 @@ public class DeviceController {
                 }
             }
 
-            response.status(200);
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("获取设备配置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取设备配置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取设备配置失败: " + e.getMessage()));
         }
     }
 
@@ -1834,10 +1848,10 @@ public class DeviceController {
      * 更新设备配置
      * PUT /api/devices/:id/config
      */
-    public String updateDeviceConfig(Request request, Response response) {
+    public void updateDeviceConfig(Context ctx) {
         try {
-            String deviceId = request.params(":id");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String deviceId = ctx.pathParam("id");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
 
             Object assemblyIdObj = body.get("assemblyId");
             String assemblyId = assemblyIdObj != null ? String.valueOf(assemblyIdObj) : null;
@@ -1857,12 +1871,12 @@ public class DeviceController {
                 }
             }
 
-            response.status(200);
-            return createSuccessResponse(Map.of("message", "配置已更新"));
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "配置已更新")));
         } catch (Exception e) {
             logger.error("更新设备配置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "更新设备配置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "更新设备配置失败: " + e.getMessage()));
         }
     }
 
@@ -1872,14 +1886,14 @@ public class DeviceController {
      * 获取设备PTZ位置
      * GET /api/devices/:id/ptz/position
      */
-    public String getPtzPosition(Request request, Response response) {
+    public void getPtzPosition(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             DevicePtzExtensionTable.PtzExtension ptzExt = ptzMonitorService.getPtzPosition(deviceId);
@@ -1903,13 +1917,13 @@ public class DeviceController {
                 data.put("message", "设备无PTZ位置信息");
             }
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("获取PTZ位置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取PTZ位置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取PTZ位置失败: " + e.getMessage()));
         }
     }
 
@@ -1917,22 +1931,22 @@ public class DeviceController {
      * 主动刷新设备PTZ位置
      * POST /api/devices/:id/ptz/refresh
      */
-    public String refreshPtzPosition(Request request, Response response) {
+    public void refreshPtzPosition(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             // 刷新PTZ位置
             boolean success = ptzMonitorService.refreshPtzPosition(deviceId);
             
             if (!success) {
-                response.status(500);
-                return createErrorResponse(500, "刷新PTZ位置失败，设备可能不支持或未登录");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "刷新PTZ位置失败，设备可能不支持或未登录"));
             }
 
             // 返回更新后的位置
@@ -1946,13 +1960,13 @@ public class DeviceController {
                 data.put("zoom", ptzExt.getZoom());
             }
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("刷新PTZ位置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "刷新PTZ位置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "刷新PTZ位置失败: " + e.getMessage()));
         }
     }
 
@@ -1961,22 +1975,22 @@ public class DeviceController {
      * PUT /api/devices/:id/ptz/monitor
      * Body: { "enabled": true }
      */
-    public String setPtzMonitor(Request request, Response response) {
+    public void setPtzMonitor(Context ctx) {
         try {
-            String deviceId = request.params(":id");
+            String deviceId = ctx.pathParam("id");
             DeviceInfo device = deviceManager.getDevice(deviceId);
 
             if (device == null) {
-                response.status(404);
-                return createErrorResponse(404, "设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不存在"));
             }
 
             @SuppressWarnings("unchecked")
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             
             if (body.get("enabled") == null) {
-                response.status(400);
-                return createErrorResponse(400, "enabled参数不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "enabled参数不能为空"));
             }
             
             boolean enabled = (Boolean) body.get("enabled");
@@ -1985,8 +1999,8 @@ public class DeviceController {
             boolean success = ptzMonitorService.setPtzMonitorEnabled(deviceId, enabled);
             
             if (!success) {
-                response.status(500);
-                return createErrorResponse(500, "设置PTZ监控状态失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "设置PTZ监控状态失败"));
             }
 
             Map<String, Object> data = new HashMap<>();
@@ -1994,13 +2008,13 @@ public class DeviceController {
             data.put("ptzEnabled", enabled);
             data.put("message", enabled ? "PTZ监控已启用" : "PTZ监控已禁用");
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("设置PTZ监控状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, "设置PTZ监控状态失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "设置PTZ监控状态失败: " + e.getMessage()));
         }
     }
 

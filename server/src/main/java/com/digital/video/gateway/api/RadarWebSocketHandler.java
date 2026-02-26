@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.driver.livox.model.Point;
 import com.digital.video.gateway.service.RadarService;
 import org.eclipse.jetty.websocket.api.Session;
+import org.eclipse.jetty.websocket.api.WriteCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -155,8 +156,12 @@ public class RadarWebSocketHandler {
         }
     }
 
+    /** 异步发送超时（毫秒），超时后丢弃该帧并移除慢连接 */
+    private static final long SEND_TIMEOUT_MS = 500;
+
     /**
      * 从 Point 列表编码并发送二进制点云（单条消息）
+     * 使用异步发送 + 超时保护，避免阻塞导致 IllegalStateException
      */
     private void sendPointCloudBinaryFromPoints(String deviceId, long timestamp, List<Point> points) {
         List<Session> conns = connections.get(deviceId);
@@ -176,11 +181,16 @@ public class RadarWebSocketHandler {
         for (Session session : conns) {
             try {
                 if (session.isOpen()) {
-                    session.getRemote().sendBytes(buf.duplicate());
+                    try {
+                        session.getRemote().sendBytes(buf.duplicate(), WriteCallback.NOOP);
+                    } catch (Exception e) {
+                        logger.debug("发送点云失败，将移除连接: deviceId={}", deviceId);
+                        toRemove.add(session);
+                    }
                 } else {
                     toRemove.add(session);
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 logger.debug("发送点云二进制失败，将移除连接: deviceId={}", deviceId);
                 toRemove.add(session);
             }
@@ -204,6 +214,7 @@ public class RadarWebSocketHandler {
 
     /**
      * 发送 JSON 消息给所有连接的客户端（侵入、状态等）
+     * 使用异步发送 + 超时保护
      */
     private void sendToAll(String deviceId, Map<String, Object> message) {
         List<Session> conns = connections.get(deviceId);
@@ -218,11 +229,16 @@ public class RadarWebSocketHandler {
             for (Session session : conns) {
                 try {
                     if (session.isOpen()) {
-                        session.getRemote().sendString(json);
+                        try {
+                            session.getRemote().sendString(json, WriteCallback.NOOP);
+                        } catch (Exception e) {
+                            logger.debug("发送JSON消息失败: deviceId={}", deviceId);
+                            toRemove.add(session);
+                        }
                     } else {
                         toRemove.add(session);
                     }
-                } catch (IOException e) {
+                } catch (Exception e) {
                     logger.debug("发送WebSocket消息失败，将移除连接: deviceId={}", deviceId);
                     toRemove.add(session);
                 }

@@ -5,10 +5,9 @@ import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.mqtt.MqttClient;
 import com.digital.video.gateway.service.ConfigService;
 import com.digital.video.gateway.service.NotificationService;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -58,7 +57,7 @@ public class SystemController {
      * 获取系统配置
      * GET /api/system/config
      */
-    public String getConfig(Request request, Response response) {
+    public void getConfig(Context ctx) {
         try {
             Config config = configService.getConfig();
             
@@ -192,13 +191,13 @@ public class SystemController {
                 systemConfig.put("ai", aiMap);
             }
             
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(systemConfig);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(systemConfig));
         } catch (Exception e) {
             logger.error("获取系统配置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取系统配置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取系统配置失败: " + e.getMessage()));
         }
     }
 
@@ -207,9 +206,9 @@ public class SystemController {
      * PUT /api/system/config
      */
     @SuppressWarnings("unchecked")
-    public String updateConfig(Request request, Response response) {
+    public void updateConfig(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             Config config = configService.getConfig();
             
             // 更新Scanner配置
@@ -426,13 +425,13 @@ public class SystemController {
             // 保存配置
             configService.updateConfig(config);
             
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(Map.of("message", "配置已更新"));
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(Map.of("message", "配置已更新")));
         } catch (Exception e) {
             logger.error("更新系统配置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "更新系统配置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "更新系统配置失败: " + e.getMessage()));
         }
     }
 
@@ -459,7 +458,7 @@ public class SystemController {
      * 系统健康检查
      * GET /api/system/health
      */
-    public String healthCheck(Request request, Response response) {
+    public void healthCheck(Context ctx) {
         try {
             Map<String, Object> health = new HashMap<>();
             
@@ -494,13 +493,13 @@ public class SystemController {
             boolean isHealthy = mqttConnected && diskUsagePercent < 90;
             health.put("status", isHealthy ? "healthy" : "warning");
             
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(health);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(health));
         } catch (Exception e) {
             logger.error("健康检查失败", e);
-            response.status(500);
-            return createErrorResponse(500, "健康检查失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "健康检查失败: " + e.getMessage()));
         }
     }
 
@@ -508,13 +507,13 @@ public class SystemController {
      * 重启MQTT连接
      * POST /api/system/mqtt/restart
      */
-    public String restartMqtt(Request request, Response response) {
+    public void restartMqtt(Context ctx) {
         try {
             if (mqttClient == null) {
-                response.status(400);
-                return createErrorResponse(400, "MQTT客户端未初始化");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "MQTT客户端未初始化"));
+                return;
             }
-            
             // 断开连接
             mqttClient.disconnect();
             
@@ -528,13 +527,13 @@ public class SystemController {
             result.put("success", connected);
             result.put("message", connected ? "MQTT重启成功" : "MQTT重启失败");
             
-            response.status(connected ? 200 : 500);
-            response.type("application/json");
-            return createSuccessResponse(result);
+            ctx.status(connected ? 200 : 500);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("重启MQTT失败", e);
-            response.status(500);
-            return createErrorResponse(500, "重启MQTT失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "重启MQTT失败: " + e.getMessage()));
         }
     }
 
@@ -543,19 +542,19 @@ public class SystemController {
      * POST /api/system/notification/test
      */
     @SuppressWarnings("unchecked")
-    public String testNotification(Request request, Response response) {
+    public void testNotification(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             
             String channel = (String) body.get("channel");
             String webhookUrl = (String) body.get("webhookUrl");
             String secret = (String) body.getOrDefault("secret", "");
             
             if (channel == null || webhookUrl == null || webhookUrl.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "渠道类型和Webhook URL不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "渠道类型和Webhook URL不能为空"));
+                return;
             }
-            
             // 创建临时的通知服务进行测试
             Config.NotificationConfig tempConfig = new Config.NotificationConfig();
             NotificationService tempService = new NotificationService(tempConfig);
@@ -566,13 +565,13 @@ public class SystemController {
             result.put("success", success);
             result.put("message", success ? "测试消息发送成功" : "测试消息发送失败");
             
-            response.status(success ? 200 : 500);
-            response.type("application/json");
-            return createSuccessResponse(result);
+            ctx.status(success ? 200 : 500);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("测试通知发送失败", e);
-            response.status(500);
-            return createErrorResponse(500, "测试通知发送失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "测试通知发送失败: " + e.getMessage()));
         }
     }
 
@@ -583,13 +582,14 @@ public class SystemController {
      * POST /api/system/ai/test
      */
     @SuppressWarnings("unchecked")
-    public String testAiConnection(Request request, Response response) {
+    public void testAiConnection(Context ctx) {
         try {
             Config config = configService.getConfig();
             Config.AiConfig ai = config != null ? config.getAi() : null;
             if (ai == null) {
-                response.status(400);
-                return createErrorResponse(400, "未配置 AI 选项");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "未配置 AI 选项"));
+                return;
             }
             List<String> ok = new ArrayList<>();
             List<String> err = new ArrayList<>();
@@ -663,23 +663,24 @@ public class SystemController {
             }
 
             if (ok.isEmpty() && err.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "请先配置 AI 网关（baseUrl + apiKey）或 TTS API Key");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "请先配置 AI 网关（baseUrl + apiKey）或 TTS API Key"));
+                return;
             }
             if (!err.isEmpty()) {
-                response.status(500);
-                return createErrorResponse(500, String.join("；", err));
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, String.join("；", err)));
             }
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
             result.put("message", String.join("；", ok));
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(result);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("测试 AI 连接失败", e);
-            response.status(500);
-            return createErrorResponse(500, "测试失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "测试失败: " + e.getMessage()));
         }
     }
 
@@ -687,7 +688,7 @@ public class SystemController {
      * 获取日志内容
      * GET /api/system/logs
      */
-    public String getLogs(Request request, Response response) {
+    public void getLogs(Context ctx) {
         try {
             String logFilePath = "./logs/app.log";
             Config config = configService.getConfig();
@@ -697,13 +698,14 @@ public class SystemController {
             
             File logFile = new File(logFilePath);
             if (!logFile.exists()) {
-                response.status(404);
-                return createErrorResponse(404, "日志文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "日志文件不存在"));
+                return;
             }
             
             // 读取最后N行日志（默认100行）
             int lines = 100;
-            String linesParam = request.queryParams("lines");
+            String linesParam = ctx.queryParam("lines");
             if (linesParam != null) {
                 try {
                     lines = Integer.parseInt(linesParam);
@@ -720,13 +722,13 @@ public class SystemController {
             result.put("lines", logLines.size());
             result.put("content", logLines);
             
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(result);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取日志失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取日志失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取日志失败: " + e.getMessage()));
         }
     }
 
@@ -791,36 +793,36 @@ public class SystemController {
      * 获取 AI 分析记录列表
      * GET /api/system/ai-analysis-records?limit=100&offset=0
      */
-    public String getAiAnalysisRecords(Request request, Response response) {
+    public void getAiAnalysisRecords(Context ctx) {
         try {
             if (aiAnalysisService == null) {
-                response.status(200);
-                return createSuccessResponse(java.util.Collections.emptyList());
+                ctx.status(200);
+                ctx.result(createSuccessResponse(java.util.Collections.emptyList()));
             }
             int limit = 100;
             int offset = 0;
             try {
-                String l = request.queryParams("limit");
+                String l = ctx.queryParam("limit");
                 if (l != null) limit = Integer.parseInt(l);
-                String o = request.queryParams("offset");
+                String o = ctx.queryParam("offset");
                 if (o != null) offset = Integer.parseInt(o);
             } catch (NumberFormatException ignored) {}
 
             java.util.List<java.util.Map<String, Object>> records = aiAnalysisService.getRecords(limit, offset);
 
             // 将相对路径补全为完整 URL（voiceUrl、imageUrl）
-            String baseUrl = request.scheme() + "://" + request.host();
+            String baseUrl = ctx.scheme() + "://" + ctx.host();
             for (java.util.Map<String, Object> rec : records) {
                 resolveUrl(rec, "voiceUrl", baseUrl);
                 resolveUrl(rec, "imageUrl", baseUrl);
             }
 
-            response.status(200);
-            return createSuccessResponse(records);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(records));
         } catch (Exception e) {
             logger.error("获取AI分析记录失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取AI分析记录失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取AI分析记录失败: " + e.getMessage()));
         }
     }
 }

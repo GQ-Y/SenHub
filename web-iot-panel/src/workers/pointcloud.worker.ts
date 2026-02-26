@@ -90,16 +90,11 @@ function flushWindow() {
     return;
   }
 
-  // 计算全局 reflectivity 范围用于着色
-  let minR = 255, maxR = 0;
-  for (const f of frames) {
-    for (let i = 0; i < f.count; i++) {
-      const r = f.reflectivity[i];
-      if (r < minR) minR = r;
-      if (r > maxR) maxR = r;
-    }
-  }
-  const rRange = maxR - minR || 1;
+  // 使用固定的反射率范围 (0-255) 进行归一化，确保颜色梯度一致
+  // 不使用动态范围，避免所有点反射率相近时颜色变化不明显
+  const REFLECTIVITY_MIN = 0;
+  const REFLECTIVITY_MAX = 255;
+  const rRange = REFLECTIVITY_MAX - REFLECTIVITY_MIN;
 
   const positions = new Float32Array(totalPoints * 3);
   const colors = new Float32Array(totalPoints * 3);
@@ -107,7 +102,7 @@ function flushWindow() {
   for (const f of frames) {
     positions.set(f.positions, idx * 3);
     for (let i = 0; i < f.count; i++) {
-      const normalizedR = (f.reflectivity[i] - minR) / rRange;
+      const normalizedR = (f.reflectivity[i] - REFLECTIVITY_MIN) / rRange;
       const [r, g, b] = reflectivityToRgb(normalizedR);
       colors[idx * 3] = r;
       colors[idx * 3 + 1] = g;

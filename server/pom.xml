@@ -7,7 +7,7 @@
 
     <groupId>com.digital.video.gateway</groupId>
     <artifactId>senhub-app</artifactId>
-    <version>1.0.27</version>
+    <version>1.0.33</version>
     <packaging>jar</packaging>
 
     <name>SenHub</name>
@@ -24,7 +24,7 @@
         <logback.version>1.4.8</logback.version>
         <sqlite.version>3.42.0.0</sqlite.version>
         <yaml.version>2.14.2</yaml.version>
-        <spark.version>2.9.4</spark.version>
+        <javalin.version>5.6.5</javalin.version>
         <jwt.version>4.4.0</jwt.version>
         <bcrypt.version>0.4</bcrypt.version>
     </properties>
@@ -87,28 +87,11 @@
             <version>3.17.1</version>
         </dependency>
 
-        <!-- Spark Java HTTP Framework -->
+        <!-- Javalin HTTP + WebSocket -->
         <dependency>
-            <groupId>com.sparkjava</groupId>
-            <artifactId>spark-core</artifactId>
-            <version>${spark.version}</version>
-        </dependency>
-        
-        <!-- Jetty WebSocket Support -->
-        <dependency>
-            <groupId>org.eclipse.jetty.websocket</groupId>
-            <artifactId>websocket-server</artifactId>
-            <version>9.4.48.v20220622</version>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jetty.websocket</groupId>
-            <artifactId>websocket-api</artifactId>
-            <version>9.4.48.v20220622</version>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jetty.websocket</groupId>
-            <artifactId>websocket-client</artifactId>
-            <version>9.4.48.v20220622</version>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+            <version>${javalin.version}</version>
         </dependency>
 
         <!-- JWT Authentication -->
@@ -152,8 +135,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
                 <configuration>
-                    <source>11</source>
-                    <target>11</target>
+                    <release>11</release>
                     <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>

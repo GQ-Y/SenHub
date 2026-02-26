@@ -2,10 +2,9 @@ package com.digital.video.gateway.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.Database;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.util.*;
 
@@ -21,74 +20,63 @@ public class NotificationController {
         this.database = database;
     }
 
-    /**
-     * 获取通知列表
-     * GET /api/notifications
-     */
-    public String getNotifications(Request request, Response response) {
+    public void getNotifications(Context ctx) {
         try {
-            String limitParam = request.queryParams("limit");
+            String limitParam = ctx.queryParam("limit");
             int limit = limitParam != null ? Integer.parseInt(limitParam) : 100;
-            if (limit > 500) limit = 500; // 限制最大数量
-            
+            if (limit > 500) limit = 500;
+
             List<Map<String, Object>> notifications = database.getAllNotifications(limit);
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(notifications);
+
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(notifications));
         } catch (Exception e) {
             logger.error("获取通知列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取通知列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取通知列表失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 标记通知为已读
-     * POST /api/notifications/read
-     */
-    public String markAsRead(Request request, Response response) {
+    public void markAsRead(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String notificationId = (String) body.get("id");
-            
+
             if (notificationId == null || notificationId.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "通知ID不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "通知ID不能为空"));
+                return;
             }
-            
+
             boolean success = database.markNotificationAsRead(notificationId);
-            
+
             if (success) {
-                response.status(200);
-                response.type("application/json");
-                return createSuccessResponse(Map.of("message", "通知已标记为已读"));
+                ctx.status(200);
+                ctx.contentType("application/json");
+                ctx.result(createSuccessResponse(Map.of("message", "通知已标记为已读")));
             } else {
-                response.status(404);
-                return createErrorResponse(404, "通知不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "通知不存在"));
             }
         } catch (Exception e) {
             logger.error("标记通知为已读失败", e);
-            response.status(500);
-            return createErrorResponse(500, "标记通知为已读失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "标记通知为已读失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 标记所有通知为已读
-     * POST /api/notifications/read-all
-     */
-    public String markAllAsRead(Request request, Response response) {
+    public void markAllAsRead(Context ctx) {
         try {
             boolean success = database.markAllNotificationsAsRead();
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(Map.of("message", "所有通知已标记为已读", "success", success));
+
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(Map.of("message", "所有通知已标记为已读", "success", success)));
         } catch (Exception e) {
             logger.error("标记所有通知为已读失败", e);
-            response.status(500);
-            return createErrorResponse(500, "标记所有通知为已读失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "标记所有通知为已读失败: " + e.getMessage()));
         }
     }
 

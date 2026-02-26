@@ -4,10 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.auth.JwtUtil;
 import com.digital.video.gateway.auth.PasswordUtil;
 import com.digital.video.gateway.database.Database;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -28,44 +27,44 @@ public class AuthController {
      * 登录接口
      * POST /api/auth/login
      */
-    public String login(Request request, Response response) {
+    public void login(Context ctx) {
         try {
-            Map<String, String> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, String> body = objectMapper.readValue(ctx.body(), Map.class);
             String username = body.get("username");
             String password = body.get("password");
 
             if (username == null || password == null) {
-                response.status(400);
-                return createErrorResponse(400, "用户名和密码不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "用户名和密码不能为空"));
+                return;
             }
 
-            // 验证用户
             String passwordHash = database.getUserPasswordHash(username);
             if (passwordHash == null || !PasswordUtil.verifyPassword(password, passwordHash)) {
-                response.status(401);
-                return createErrorResponse(401, "用户名或密码错误");
+                ctx.status(401);
+                ctx.result(createErrorResponse(401, "用户名或密码错误"));
+                return;
             }
 
-            // 生成JWT token
             String token = JwtUtil.generateToken(username);
             if (token == null) {
-                response.status(500);
-                return createErrorResponse(500, "生成token失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "生成token失败"));
+                return;
             }
 
-            // 返回token
             Map<String, Object> data = new HashMap<>();
             data.put("token", token);
             data.put("expiresIn", JwtUtil.getExpirationTime());
             data.put("username", username);
 
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(data);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(data));
         } catch (Exception e) {
             logger.error("登录失败", e);
-            response.status(500);
-            return createErrorResponse(500, "登录失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "登录失败: " + e.getMessage()));
         }
     }
 

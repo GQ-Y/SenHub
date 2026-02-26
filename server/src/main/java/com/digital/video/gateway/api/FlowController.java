@@ -6,10 +6,9 @@ import com.digital.video.gateway.workflow.FlowExecutor;
 import com.digital.video.gateway.workflow.FlowService;
 import com.digital.video.gateway.workflow.FlowContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.io.File;
 import java.io.InputStream;
@@ -19,8 +18,8 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
-import javax.servlet.MultipartConfigElement;
-import javax.servlet.http.Part;
+import jakarta.servlet.MultipartConfigElement;
+import jakarta.servlet.http.Part;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -44,89 +43,93 @@ public class FlowController {
         this.flowExecutor = flowExecutor;
     }
 
-    public String listFlows(Request request, Response response) {
+    public void listFlows(Context ctx) {
         try {
             List<AlarmFlow> flows = flowService.listFlows();
             List<Map<String, Object>> result = flows.stream()
                     .map(AlarmFlow::toMap)
                     .collect(Collectors.toList());
-            response.status(200);
-            return createSuccess(result);
+            ctx.status(200);
+            ctx.result(createSuccess(result));
         } catch (Exception e) {
             logger.error("获取流程列表失败", e);
-            response.status(500);
-            return createError(500, "获取流程列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createError(500, "获取流程列表失败: " + e.getMessage()));
         }
     }
 
-    public String getFlow(Request request, Response response) {
+    public void getFlow(Context ctx) {
         try {
-            String flowId = request.params(":flowId");
+            String flowId = ctx.pathParam("flowId");
             AlarmFlow flow = flowService.getFlow(flowId);
             if (flow == null) {
-                response.status(404);
-                return createError(404, "流程不存在");
+                ctx.status(404);
+                ctx.result(createError(404, "流程不存在"));
+                return;
             }
-            response.status(200);
-            return createSuccess(flow.toMap());
+            ctx.status(200);
+            ctx.result(createSuccess(flow.toMap()));
         } catch (Exception e) {
             logger.error("获取流程详情失败", e);
-            response.status(500);
-            return createError(500, "获取流程详情失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createError(500, "获取流程详情失败: " + e.getMessage()));
         }
     }
 
-    public String createFlow(Request request, Response response) {
+    public void createFlow(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             AlarmFlow flow = buildFlowFromBody(body, null);
             AlarmFlow saved = flowService.saveFlow(flow);
             if (saved == null) {
-                response.status(500);
-                return createError(500, "创建流程失败");
+                ctx.status(500);
+                ctx.result(createError(500, "创建流程失败"));
+                return;
             }
-            response.status(201);
-            return createSuccess(saved.toMap());
+            ctx.status(201);
+            ctx.result(createSuccess(saved.toMap()));
         } catch (Exception e) {
             logger.error("创建流程失败", e);
-            response.status(500);
-            return createError(500, "创建流程失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createError(500, "创建流程失败: " + e.getMessage()));
         }
     }
 
-    public String updateFlow(Request request, Response response) {
+    public void updateFlow(Context ctx) {
         try {
-            String flowId = request.params(":flowId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String flowId = ctx.pathParam("flowId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             AlarmFlow flow = buildFlowFromBody(body, flowId);
             AlarmFlow saved = flowService.saveFlow(flow);
             if (saved == null) {
-                response.status(500);
-                return createError(500, "更新流程失败");
+                ctx.status(500);
+                ctx.result(createError(500, "更新流程失败"));
+                return;
             }
-            response.status(200);
-            return createSuccess(saved.toMap());
+            ctx.status(200);
+            ctx.result(createSuccess(saved.toMap()));
         } catch (Exception e) {
             logger.error("更新流程失败", e);
-            response.status(500);
-            return createError(500, "更新流程失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createError(500, "更新流程失败: " + e.getMessage()));
         }
     }
 
-    public String deleteFlow(Request request, Response response) {
+    public void deleteFlow(Context ctx) {
         try {
-            String flowId = request.params(":flowId");
+            String flowId = ctx.pathParam("flowId");
             boolean removed = flowService.deleteFlow(flowId);
             if (!removed) {
-                response.status(404);
-                return createError(404, "流程不存在或删除失败");
+                ctx.status(404);
+                ctx.result(createError(404, "流程不存在或删除失败"));
+                return;
             }
-            response.status(204);
-            return "";
+            ctx.status(204);
+            ctx.result("");
         } catch (Exception e) {
             logger.error("删除流程失败", e);
-            response.status(500);
-            return createError(500, "删除流程失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createError(500, "删除流程失败: " + e.getMessage()));
         }
     }
 
@@ -138,17 +141,19 @@ public class FlowController {
      *   deviceIp   - 模拟设备IP
      *   image      - 自定义抓拍图片文件（可选，未上传则使用默认测试图片）
      */
-    public String testFlow(Request request, Response response) {
+    public void testFlow(Context ctx) {
         try {
-            String flowId = request.params(":flowId");
+            String flowId = ctx.pathParam("flowId");
             AlarmFlow flow = flowService.getFlow(flowId);
             if (flow == null) {
-                response.status(404);
-                return createError(404, "流程不存在");
+                ctx.status(404);
+                ctx.result(createError(404, "流程不存在"));
+                return;
             }
             if (flowExecutor == null) {
-                response.status(500);
-                return createError(500, "流程执行器未初始化，无法测试");
+                ctx.status(500);
+                ctx.result(createError(500, "流程执行器未初始化，无法测试"));
+                return;
             }
 
             // 解析 multipart 或 JSON 请求
@@ -159,17 +164,17 @@ public class FlowController {
             byte[] imageBytes = null;
             String imageFileName = null;
 
-            String contentType = request.contentType();
+            String contentType = ctx.contentType();
             if (contentType != null && contentType.contains("multipart/form-data")) {
-                request.attribute("org.eclipse.jetty.multipartConfig",
+                ctx.req().setAttribute("org.eclipse.jetty.multipartConfig",
                         new MultipartConfigElement(System.getProperty("java.io.tmpdir"), 10_000_000, 10_000_000, 1_000_000));
 
-                eventName = getPartValue(request, "eventName");
-                alarmType = getPartValue(request, "alarmType");
-                deviceId = getPartValue(request, "deviceId");
-                deviceIp = getPartValue(request, "deviceIp");
+                eventName = getPartValue(ctx, "eventName");
+                alarmType = getPartValue(ctx, "alarmType");
+                deviceId = getPartValue(ctx, "deviceId");
+                deviceIp = getPartValue(ctx, "deviceIp");
 
-                Part imagePart = request.raw().getPart("image");
+                Part imagePart = ctx.req().getPart("image");
                 if (imagePart != null && imagePart.getSize() > 0) {
                     try (InputStream is = imagePart.getInputStream()) {
                         imageBytes = is.readAllBytes();
@@ -180,7 +185,7 @@ public class FlowController {
             } else {
                 try {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+                    Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
                     eventName = body.get("eventName") instanceof String ? (String) body.get("eventName") : null;
                     alarmType = body.get("alarmType") instanceof String ? (String) body.get("alarmType") : null;
                     deviceId = body.get("deviceId") instanceof String ? (String) body.get("deviceId") : null;
@@ -222,18 +227,18 @@ public class FlowController {
             result.put("alarmType", logAlarmType);
             result.put("eventName", eventName);
 
-            response.status(200);
-            return createSuccess(result);
+            ctx.status(200);
+            ctx.result(createSuccess(result));
         } catch (Exception e) {
             logger.error("触发测试流程失败", e);
-            response.status(500);
-            return createError(500, "触发测试流程失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createError(500, "触发测试流程失败: " + e.getMessage()));
         }
     }
 
-    private String getPartValue(Request request, String name) {
+    private String getPartValue(Context ctx, String name) {
         try {
-            Part part = request.raw().getPart(name);
+            Part part = ctx.req().getPart(name);
             if (part != null && part.getSize() > 0 && part.getSize() < 10000) {
                 try (InputStream is = part.getInputStream()) {
                     return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();

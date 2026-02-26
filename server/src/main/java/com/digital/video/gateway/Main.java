@@ -52,7 +52,10 @@ import com.digital.video.gateway.workflow.handlers.PTZControlHandler;
 import com.digital.video.gateway.Common.LogCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Spark;
+import io.javalin.Javalin;
+import io.javalin.http.staticfiles.Location;
+import io.javalin.websocket.WsContext;
+import com.digital.video.gateway.auth.HaltException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -107,6 +110,7 @@ public class Main {
     /** MQTT 消息处理线程池，避免命令/工作流在 Paho 回调线程执行导致阻塞 */
     private ExecutorService mqttMessageExecutor;
     private ObjectMapper objectMapper = new ObjectMapper();
+    private Javalin app;
 
     public static void main(String[] args) {
         Thread.setDefaultUncaughtExceptionHandler((t, e) ->
@@ -866,74 +870,89 @@ public class Main {
      * 启动HTTP服务器
      */
     private void startHttpServer() {
-        int port = 8084; // 默认端口，可以从配置中读取
+        int port = 8084;
 
-        Spark.port(port);
+        app = Javalin.create(config -> {
+            config.plugins.enableCors(cors -> cors.add(it -> it.anyHost()));
+            config.staticFiles.add(sf -> {
+                sf.hostedPath = "/";
+                sf.directory = "/static";
+                sf.location = Location.CLASSPATH;
+            });
+            config.spaRoot.addFile("/", "/static/index.html", Location.CLASSPATH);
+        });
 
-        // Web 面板静态资源：使用 Spark 内置静态文件服务
-        // 注意：必须在任何路由（包括 before/after 过滤器）之前调用
-        Spark.staticFiles.location("/static");
-
-        // 注册WebSocket端点（必须在所有路由映射之前）；始终注册路由，避免无路由时前端收到非 101 导致连接失败
+        // WebSocket 处理器映射（deviceId -> handler）
+        final java.util.Map<String, com.digital.video.gateway.api.RadarWebSocketHandler> radarWsHandlers = new java.util.concurrent.ConcurrentHashMap<>();
+        final java.util.Map<org.eclipse.jetty.websocket.api.Session, String> sessionToDeviceId = new java.util.concurrent.ConcurrentHashMap<>();
         try {
-            // 先注册 WebSocket 路由到 Spark，必须在任何 HTTP 路由之前
-            // 注意：使用 /ws 前缀而非 /api，避免与 HTTP 路由的 before 过滤器冲突
-            logger.info("正在调用 Spark.webSocket() 注册 /ws/radar/stream ...");
-            Spark.webSocket("/ws/radar/stream",
-                    com.digital.video.gateway.api.RadarWebSocketEndpoint.class);
-            logger.info("Spark.webSocket() 调用成功");
-            
-            // 然后注册处理器到端点类
             if (radarService != null) {
                 com.digital.video.gateway.api.RadarWebSocketHandler wsHandler = radarService.getWebSocketHandler();
-                com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = new com.digital.video.gateway.database.RadarDeviceDAO(
-                        database.getConnection());
+                com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = new com.digital.video.gateway.database.RadarDeviceDAO(database.getConnection());
                 List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
                 for (com.digital.video.gateway.database.RadarDevice device : devices) {
-                    com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler(
-                            device.getDeviceId(), wsHandler);
+                    radarWsHandlers.put(device.getDeviceId(), wsHandler);
                 }
-                com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler("default", wsHandler);
-                logger.info("雷达WebSocket端点已注册（正常）: /ws/radar/stream?deviceId=xxx");
+                radarWsHandlers.put("default", wsHandler);
+                logger.info("雷达WebSocket已配置（正常）: /ws/radar/stream?deviceId=xxx");
             } else {
-                com.digital.video.gateway.api.RadarWebSocketHandler fallback = new com.digital.video.gateway.api.RadarWebSocketHandlerFallback();
-                com.digital.video.gateway.api.RadarWebSocketEndpoint.registerHandler("default", fallback);
-                logger.info("雷达WebSocket端点已注册（降级）: /ws/radar/stream?deviceId=xxx，雷达服务不可用时将返回提示");
+                radarWsHandlers.put("default", new com.digital.video.gateway.api.RadarWebSocketHandlerFallback());
+                logger.info("雷达WebSocket已配置（降级）: /ws/radar/stream?deviceId=xxx");
             }
         } catch (Exception e) {
-            logger.error("注册WebSocket端点失败", e);
+            logger.error("配置雷达WebSocket处理器失败", e);
         }
 
-        // 设置CORS（使用after过滤器，避免覆盖控制器设置的Content-Type）
-        Spark.after((request, response) -> {
-            response.header("Access-Control-Allow-Origin", "*");
-            response.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response.header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range");
-            response.header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+        final com.fasterxml.jackson.databind.ObjectMapper wsObjectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        app.ws("/ws/radar/stream", ws -> {
+            ws.onConnect(ctx -> {
+                try {
+                    String deviceId = ctx.queryParam("deviceId");
+                    if (deviceId == null || deviceId.trim().isEmpty()) {
+                        logger.warn("WebSocket连接缺少deviceId查询参数");
+                        ctx.closeSession(1008, "Invalid request: missing deviceId parameter");
+                        return;
+                    }
+                    com.digital.video.gateway.api.RadarWebSocketHandler handler = radarWsHandlers.get(deviceId);
+                    if (handler == null) handler = radarWsHandlers.get("default");
+                    if (handler == null) {
+                        logger.warn("未找到deviceId对应的处理器: {}", deviceId);
+                        ctx.closeSession(1008, "Device handler not found");
+                        return;
+                    }
+                    sessionToDeviceId.put(ctx.session, deviceId);
+                    handler.addConnection(deviceId, ctx.session);
+                    Map<String, Object> welcome = new HashMap<>();
+                    welcome.put("type", "status");
+                    welcome.put("connected", true);
+                    welcome.put("deviceId", deviceId);
+                    welcome.put("message", "WebSocket连接成功");
+                    ctx.send(wsObjectMapper.writeValueAsString(welcome));
+                } catch (Exception e) {
+                    logger.error("WebSocket连接处理失败", e);
+                    ctx.closeSession(1011, "Internal error");
+                }
+            });
+            ws.onMessage(ctx -> { /* 订阅等已在 onConnect 处理 */ });
+            ws.onClose(ctx -> {
+                String deviceId = sessionToDeviceId.remove(ctx.session);
+                logger.info("WebSocket连接关闭: deviceId={}, statusCode={}, reason={}", deviceId, ctx.status(), ctx.reason());
+                for (com.digital.video.gateway.api.RadarWebSocketHandler h : radarWsHandlers.values()) {
+                    h.removeConnection(ctx.session);
+                }
+            });
         });
 
-        // 为 API 请求设置默认 Content-Type（排除非 /api、WebSocket 升级、视频/文件接口）
-        Spark.before((request, response) -> {
-            String path = request.pathInfo();
-            if (path == null || !path.startsWith("/api")) {
+        // 为所有返回 JSON 的 /api 请求统一设置 Content-Type（文件/视频接口由控制器自行覆盖）
+        app.before("/api/*", ctx -> {
+            String path = ctx.path();
+            if (path == null) return;
+            if (path.contains("/snapshot/file") || path.contains("/playback/file") || path.contains("/export/file")
+                    || path.contains("/video") || (path.contains("recording-tasks") && path.contains("/file")))
                 return;
-            }
-            // WebSocket 升级请求不设置 Content-Type，由 Jetty 返回 101
-            if (path.contains("/radar/stream") && "websocket".equalsIgnoreCase(request.headers("Upgrade"))) {
-                return;
-            }
-            if (!path.contains("/video") && !path.contains("/snapshot/file") && !path.contains("/export/file")) {
-                response.type("application/json");
-            }
+            ctx.contentType("application/json; charset=utf-8");
         });
-
-        // 处理OPTIONS请求
-        Spark.options("/*", (request, response) -> {
-            return "";
-        });
-
-        // 注册认证过滤器
-        Spark.before(new AuthFilter());
+        app.before("/api/*", AuthFilter::handle);
 
         // 初始化控制器
         AuthController authController = new AuthController(database);
@@ -981,241 +1000,194 @@ public class Main {
         // 注意：WebSocket端点注册在startHttpServer()方法中，因为必须在HTTP路由之前
 
         // 注册路由
-        // 认证路由
-        Spark.post("/api/auth/login", authController::login);
+        app.post("/api/auth/login", authController::login);
 
-        // 设备路由（具体路径须在 :id 之前注册）
-        Spark.get("/api/devices", deviceController::getDevices);
-        Spark.get("/api/devices/brands", deviceController::getBrands);
-        Spark.get("/api/devices/suggest-gb-id", deviceController::suggestGbId);
-        Spark.put("/api/devices/:id/set-gb-id", deviceController::setDeviceGbId);
-        Spark.get("/api/devices/:id", deviceController::getDevice);
-        Spark.get("/api/devices/:id/config", deviceController::getDeviceConfig);
-        Spark.put("/api/devices/:id/config", deviceController::updateDeviceConfig);
-        Spark.post("/api/devices", deviceController::addDevice);
-        Spark.put("/api/devices/:id", deviceController::updateDevice);
-        Spark.delete("/api/devices/:id", deviceController::deleteDevice);
-        Spark.post("/api/devices/:id/reboot", deviceController::rebootDevice);
-        Spark.post("/api/devices/:id/snapshot", deviceController::captureSnapshot);
-        Spark.get("/api/devices/:id/snapshot/file", deviceController::getSnapshotFile);
-        Spark.post("/api/devices/:id/ptz", deviceController::ptzControl);
-        Spark.post("/api/devices/:id/ptz/goto", deviceController::ptzGoto);
-        Spark.get("/api/devices/:id/ptz/position", deviceController::getPtzPosition);
-        Spark.post("/api/devices/:id/ptz/refresh", deviceController::refreshPtzPosition);
-        Spark.put("/api/devices/:id/ptz/monitor", deviceController::setPtzMonitor);
-        Spark.get("/api/devices/:id/stream", deviceController::getStreamUrl);
-        Spark.get("/api/devices/:id/live/url", deviceController::getLiveUrl);
-        Spark.get("/api/devices/:id/record-video", deviceController::getRecordVideo);
-        Spark.get("/api/devices/:id/video", deviceController::getVideoFile);
-        Spark.post("/api/devices/:id/playback", deviceController::playback);
-        Spark.get("/api/devices/:id/playback/progress", deviceController::getPlaybackProgress);
-        Spark.get("/api/devices/:id/playback/file", deviceController::getPlaybackFile);
-        Spark.get("/api/devices/:id/playback/transcode-url", deviceController::getPlaybackTranscodeUrl);
-        Spark.post("/api/devices/:id/playback/transcode-stop", deviceController::postPlaybackTranscodeStop);
-        Spark.post("/api/devices/:id/playback/stop", deviceController::stopPlayback);
-        Spark.post("/api/devices/:id/export", deviceController::exportVideo);
-        Spark.get("/api/devices/:id/export/file", deviceController::getExportFile);
+        app.get("/api/devices", deviceController::getDevices);
+        app.get("/api/devices/brands", deviceController::getBrands);
+        app.get("/api/devices/suggest-gb-id", deviceController::suggestGbId);
+        app.put("/api/devices/{id}/set-gb-id", deviceController::setDeviceGbId);
+        app.get("/api/devices/{id}", deviceController::getDevice);
+        app.get("/api/devices/{id}/config", deviceController::getDeviceConfig);
+        app.put("/api/devices/{id}/config", deviceController::updateDeviceConfig);
+        app.post("/api/devices", deviceController::addDevice);
+        app.put("/api/devices/{id}", deviceController::updateDevice);
+        app.delete("/api/devices/{id}", deviceController::deleteDevice);
+        app.post("/api/devices/{id}/reboot", deviceController::rebootDevice);
+        app.post("/api/devices/{id}/snapshot", deviceController::captureSnapshot);
+        app.get("/api/devices/{id}/snapshot/file", deviceController::getSnapshotFile);
+        app.post("/api/devices/{id}/ptz", deviceController::ptzControl);
+        app.post("/api/devices/{id}/ptz/goto", deviceController::ptzGoto);
+        app.get("/api/devices/{id}/ptz/position", deviceController::getPtzPosition);
+        app.post("/api/devices/{id}/ptz/refresh", deviceController::refreshPtzPosition);
+        app.put("/api/devices/{id}/ptz/monitor", deviceController::setPtzMonitor);
+        app.get("/api/devices/{id}/stream", deviceController::getStreamUrl);
+        app.get("/api/devices/{id}/live/url", deviceController::getLiveUrl);
+        app.get("/api/devices/{id}/record-video", deviceController::getRecordVideo);
+        app.get("/api/devices/{id}/video", deviceController::getVideoFile);
+        app.post("/api/devices/{id}/playback", deviceController::playback);
+        app.get("/api/devices/{id}/playback/progress", deviceController::getPlaybackProgress);
+        app.get("/api/devices/{id}/playback/file", deviceController::getPlaybackFile);
+        app.get("/api/devices/{id}/playback/transcode-url", deviceController::getPlaybackTranscodeUrl);
+        app.post("/api/devices/{id}/playback/transcode-stop", deviceController::postPlaybackTranscodeStop);
+        app.post("/api/devices/{id}/playback/stop", deviceController::stopPlayback);
+        app.post("/api/devices/{id}/export", deviceController::exportVideo);
+        app.get("/api/devices/{id}/export/file", deviceController::getExportFile);
 
-        // 驱动路由（注意：具体路由必须在参数路由之前注册）
-        Spark.get("/api/drivers", driverController::getDrivers);
-        Spark.get("/api/drivers/check-all", driverController::checkAllDrivers);
-        Spark.get("/api/drivers/logs", driverController::getDriverLogs);
-        Spark.get("/api/drivers/:id/check", driverController::checkDriver);
-        Spark.get("/api/drivers/:id", driverController::getDriver);
-        Spark.post("/api/drivers", driverController::addDriver);
-        Spark.put("/api/drivers/:id", driverController::updateDriver);
-        Spark.delete("/api/drivers/:id", driverController::deleteDriver);
+        app.get("/api/drivers", driverController::getDrivers);
+        app.get("/api/drivers/check-all", driverController::checkAllDrivers);
+        app.get("/api/drivers/logs", driverController::getDriverLogs);
+        app.get("/api/drivers/{id}/check", driverController::checkDriver);
+        app.get("/api/drivers/{id}", driverController::getDriver);
+        app.post("/api/drivers", driverController::addDriver);
+        app.put("/api/drivers/{id}", driverController::updateDriver);
+        app.delete("/api/drivers/{id}", driverController::deleteDriver);
 
-        // MQTT路由
-        Spark.get("/api/mqtt/config", mqttController::getConfig);
-        Spark.put("/api/mqtt/config", mqttController::updateConfig);
-        Spark.post("/api/mqtt/test", mqttController::testConnection);
+        app.get("/api/mqtt/config", mqttController::getConfig);
+        app.put("/api/mqtt/config", mqttController::updateConfig);
+        app.post("/api/mqtt/test", mqttController::testConnection);
 
-        // 系统配置路由
-        Spark.get("/api/system/config", systemController::getConfig);
-        Spark.put("/api/system/config", systemController::updateConfig);
-        Spark.get("/api/system/health", systemController::healthCheck);
+        app.get("/api/system/config", systemController::getConfig);
+        app.put("/api/system/config", systemController::updateConfig);
+        app.get("/api/system/health", systemController::healthCheck);
 
-        // 扫描路由
-        Spark.post("/api/scanner/start", scannerController::startScan);
-        Spark.get("/api/scanner/status/:sessionId", scannerController::getScanStatus);
-        Spark.post("/api/scanner/add-devices", scannerController::addDevices);
-        Spark.post("/api/system/mqtt/restart", systemController::restartMqtt);
-        Spark.get("/api/system/logs", systemController::getLogs);
-        Spark.post("/api/system/notification/test", systemController::testNotification);
-        Spark.post("/api/system/ai/test", systemController::testAiConnection);
-        Spark.get("/api/system/ai-analysis-records", systemController::getAiAnalysisRecords);
+        app.post("/api/scanner/start", scannerController::startScan);
+        app.get("/api/scanner/status/{sessionId}", scannerController::getScanStatus);
+        app.post("/api/scanner/add-devices", scannerController::addDevices);
+        app.post("/api/system/mqtt/restart", systemController::restartMqtt);
+        app.get("/api/system/logs", systemController::getLogs);
+        app.post("/api/system/notification/test", systemController::testNotification);
+        app.post("/api/system/ai/test", systemController::testAiConnection);
+        app.get("/api/system/ai-analysis-records", systemController::getAiAnalysisRecords);
 
-        // 仪表板路由
-        Spark.get("/api/dashboard/stats", dashboardController::getStats);
-        Spark.get("/api/dashboard/chart", dashboardController::getChart);
+        app.get("/api/dashboard/stats", dashboardController::getStats);
+        app.get("/api/dashboard/chart", dashboardController::getChart);
 
-        // 通知路由
-        Spark.get("/api/notifications", notificationController::getNotifications);
-        Spark.post("/api/notifications/read", notificationController::markAsRead);
-        Spark.post("/api/notifications/read-all", notificationController::markAllAsRead);
+        app.get("/api/notifications", notificationController::getNotifications);
+        app.post("/api/notifications/read", notificationController::markAsRead);
+        app.post("/api/notifications/read-all", notificationController::markAllAsRead);
 
-        // 装置路由
-        Spark.get("/api/assemblies", assemblyController::getAssemblies);
-        Spark.get("/api/assemblies/:id", assemblyController::getAssembly);
-        Spark.post("/api/assemblies", assemblyController::createAssembly);
-        Spark.put("/api/assemblies/:id", assemblyController::updateAssembly);
-        Spark.delete("/api/assemblies/:id", assemblyController::deleteAssembly);
-        Spark.post("/api/assemblies/:id/devices", assemblyController::addDeviceToAssembly);
-        Spark.delete("/api/assemblies/:id/devices/:deviceId", assemblyController::removeDeviceFromAssembly);
-        Spark.get("/api/assemblies/:id/devices", assemblyController::getAssemblyDevices);
-        Spark.get("/api/devices/:deviceId/assemblies", assemblyController::getAssembliesByDevice);
+        app.get("/api/assemblies", assemblyController::getAssemblies);
+        app.get("/api/assemblies/{id}", assemblyController::getAssembly);
+        app.post("/api/assemblies", assemblyController::createAssembly);
+        app.put("/api/assemblies/{id}", assemblyController::updateAssembly);
+        app.delete("/api/assemblies/{id}", assemblyController::deleteAssembly);
+        app.post("/api/assemblies/{id}/devices", assemblyController::addDeviceToAssembly);
+        app.delete("/api/assemblies/{id}/devices/{deviceId}", assemblyController::removeDeviceFromAssembly);
+        app.get("/api/assemblies/{id}/devices", assemblyController::getAssemblyDevices);
+        app.get("/api/devices/{deviceId}/assemblies", assemblyController::getAssembliesByDevice);
 
-        // 雷达路由
-        Spark.get("/api/radar/test", radarController::testConnection); // 兼容GET方式检测
-        Spark.post("/api/radar/test", radarController::testConnection);
-        Spark.get("/api/radar/devices", radarController::getRadarDevices);
-        Spark.post("/api/radar/devices", radarController::addRadarDevice);
-        Spark.put("/api/radar/devices/:deviceId", radarController::updateRadarDevice);
-        Spark.delete("/api/radar/devices/:deviceId", radarController::deleteRadarDevice);
-        Spark.post("/api/radar/:deviceId/background/start", radarController::startBackgroundCollection);
-        Spark.post("/api/radar/:deviceId/background/stop", radarController::stopBackgroundCollection);
-        Spark.get("/api/radar/:deviceId/background/status", radarController::getBackgroundStatus);
-        Spark.get("/api/radar/:deviceId/background/collecting/points", radarController::getCollectingPointCloud);
-        Spark.get("/api/radar/:deviceId/background/:backgroundId/points", radarController::getBackgroundPoints);
-        Spark.get("/api/radar/:deviceId/zones", radarController::getZones);
-        Spark.post("/api/radar/:deviceId/zones", radarController::createZone);
-        Spark.put("/api/radar/:deviceId/zones/:zoneId", radarController::updateZone);
-        Spark.delete("/api/radar/:deviceId/zones/:zoneId", radarController::deleteZone);
-        Spark.put("/api/radar/:deviceId/zones/:zoneId/toggle", radarController::toggleZone);
-        Spark.get("/api/radar/:deviceId/detection", radarController::getDetectionEnabled);
-        Spark.put("/api/radar/:deviceId/detection", radarController::setDetectionEnabled);
-        Spark.get("/api/radar/:deviceId/backgrounds", radarController::getBackgrounds);
-        Spark.delete("/api/radar/:deviceId/backgrounds/:backgroundId", radarController::deleteBackground);
-        Spark.get("/api/radar/:deviceId/intrusions", radarController::getIntrusions);
-        Spark.delete("/api/radar/:deviceId/intrusions", radarController::clearIntrusions);
-        Spark.get("/api/radar/intrusions/:id/data", radarController::getIntrusionData);
+        app.get("/api/radar/test", radarController::testConnection);
+        app.post("/api/radar/test", radarController::testConnection);
+        app.get("/api/radar/devices", radarController::getRadarDevices);
+        app.post("/api/radar/devices", radarController::addRadarDevice);
+        app.put("/api/radar/devices/{deviceId}", radarController::updateRadarDevice);
+        app.delete("/api/radar/devices/{deviceId}", radarController::deleteRadarDevice);
+        app.post("/api/radar/{deviceId}/background/start", radarController::startBackgroundCollection);
+        app.post("/api/radar/{deviceId}/background/stop", radarController::stopBackgroundCollection);
+        app.get("/api/radar/{deviceId}/background/status", radarController::getBackgroundStatus);
+        app.get("/api/radar/{deviceId}/background/collecting/points", radarController::getCollectingPointCloud);
+        app.get("/api/radar/{deviceId}/background/{backgroundId}/points", radarController::getBackgroundPoints);
+        app.get("/api/radar/{deviceId}/zones", radarController::getZones);
+        app.post("/api/radar/{deviceId}/zones", radarController::createZone);
+        app.put("/api/radar/{deviceId}/zones/{zoneId}", radarController::updateZone);
+        app.delete("/api/radar/{deviceId}/zones/{zoneId}", radarController::deleteZone);
+        app.put("/api/radar/{deviceId}/zones/{zoneId}/toggle", radarController::toggleZone);
+        app.get("/api/radar/{deviceId}/detection", radarController::getDetectionEnabled);
+        app.put("/api/radar/{deviceId}/detection", radarController::setDetectionEnabled);
+        app.get("/api/radar/{deviceId}/backgrounds", radarController::getBackgrounds);
+        app.delete("/api/radar/{deviceId}/backgrounds/{backgroundId}", radarController::deleteBackground);
+        app.get("/api/radar/{deviceId}/intrusions", radarController::getIntrusions);
+        app.delete("/api/radar/{deviceId}/intrusions", radarController::clearIntrusions);
+        app.get("/api/radar/intrusions/{id}/data", radarController::getIntrusionData);
 
-        // 事件类型路由
         EventTypeController eventTypeController = new EventTypeController(database);
-        Spark.get("/api/event-types", eventTypeController::getAllEventTypes);
-        Spark.get("/api/event-types/all", eventTypeController::getAllEventTypesList);
-        Spark.get("/api/event-types/:brand", eventTypeController::getEventTypesByBrand);
+        app.get("/api/event-types", eventTypeController::getAllEventTypes);
+        app.get("/api/event-types/all", eventTypeController::getAllEventTypesList);
+        app.get("/api/event-types/{brand}", eventTypeController::getEventTypesByBrand);
 
-        // 报警规则路由
-        Spark.get("/api/alarm-rules", alarmRuleController::getAlarmRules);
-        Spark.get("/api/alarm-rules/:id", alarmRuleController::getAlarmRule);
-        Spark.post("/api/alarm-rules", alarmRuleController::createAlarmRule);
-        Spark.put("/api/alarm-rules/:id", alarmRuleController::updateAlarmRule);
-        Spark.delete("/api/alarm-rules/:id", alarmRuleController::deleteAlarmRule);
-        Spark.put("/api/alarm-rules/:id/toggle", alarmRuleController::toggleRule);
-        Spark.get("/api/devices/:deviceId/alarm-rules", alarmRuleController::getDeviceRules);
-        Spark.get("/api/assemblies/:assemblyId/alarm-rules", alarmRuleController::getAssemblyRules);
+        app.get("/api/alarm-rules", alarmRuleController::getAlarmRules);
+        app.get("/api/alarm-rules/{id}", alarmRuleController::getAlarmRule);
+        app.post("/api/alarm-rules", alarmRuleController::createAlarmRule);
+        app.put("/api/alarm-rules/{id}", alarmRuleController::updateAlarmRule);
+        app.delete("/api/alarm-rules/{id}", alarmRuleController::deleteAlarmRule);
+        app.put("/api/alarm-rules/{id}/toggle", alarmRuleController::toggleRule);
+        app.get("/api/devices/{deviceId}/alarm-rules", alarmRuleController::getDeviceRules);
+        app.get("/api/assemblies/{assemblyId}/alarm-rules", alarmRuleController::getAssemblyRules);
 
-        // 报警记录路由
-        Spark.get("/api/alarm-records", alarmRecordController::getAlarmRecords);
-        Spark.get("/api/alarm-records/:id", alarmRecordController::getAlarmRecord);
+        app.get("/api/alarm-records", alarmRecordController::getAlarmRecords);
+        app.get("/api/alarm-records/{id}", alarmRecordController::getAlarmRecord);
 
-        // 音柱路由
-        Spark.get("/api/speakers", speakerController::getSpeakers);
-        Spark.get("/api/speakers/:deviceId", speakerController::getSpeaker);
-        Spark.post("/api/speakers", speakerController::createSpeaker);
-        Spark.put("/api/speakers/:deviceId", speakerController::updateSpeaker);
-        Spark.delete("/api/speakers/:deviceId", speakerController::deleteSpeaker);
-        Spark.post("/api/speakers/:deviceId/play", speakerController::playVoice);
+        app.get("/api/speakers", speakerController::getSpeakers);
+        app.get("/api/speakers/{deviceId}", speakerController::getSpeaker);
+        app.post("/api/speakers", speakerController::createSpeaker);
+        app.put("/api/speakers/{deviceId}", speakerController::updateSpeaker);
+        app.delete("/api/speakers/{deviceId}", speakerController::deleteSpeaker);
+        app.post("/api/speakers/{deviceId}/play", speakerController::playVoice);
 
-        // 录像任务路由
-        Spark.get("/api/recording-tasks", recordingTaskController::getRecordingTasks);
-        Spark.get("/api/recording-tasks/:taskId", recordingTaskController::getRecordingTask);
-        Spark.post("/api/recording-tasks", recordingTaskController::createRecordingTask);
-        Spark.put("/api/recording-tasks/:taskId", recordingTaskController::updateRecordingTask);
-        Spark.post("/api/recording-tasks/download", recordingTaskController::downloadRecording);
-        Spark.get("/api/recording-tasks/:taskId/file", recordingTaskController::downloadRecordingFile);
+        app.get("/api/recording-tasks", recordingTaskController::getRecordingTasks);
+        app.get("/api/recording-tasks/{taskId}", recordingTaskController::getRecordingTask);
+        app.post("/api/recording-tasks", recordingTaskController::createRecordingTask);
+        app.put("/api/recording-tasks/{taskId}", recordingTaskController::updateRecordingTask);
+        app.post("/api/recording-tasks/download", recordingTaskController::downloadRecording);
+        app.get("/api/recording-tasks/{taskId}/file", recordingTaskController::downloadRecordingFile);
 
-        // 流程管理路由
-        Spark.get("/api/flows", flowController::listFlows);
-        Spark.get("/api/flows/:flowId", flowController::getFlow);
-        Spark.post("/api/flows", flowController::createFlow);
-        Spark.put("/api/flows/:flowId", flowController::updateFlow);
-        Spark.delete("/api/flows/:flowId", flowController::deleteFlow);
-        Spark.post("/api/flows/:flowId/test", flowController::testFlow);
+        app.get("/api/flows", flowController::listFlows);
+        app.get("/api/flows/{flowId}", flowController::getFlow);
+        app.post("/api/flows", flowController::createFlow);
+        app.put("/api/flows/{flowId}", flowController::updateFlow);
+        app.delete("/api/flows/{flowId}", flowController::deleteFlow);
+        app.post("/api/flows/{flowId}/test", flowController::testFlow);
 
-        // 静态文件服务：data/ 与 storage/（含 storage/tts）目录下文件的 HTTP 访问
-        Spark.get("/api/static/*", (request, res) -> {
-            String splat = request.splat()[0];
-            if (splat.contains("..")) {
-                res.status(403);
-                return "Forbidden";
+        // 静态文件服务：/api/static/{path}
+        app.get("/api/static/{path}", ctx -> {
+            String path = ctx.pathParam("path");
+            if (path.contains("..")) {
+                ctx.status(403).result("Forbidden");
+                return;
             }
-            String baseDir = splat.startsWith("tts/") ? "storage" : "data";
-            java.io.File file = new java.io.File(baseDir + "/" + splat);
+            String baseDir = path.startsWith("tts/") ? "storage" : "data";
+            java.io.File file = new java.io.File(baseDir + "/" + path);
             if (!file.exists() || !file.isFile()) {
-                res.status(404);
-                return "Not found";
+                ctx.status(404).result("Not found");
+                return;
             }
             String name = file.getName().toLowerCase();
-            if (name.endsWith(".mp3")) res.type("audio/mpeg");
-            else if (name.endsWith(".wav")) res.type("audio/wav");
-            else if (name.endsWith(".jpg") || name.endsWith(".jpeg")) res.type("image/jpeg");
-            else if (name.endsWith(".png")) res.type("image/png");
-            else if (name.endsWith(".mp4")) res.type("video/mp4");
-            else if (name.endsWith(".webm")) res.type("video/webm");
-            else res.type("application/octet-stream");
-
-            res.header("Content-Length", String.valueOf(file.length()));
+            if (name.endsWith(".mp3")) ctx.contentType("audio/mpeg");
+            else if (name.endsWith(".wav")) ctx.contentType("audio/wav");
+            else if (name.endsWith(".jpg") || name.endsWith(".jpeg")) ctx.contentType("image/jpeg");
+            else if (name.endsWith(".png")) ctx.contentType("image/png");
+            else if (name.endsWith(".mp4")) ctx.contentType("video/mp4");
+            else if (name.endsWith(".webm")) ctx.contentType("video/webm");
+            else ctx.contentType("application/octet-stream");
+            ctx.header("Content-Length", String.valueOf(file.length()));
             try (java.io.InputStream is = new java.io.FileInputStream(file)) {
                 byte[] buf = new byte[8192];
                 int n;
-                java.io.OutputStream os = res.raw().getOutputStream();
-                while ((n = is.read(buf)) != -1) {
-                    os.write(buf, 0, n);
-                }
+                java.io.OutputStream os = ctx.res().getOutputStream();
+                while ((n = is.read(buf)) != -1) os.write(buf, 0, n);
                 os.flush();
             }
-            return "";
-        });
-
-        // SPA 兜底：使用 notFound 处理器，不会干扰 WebSocket 路由
-        Spark.notFound((request, response) -> {
-            String pathInfo = request.pathInfo();
-            // /api 和 /ws 请求不由 SPA 兜底处理
-            if (pathInfo != null && (pathInfo.startsWith("/api") || pathInfo.startsWith("/ws"))) {
-                response.type("application/json");
-                return "{\"code\":404,\"message\":\"Not found\",\"data\":null}";
-            }
-            // 非 /api、非 /ws 的请求，返回 index.html（SPA 兜底）
-            ClassLoader cl = Main.class.getClassLoader();
-            try (java.io.InputStream indexStream = cl.getResourceAsStream("static/index.html")) {
-                if (indexStream != null) {
-                    response.status(200);
-                    response.type("text/html; charset=utf-8");
-                    java.io.OutputStream out = response.raw().getOutputStream();
-                    byte[] buf = new byte[8192];
-                    int n;
-                    while ((n = indexStream.read(buf)) != -1) {
-                        out.write(buf, 0, n);
-                    }
-                    out.flush();
-                    return "";
-                }
-            } catch (Exception e) {
-                // ignore
-            }
-            response.type("text/plain");
-            return "Static panel not found. Build web-iot-panel and copy to server/src/main/resources/static.";
         });
 
         // 异常处理
-        Spark.exception(Exception.class, (exception, request, response) -> {
-            logger.error("处理请求时发生异常", exception);
-            response.status(500);
-            response.type("application/json");
+        app.exception(HaltException.class, (e, ctx) -> {
+            ctx.status(e.getStatus()).result(e.getBody());
+        });
+        app.exception(Exception.class, (e, ctx) -> {
+            logger.error("处理请求时发生异常", e);
+            ctx.status(500).contentType("application/json");
             try {
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("code", 500);
-                errorResponse.put("message", "Internal server error: " + exception.getMessage());
+                errorResponse.put("message", "Internal server error: " + e.getMessage());
                 errorResponse.put("data", null);
-                response.body(objectMapper.writeValueAsString(errorResponse));
-            } catch (Exception e) {
-                response.body("{\"code\":500,\"message\":\"Internal error\",\"data\":null}");
+                ctx.result(objectMapper.writeValueAsString(errorResponse));
+            } catch (Exception ex) {
+                ctx.result("{\"code\":500,\"message\":\"Internal error\",\"data\":null}");
             }
         });
 
+        app.start(port);
         logger.info("HTTP服务器已启动，端口: {}", port);
     }
 
@@ -1316,7 +1288,7 @@ public class Main {
             }
 
             // 停止HTTP服务器
-            Spark.stop();
+            if (app != null) app.stop();
 
             // 清理所有SDK
             SDKFactory.cleanup();

@@ -597,16 +597,59 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         }
       });
 
-      // 渲染背景点（淡色）作为底图
+      // 渲染背景点：根据 colorMode 决定着色方式
       const bgGeom = new THREE.BufferGeometry();
       const bgPos = new Float32Array(defenseBackgroundPoints.length * 3);
+      const bgColors = new Float32Array(defenseBackgroundPoints.length * 3);
+      const useVertexColors = colorMode === 'reflectivity' || colorMode === 'height' || colorMode === 'distance';
+      
+      // 计算背景点的统计范围
+      let bgMinY = Infinity, bgMaxY = -Infinity;
+      let bgMinDist = Infinity, bgMaxDist = -Infinity;
+      if (useVertexColors) {
+        defenseBackgroundPoints.forEach(p => {
+          bgMinY = Math.min(bgMinY, p.z);
+          bgMaxY = Math.max(bgMaxY, p.z);
+          const dist = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+          bgMinDist = Math.min(bgMinDist, dist);
+          bgMaxDist = Math.max(bgMaxDist, dist);
+        });
+      }
+      const bgHRange = bgMaxY - bgMinY || 1;
+      const bgDistRange = bgMaxDist - bgMinDist || 1;
+      
       defenseBackgroundPoints.forEach((p, i) => {
         bgPos[i * 3] = p.x;
         bgPos[i * 3 + 1] = p.z;
         bgPos[i * 3 + 2] = -p.y; // Z 轴取反与主点云一致
+        
+        if (useVertexColors) {
+          let r = 0.2, g = 0.2, b = 0.2;
+          if (colorMode === 'reflectivity' && p.r !== undefined) {
+            const normalizedR = p.r / 255;
+            [r, g, b] = getReflectivityColor(normalizedR);
+          } else if (colorMode === 'height') {
+            const normalizedH = (p.z - bgMinY) / bgHRange;
+            [r, g, b] = getHeightColor(normalizedH);
+          } else if (colorMode === 'distance') {
+            const dist = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            const normalizedDist = (dist - bgMinDist) / bgDistRange;
+            [r, g, b] = getHeightColor(normalizedDist);
+          }
+          bgColors[i * 3] = r;
+          bgColors[i * 3 + 1] = g;
+          bgColors[i * 3 + 2] = b;
+        }
       });
       bgGeom.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
-      const bgMat = new THREE.PointsMaterial({ size: 0.005, color: 0x333333, transparent: true, opacity: 0.3 });
+      
+      let bgMat: THREE.PointsMaterial;
+      if (useVertexColors) {
+        bgGeom.setAttribute('color', new THREE.BufferAttribute(bgColors, 3));
+        bgMat = new THREE.PointsMaterial({ size: 0.008, vertexColors: true, transparent: true, opacity: 0.85 });
+      } else {
+        bgMat = new THREE.PointsMaterial({ size: 0.005, color: 0x333333, transparent: true, opacity: 0.3 });
+      }
       const bgPoints = new THREE.Points(bgGeom, bgMat);
       backgroundPointsRef.current = bgPoints;
       scene.add(bgPoints);
@@ -644,7 +687,11 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
 
     const hRange = maxY - minY || 1; // 实际高度范围 (Radar Z)
     const distRange = maxDist - minDist || 1;
-    const rRange = maxR - minR || 1;
+    // 使用固定的反射率范围 (0-255)，确保颜色梯度一致
+    const REFLECTIVITY_MIN = 0;
+    const REFLECTIVITY_MAX = 255;
+    const rRange = REFLECTIVITY_MAX - REFLECTIVITY_MIN;
+    minR = REFLECTIVITY_MIN;
 
     // 3. 创建实时点云
     const geometry = new THREE.BufferGeometry();

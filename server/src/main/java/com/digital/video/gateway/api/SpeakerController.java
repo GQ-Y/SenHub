@@ -3,14 +3,14 @@ package com.digital.video.gateway.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.Speaker;
 import com.digital.video.gateway.service.SpeakerService;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 音柱设备控制器
@@ -24,55 +24,40 @@ public class SpeakerController {
         this.speakerService = speakerService;
     }
 
-    /**
-     * 获取音柱列表
-     * GET /api/speakers
-     */
-    public String getSpeakers(Request request, Response response) {
+    public void getSpeakers(Context ctx) {
         try {
             List<Speaker> speakers = speakerService.getSpeakers();
-            List<Map<String, Object>> result = speakers.stream()
-                .map(Speaker::toMap)
-                .collect(java.util.stream.Collectors.toList());
-            
-            response.status(200);
-            return createSuccessResponse(result);
+            List<Map<String, Object>> result = speakers.stream().map(Speaker::toMap).collect(Collectors.toList());
+            ctx.status(200);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取音柱列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取音柱列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取音柱列表失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 获取音柱详情
-     * GET /api/speakers/:deviceId
-     */
-    public String getSpeaker(Request request, Response response) {
+    public void getSpeaker(Context ctx) {
         try {
-            String deviceId = request.params(":deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             Speaker speaker = speakerService.getSpeaker(deviceId);
             if (speaker == null) {
-                response.status(404);
-                return createErrorResponse(404, "音柱设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "音柱设备不存在"));
+                return;
             }
-            
-            response.status(200);
-            return createSuccessResponse(speaker.toMap());
+            ctx.status(200);
+            ctx.result(createSuccessResponse(speaker.toMap()));
         } catch (Exception e) {
             logger.error("获取音柱详情失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取音柱详情失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取音柱详情失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 创建音柱设备
-     * POST /api/speakers
-     */
-    public String createSpeaker(Request request, Response response) {
+    public void createSpeaker(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             Speaker speaker = new Speaker();
             speaker.setDeviceId((String) body.get("deviceId"));
             speaker.setName((String) body.get("name"));
@@ -80,101 +65,88 @@ public class SpeakerController {
             speaker.setApiType((String) body.getOrDefault("apiType", "http"));
             speaker.setApiConfig((String) body.get("apiConfig"));
             speaker.setStatus((String) body.getOrDefault("status", "offline"));
-            
+
             Speaker created = speakerService.createSpeaker(speaker);
             if (created == null) {
-                response.status(500);
-                return createErrorResponse(500, "创建音柱设备失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "创建音柱设备失败"));
+                return;
             }
-            
-            response.status(201);
-            return createSuccessResponse(created.toMap());
+            ctx.status(201);
+            ctx.result(createSuccessResponse(created.toMap()));
         } catch (Exception e) {
             logger.error("创建音柱设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "创建音柱设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "创建音柱设备失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 更新音柱设备
-     * PUT /api/speakers/:deviceId
-     */
-    public String updateSpeaker(Request request, Response response) {
+    public void updateSpeaker(Context ctx) {
         try {
-            String deviceId = request.params(":deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             Speaker speaker = new Speaker();
             speaker.setName((String) body.get("name"));
             speaker.setApiEndpoint((String) body.get("apiEndpoint"));
             speaker.setApiType((String) body.get("apiType"));
             speaker.setApiConfig((String) body.get("apiConfig"));
             speaker.setStatus((String) body.get("status"));
-            
+
             Speaker updated = speakerService.updateSpeaker(deviceId, speaker);
             if (updated == null) {
-                response.status(404);
-                return createErrorResponse(404, "音柱设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "音柱设备不存在"));
+                return;
             }
-            
-            response.status(200);
-            return createSuccessResponse(updated.toMap());
+            ctx.status(200);
+            ctx.result(createSuccessResponse(updated.toMap()));
         } catch (Exception e) {
             logger.error("更新音柱设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "更新音柱设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "更新音柱设备失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 删除音柱设备
-     * DELETE /api/speakers/:deviceId
-     */
-    public String deleteSpeaker(Request request, Response response) {
+    public void deleteSpeaker(Context ctx) {
         try {
-            String deviceId = request.params(":deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             boolean deleted = speakerService.deleteSpeaker(deviceId);
             if (!deleted) {
-                response.status(404);
-                return createErrorResponse(404, "音柱设备不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "音柱设备不存在"));
+                return;
             }
-            
-            response.status(200);
-            return createSuccessResponse(Map.of("message", "删除成功"));
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "删除成功")));
         } catch (Exception e) {
             logger.error("删除音柱设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "删除音柱设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "删除音柱设备失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 播放语音
-     * POST /api/speakers/:deviceId/play
-     */
-    public String playVoice(Request request, Response response) {
+    public void playVoice(Context ctx) {
         try {
-            String deviceId = request.params(":deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String text = (String) body.get("text");
-            
             if (text == null || text.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "语音文本不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "语音文本不能为空"));
+                return;
             }
-            
             boolean success = speakerService.playVoice(deviceId, text);
             if (!success) {
-                response.status(500);
-                return createErrorResponse(500, "播放语音失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "播放语音失败"));
+                return;
             }
-            
-            response.status(200);
-            return createSuccessResponse(Map.of("message", "播放成功"));
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "播放成功")));
         } catch (Exception e) {
             logger.error("播放语音失败", e);
-            response.status(500);
-            return createErrorResponse(500, "播放语音失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "播放语音失败: " + e.getMessage()));
         }
     }
 

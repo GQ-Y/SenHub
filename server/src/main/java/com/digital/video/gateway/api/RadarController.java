@@ -13,10 +13,9 @@ import com.digital.video.gateway.driver.livox.model.DefenseZone;
 import com.digital.video.gateway.service.*;
 import com.digital.video.gateway.service.RadarTestService;
 import com.digital.video.gateway.database.Assembly;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.sql.Connection;
 import java.text.SimpleDateFormat;
@@ -64,14 +63,14 @@ public class RadarController {
      * 测试雷达连接
      * POST /api/radar/test
      */
-    public Object testConnection(Request request, Response response) {
+    public void testConnection(Context ctx) {
         try {
             if (radarTestService == null) {
-                response.status(503);
-                return createErrorResponse(503, "雷达测试服务未启动，可能是Livox SDK依赖问题");
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "雷达测试服务未启动，可能是Livox SDK依赖问题"));
+                return;
             }
-
-            String ip = request.queryParams("ip") != null ? request.queryParams("ip") : "192.168.1.115";
+            String ip = ctx.queryParam("ip") != null ? ctx.queryParam("ip") : "192.168.1.115";
             RadarTestService.RadarDetectionResult result = radarTestService.testConnection(ip);
 
             Map<String, Object> payload = new HashMap<>();
@@ -81,11 +80,11 @@ public class RadarController {
             if (result.getRadarSerial() != null) {
                 payload.put("radarSerial", result.getRadarSerial());
             }
-            return createSuccessResponse(payload);
+            ctx.result(createSuccessResponse(payload));
         } catch (Exception e) {
             logger.error("测试雷达连接失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -95,17 +94,17 @@ public class RadarController {
      * 获取雷达设备列表
      * GET /api/radar/devices
      */
-    public Object getRadarDevices(Request request, Response response) {
+    public void getRadarDevices(Context ctx) {
         try {
             List<RadarDevice> devices = radarDeviceDAO.getAll();
             List<Map<String, Object>> deviceList = devices.stream()
                     .map(RadarDevice::toMap)
                     .collect(Collectors.toList());
-            return createSuccessResponse(deviceList);
+            ctx.result(createSuccessResponse(deviceList));
         } catch (Exception e) {
             logger.error("获取雷达设备列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -117,9 +116,9 @@ public class RadarController {
      * 1. 有 SN：按原逻辑，SN 作为设备唯一标识
      * 2. 无 SN：使用 IP 作为临时标识，雷达上线后自动填充 SN
      */
-    public Object addRadarDevice(Request request, Response response) {
+    public void addRadarDevice(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
 
             // 验证必填字段
             String radarIp = (String) body.get("radarIp");
@@ -127,19 +126,19 @@ public class RadarController {
             String radarSerial = (String) body.get("radarSerial");
 
             if (radarIp == null || radarIp.trim().isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "雷达IP地址不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "雷达IP地址不能为空"));
             }
 
             if (radarName == null || radarName.trim().isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "雷达名称不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "雷达名称不能为空"));
             }
 
             // 验证IP格式
             if (!isValidIpAddress(radarIp)) {
-                response.status(400);
-                return createErrorResponse(400, "无效的IP地址格式");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "无效的IP地址格式"));
             }
 
             radarIp = radarIp.trim();
@@ -162,8 +161,8 @@ public class RadarController {
             // 如果 IP 已存在且不是同一设备（通过 SN 判断），报错
             if (existingByIp != null && existingBySerial != null && 
                     !existingByIp.getDeviceId().equals(existingBySerial.getDeviceId())) {
-                response.status(400);
-                return createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp);
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp));
             }
 
             // 确定设备ID
@@ -200,8 +199,8 @@ public class RadarController {
             if (assemblyId != null && !assemblyId.trim().isEmpty() && assemblyService != null) {
                 Assembly assembly = assemblyService.getAssembly(assemblyId.trim());
                 if (assembly == null) {
-                    response.status(400);
-                    return createErrorResponse(400, "指定的装置不存在: " + assemblyId);
+                    ctx.status(400);
+                    ctx.result(createErrorResponse(400, "指定的装置不存在: " + assemblyId));
                 }
                 device.setAssemblyId(assemblyId.trim());
             }
@@ -246,15 +245,15 @@ public class RadarController {
                     result.put("snPending", true);
                     result.put("message", "设备已添加，SN将在雷达上线后自动填充");
                 }
-                return createSuccessResponse(result);
+                ctx.result(createSuccessResponse(result));
             } else {
-                response.status(400);
-                return createErrorResponse(400, isUpdate ? "更新雷达设备失败" : "添加雷达设备失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, isUpdate ? "更新雷达设备失败" : "添加雷达设备失败"));
             }
         } catch (Exception e) {
             logger.error("添加雷达设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -262,16 +261,16 @@ public class RadarController {
      * 更新雷达设备
      * PUT /api/radar/devices/:deviceId
      */
-    public Object updateRadarDevice(Request request, Response response) {
+    public void updateRadarDevice(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
             
             // 查找现有设备
             RadarDevice existingDevice = radarDeviceDAO.getByDeviceId(deviceId);
             if (existingDevice == null) {
-                response.status(404);
-                return createErrorResponse(404, "雷达设备不存在: " + deviceId);
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "雷达设备不存在: " + deviceId));
             }
             
             // 更新字段
@@ -281,15 +280,15 @@ public class RadarController {
             
             if (radarIp != null && !radarIp.trim().isEmpty()) {
                 if (!isValidIpAddress(radarIp)) {
-                    response.status(400);
-                    return createErrorResponse(400, "无效的IP地址格式");
+                    ctx.status(400);
+                    ctx.result(createErrorResponse(400, "无效的IP地址格式"));
                 }
                 // 检查IP是否被其他设备占用
                 List<RadarDevice> allDevices = radarDeviceDAO.getAll();
                 for (RadarDevice d : allDevices) {
                     if (radarIp.equals(d.getRadarIp()) && !deviceId.equals(d.getDeviceId())) {
-                        response.status(400);
-                        return createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp);
+                        ctx.status(400);
+                        ctx.result(createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp));
                     }
                 }
                 existingDevice.setRadarIp(radarIp.trim());
@@ -305,8 +304,8 @@ public class RadarController {
                 if (assemblyId != null && !assemblyId.trim().isEmpty() && assemblyService != null) {
                     Assembly assembly = assemblyService.getAssembly(assemblyId.trim());
                     if (assembly == null) {
-                        response.status(400);
-                        return createErrorResponse(400, "指定的装置不存在: " + assemblyId);
+                        ctx.status(400);
+                        ctx.result(createErrorResponse(400, "指定的装置不存在: " + assemblyId));
                     }
                     existingDevice.setAssemblyId(assemblyId.trim());
                 }
@@ -314,15 +313,15 @@ public class RadarController {
 
             if (radarDeviceDAO.saveOrUpdate(existingDevice)) {
                 logger.info("雷达设备已更新: deviceId={}", deviceId);
-                return createSuccessResponse(existingDevice.toMap());
+                ctx.result(createSuccessResponse(existingDevice.toMap()));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "更新雷达设备失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "更新雷达设备失败"));
             }
         } catch (Exception e) {
             logger.error("更新雷达设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -331,15 +330,15 @@ public class RadarController {
      * DELETE /api/radar/devices/:deviceId
      * 级联删除所有关联数据：背景模型、防区、侵入记录
      */
-    public Object deleteRadarDevice(Request request, Response response) {
+    public void deleteRadarDevice(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             
             // 查找现有设备
             RadarDevice existingDevice = radarDeviceDAO.getByDeviceId(deviceId);
             if (existingDevice == null) {
-                response.status(404);
-                return createErrorResponse(404, "雷达设备不存在: " + deviceId);
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "雷达设备不存在: " + deviceId));
             }
             
             logger.info("开始删除雷达设备及关联数据: deviceId={}", deviceId);
@@ -378,15 +377,15 @@ public class RadarController {
                 result.put("deletedZones", deletedZones);
                 result.put("deletedBackgrounds", deletedBackgrounds);
                 
-                return createSuccessResponse(result);
+                ctx.result(createSuccessResponse(result));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "删除雷达设备失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "删除雷达设备失败"));
             }
         } catch (Exception e) {
             logger.error("删除雷达设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -420,15 +419,15 @@ public class RadarController {
      * 开始采集背景
      * POST /api/radar/:deviceId/background/start
      */
-    public Object startBackgroundCollection(Request request, Response response) {
+    public void startBackgroundCollection(Context ctx) {
         try {
             if (radarService == null) {
-                response.status(503);
-                return createErrorResponse(503, "雷达服务未启动，请先添加雷达设备");
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "雷达服务未启动，请先添加雷达设备"));
             }
 
-            String deviceId = request.params("deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
             int durationSeconds = body.get("durationSeconds") != null
                     ? ((Number) body.get("durationSeconds")).intValue()
                     : 10;
@@ -443,11 +442,11 @@ public class RadarController {
             result.put("status", "collecting");
             result.put("estimatedTime", durationSeconds);
 
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("开始采集背景失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -455,14 +454,14 @@ public class RadarController {
      * 停止采集背景
      * POST /api/radar/:deviceId/background/stop
      */
-    public Object stopBackgroundCollection(Request request, Response response) {
+    public void stopBackgroundCollection(Context ctx) {
         try {
             if (radarService == null) {
-                response.status(503);
-                return createErrorResponse(503, "雷达服务未启动，请先添加雷达设备");
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "雷达服务未启动，请先添加雷达设备"));
             }
 
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             String backgroundId = radarService.stopBackgroundCollection(deviceId);
 
             if (backgroundId != null) {
@@ -472,15 +471,15 @@ public class RadarController {
                 result.put("status", "ready");
                 result.put("frameCount", background != null ? background.getFrameCount() : 0);
                 result.put("pointCount", background != null ? background.getPointCount() : 0);
-                return createSuccessResponse(result);
+                ctx.result(createSuccessResponse(result));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "停止采集失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "停止采集失败"));
             }
         } catch (Exception e) {
             logger.error("停止采集背景失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -488,20 +487,20 @@ public class RadarController {
      * 获取采集状态
      * GET /api/radar/:deviceId/background/status
      */
-    public Object getBackgroundStatus(Request request, Response response) {
+    public void getBackgroundStatus(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             BackgroundModelService.CollectionStatus status = backgroundService.getCollectionStatus(deviceId);
             if (status != null) {
-                return createSuccessResponse(status);
+                ctx.result(createSuccessResponse(status));
             } else {
-                response.status(404);
-                return createErrorResponse(404, "未找到采集状态");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "未找到采集状态"));
             }
         } catch (Exception e) {
             logger.error("获取采集状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -510,11 +509,11 @@ public class RadarController {
      * GET /api/radar/:deviceId/background/collecting/points
      * 注意：实时点云数据应通过WebSocket获取，此接口仅用于采集过程中的预览
      */
-    public Object getCollectingPointCloud(Request request, Response response) {
+    public void getCollectingPointCloud(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            int maxPoints = request.queryParams("maxPoints") != null
-                    ? Integer.parseInt(request.queryParams("maxPoints"))
+            String deviceId = ctx.pathParam("deviceId");
+            int maxPoints = ctx.queryParam("maxPoints") != null
+                    ? Integer.parseInt(ctx.queryParam("maxPoints"))
                     : 5000;
 
             List<com.digital.video.gateway.driver.livox.model.Point> points = backgroundService
@@ -537,11 +536,11 @@ public class RadarController {
             result.put("points", pointList);
             result.put("pointCount", pointList.size());
 
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取采集点云数据失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -549,11 +548,11 @@ public class RadarController {
      * 获取背景点云数据（从文件读取）
      * GET /api/radar/:deviceId/background/:backgroundId/points
      */
-    public Object getBackgroundPoints(Request request, Response response) {
+    public void getBackgroundPoints(Context ctx) {
         try {
-            String backgroundId = request.params("backgroundId");
-            int maxPoints = request.queryParams("maxPoints") != null
-                    ? Integer.parseInt(request.queryParams("maxPoints"))
+            String backgroundId = ctx.pathParam("backgroundId");
+            int maxPoints = ctx.queryParam("maxPoints") != null
+                    ? Integer.parseInt(ctx.queryParam("maxPoints"))
                     : 10000;
 
             // 从文件加载背景点云
@@ -578,11 +577,11 @@ public class RadarController {
             result.put("pointCount", pointList.size());
             result.put("backgroundId", backgroundId);
 
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取背景点云数据失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -592,18 +591,18 @@ public class RadarController {
      * 获取防区列表
      * GET /api/radar/:deviceId/zones
      */
-    public Object getZones(Request request, Response response) {
+    public void getZones(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             List<DefenseZone> zones = defenseZoneService.getZonesByDeviceId(deviceId);
             List<Map<String, Object>> zoneList = zones.stream()
                     .map(this::convertZoneToMap)
                     .collect(Collectors.toList());
-            return createSuccessResponse(zoneList);
+            ctx.result(createSuccessResponse(zoneList));
         } catch (Exception e) {
             logger.error("获取防区列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -611,10 +610,10 @@ public class RadarController {
      * 创建防区
      * POST /api/radar/:deviceId/zones
      */
-    public Object createZone(Request request, Response response) {
+    public void createZone(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
 
             DefenseZone zone = new DefenseZone();
             zone.setDeviceId(deviceId);
@@ -648,15 +647,15 @@ public class RadarController {
             if (zoneId != null) {
                 // 重新加载检测上下文
                 radarService.reloadDeviceDetectionContext(deviceId);
-                return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
+                ctx.result(createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId))));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "创建防区失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "创建防区失败"));
             }
         } catch (Exception e) {
             logger.error("创建防区失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -664,11 +663,11 @@ public class RadarController {
      * 更新防区
      * PUT /api/radar/:deviceId/zones/:zoneId
      */
-    public Object updateZone(Request request, Response response) {
+    public void updateZone(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            String zoneId = request.params("zoneId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            String deviceId = ctx.pathParam("deviceId");
+            String zoneId = ctx.pathParam("zoneId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
 
             DefenseZone zone = new DefenseZone();
             zone.setZoneId(zoneId);
@@ -709,15 +708,15 @@ public class RadarController {
             if (defenseZoneService.updateZone(zoneId, zone)) {
                 // 重新加载检测上下文
                 radarService.reloadDeviceDetectionContext(deviceId);
-                return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
+                ctx.result(createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId))));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "更新防区失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "更新防区失败"));
             }
         } catch (Exception e) {
             logger.error("更新防区失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -725,22 +724,22 @@ public class RadarController {
      * 删除防区
      * DELETE /api/radar/:deviceId/zones/:zoneId
      */
-    public Object deleteZone(Request request, Response response) {
+    public void deleteZone(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            String zoneId = request.params("zoneId");
+            String deviceId = ctx.pathParam("deviceId");
+            String zoneId = ctx.pathParam("zoneId");
             if (defenseZoneService.deleteZone(zoneId)) {
                 // 重新加载检测上下文
                 radarService.reloadDeviceDetectionContext(deviceId);
-                return createSuccessResponse(null);
+                ctx.result(createSuccessResponse(null));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "删除防区失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "删除防区失败"));
             }
         } catch (Exception e) {
             logger.error("删除防区失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -748,20 +747,20 @@ public class RadarController {
      * 获取当前侵入检测是否开启
      * GET /api/radar/:deviceId/detection
      */
-    public Object getDetectionEnabled(Request request, Response response) {
+    public void getDetectionEnabled(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             String state = radarService.getDeviceState(deviceId);
             boolean enabled = "detecting".equals(state);
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("deviceId", deviceId);
             payload.put("detectionEnabled", enabled);
-            return createSuccessResponse(payload);
+            ctx.result(createSuccessResponse(payload));
         } catch (Exception e) {
             logger.error("获取检测状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -770,10 +769,10 @@ public class RadarController {
      * PUT /api/radar/:deviceId/detection
      * Body: { "enabled": true } 开启检测，{ "enabled": false } 关闭检测（仅推送点云，不跑侵入检测，避免队列满）
      */
-    public Object setDetectionEnabled(Request request, Response response) {
+    public void setDetectionEnabled(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            Map<String, Object> body = objectMapper.readValue(request.body(), new TypeReference<Map<String, Object>>() {});
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
             Boolean enabled = body.get("enabled") != null && Boolean.TRUE.equals(body.get("enabled"));
 
             if (enabled) {
@@ -788,11 +787,11 @@ public class RadarController {
             Map<String, Object> payload = new HashMap<>();
             payload.put("deviceId", deviceId);
             payload.put("detectionEnabled", enabled);
-            return createSuccessResponse(payload);
+            ctx.result(createSuccessResponse(payload));
         } catch (Exception e) {
             logger.error("设置检测状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -800,29 +799,29 @@ public class RadarController {
      * 切换防区启用状态
      * PUT /api/radar/:deviceId/zones/:zoneId/toggle
      */
-    public Object toggleZone(Request request, Response response) {
+    public void toggleZone(Context ctx) {
         try {
-            String zoneId = request.params("zoneId");
+            String zoneId = ctx.pathParam("zoneId");
             DefenseZone zone = defenseZoneService.getZone(zoneId);
             if (zone == null) {
-                response.status(404);
-                return createErrorResponse(404, "防区不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "防区不存在"));
             }
 
             zone.setEnabled(!zone.getEnabled());
             if (defenseZoneService.updateZone(zoneId, zone)) {
                 // 重新加载检测上下文
-                String deviceId = request.params("deviceId");
+                String deviceId = ctx.pathParam("deviceId");
                 radarService.reloadDeviceDetectionContext(deviceId);
-                return createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId)));
+                ctx.result(createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId))));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "切换防区状态失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "切换防区状态失败"));
             }
         } catch (Exception e) {
             logger.error("切换防区状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -830,9 +829,9 @@ public class RadarController {
      * 获取背景模型列表
      * GET /api/radar/:deviceId/backgrounds
      */
-    public Object getBackgrounds(Request request, Response response) {
+    public void getBackgrounds(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             List<RadarBackground> backgrounds = backgroundService.getBackgroundDAO().getByDeviceId(deviceId);
             List<Map<String, Object>> backgroundList = backgrounds.stream()
                     .map(bg -> {
@@ -848,11 +847,11 @@ public class RadarController {
                         return map;
                     })
                     .collect(Collectors.toList());
-            return createSuccessResponse(backgroundList);
+            ctx.result(createSuccessResponse(backgroundList));
         } catch (Exception e) {
             logger.error("获取背景列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -860,25 +859,25 @@ public class RadarController {
      * 删除背景模型
      * DELETE /api/radar/:deviceId/backgrounds/:backgroundId
      */
-    public Object deleteBackground(Request request, Response response) {
+    public void deleteBackground(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            String backgroundId = request.params("backgroundId");
+            String deviceId = ctx.pathParam("deviceId");
+            String backgroundId = ctx.pathParam("backgroundId");
 
             // 删除数据库记录和文件
             boolean deleted = backgroundService.deleteBackground(backgroundId);
 
             if (deleted) {
                 logger.info("背景模型删除成功: deviceId={}, backgroundId={}", deviceId, backgroundId);
-                return createSuccessResponse(null);
+                ctx.result(createSuccessResponse(null));
             } else {
-                response.status(400);
-                return createErrorResponse(400, "删除背景模型失败");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "删除背景模型失败"));
             }
         } catch (Exception e) {
             logger.error("删除背景模型失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -888,14 +887,14 @@ public class RadarController {
      * 获取侵入记录列表
      * GET /api/radar/:deviceId/intrusions
      */
-    public Object getIntrusions(Request request, Response response) {
+    public void getIntrusions(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
-            String zoneId = request.queryParams("zoneId");
-            String startTimeStr = request.queryParams("startTime");
-            String endTimeStr = request.queryParams("endTime");
-            int page = request.queryParams("page") != null ? Integer.parseInt(request.queryParams("page")) : 1;
-            int pageSize = request.queryParams("pageSize") != null ? Integer.parseInt(request.queryParams("pageSize"))
+            String deviceId = ctx.pathParam("deviceId");
+            String zoneId = ctx.queryParam("zoneId");
+            String startTimeStr = ctx.queryParam("startTime");
+            String endTimeStr = ctx.queryParam("endTime");
+            int page = ctx.queryParam("page") != null ? Integer.parseInt(ctx.queryParam("page")) : 1;
+            int pageSize = ctx.queryParam("pageSize") != null ? Integer.parseInt(ctx.queryParam("pageSize"))
                     : 20;
 
             Date startTime = startTimeStr != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(startTimeStr)
@@ -914,11 +913,11 @@ public class RadarController {
             result.put("page", page);
             result.put("pageSize", pageSize);
 
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取侵入记录失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -926,18 +925,18 @@ public class RadarController {
      * 清空侵入记录
      * DELETE /api/radar/:deviceId/intrusions
      */
-    public Object clearIntrusions(Request request, Response response) {
+    public void clearIntrusions(Context ctx) {
         try {
-            String deviceId = request.params("deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             int count = intrusionDetectionService.clearIntrusionRecords(deviceId);
             Map<String, Object> result = new HashMap<>();
             result.put("deletedCount", count);
             logger.info("清空侵入记录: deviceId={}, 删除数量={}", deviceId, count);
-            return createSuccessResponse(result);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("清空侵入记录失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 
@@ -945,36 +944,36 @@ public class RadarController {
      * 获取侵入数据文件
      * GET /api/radar/intrusions/:id/data
      */
-    public Object getIntrusionData(Request request, Response response) {
+    public void getIntrusionData(Context ctx) {
         try {
-            String id = request.params("id");
+            String id = ctx.pathParam("id");
             RadarIntrusionRecord record = intrusionRecordDAO.getById(id);
             if (record == null) {
-                response.status(404);
-                return createErrorResponse(404, "记录不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "记录不存在"));
             }
 
             String clusterId = record.getClusterId();
             if (clusterId == null || !clusterId.startsWith("TRAJECTORY:")) {
-                response.status(404);
-                return createErrorResponse(404, "该记录没有轨迹数据");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "该记录没有轨迹数据"));
             }
 
             String relativePath = clusterId.substring("TRAJECTORY:".length());
             java.io.File file = new java.io.File(relativePath);
             if (!file.exists()) {
-                response.status(404);
-                return createErrorResponse(404, "数据文件未找到");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "数据文件未找到"));
             }
 
             // 读取JSON文件并解析为Map，然后包装在标准响应格式中
             String jsonContent = new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
             Map<String, Object> recordData = objectMapper.readValue(jsonContent, new TypeReference<Map<String, Object>>() {});
-            return createSuccessResponse(recordData);
+            ctx.result(createSuccessResponse(recordData));
         } catch (Exception e) {
             logger.error("读取侵入数据文件失败", e);
-            response.status(500);
-            return createErrorResponse(500, e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
         }
     }
 

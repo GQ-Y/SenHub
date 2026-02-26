@@ -4,10 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.Assembly;
 import com.digital.video.gateway.database.AssemblyDevice;
 import com.digital.video.gateway.service.AssemblyService;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.util.HashMap;
 import java.util.List;
@@ -29,10 +28,10 @@ public class AssemblyController {
      * 获取装置列表
      * GET /api/assemblies
      */
-    public String getAssemblies(Request request, Response response) {
+    public void getAssemblies(Context ctx) {
         try {
-            String search = request.queryParams("search");
-            String status = request.queryParams("status");
+            String search = ctx.queryParam("search");
+            String status = ctx.queryParam("status");
             List<Assembly> assemblies = assemblyService.getAssemblies(search, status);
 
             // 转换为Map列表
@@ -45,12 +44,12 @@ public class AssemblyController {
                 result.add(map);
             }
 
-            response.status(200);
-            return createSuccessResponse(result);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取装置列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取装置列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取装置列表失败: " + e.getMessage()));
         }
     }
 
@@ -58,26 +57,26 @@ public class AssemblyController {
      * 获取装置详情
      * GET /api/assemblies/:id
      */
-    public String getAssembly(Request request, Response response) {
+    public void getAssembly(Context ctx) {
         try {
-            String assemblyId = request.params(":id");
+            String assemblyId = ctx.pathParam("id");
             Assembly assembly = assemblyService.getAssembly(assemblyId);
             if (assembly == null) {
-                response.status(404);
-                return createErrorResponse(404, "装置不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "装置不存在"));
+                return;
             }
-
             Map<String, Object> map = assembly.toMap();
             List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assemblyId);
             map.put("devices",
                     devices.stream().map(AssemblyDevice::toMap).collect(java.util.stream.Collectors.toList()));
 
-            response.status(200);
-            return createSuccessResponse(map);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(map));
         } catch (Exception e) {
             logger.error("获取装置详情失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取装置详情失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取装置详情失败: " + e.getMessage()));
         }
     }
 
@@ -85,9 +84,9 @@ public class AssemblyController {
      * 创建装置
      * POST /api/assemblies
      */
-    public String createAssembly(Request request, Response response) {
+    public void createAssembly(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             Assembly assembly = new Assembly();
             assembly.setName((String) body.get("name"));
             assembly.setDescription((String) body.get("description"));
@@ -106,16 +105,16 @@ public class AssemblyController {
 
             Assembly created = assemblyService.createAssembly(assembly);
             if (created == null) {
-                response.status(500);
-                return createErrorResponse(500, "创建装置失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "创建装置失败"));
+                return;
             }
-
-            response.status(201);
-            return createSuccessResponse(created.toMap());
+            ctx.status(201);
+            ctx.result(createSuccessResponse(created.toMap()));
         } catch (Exception e) {
             logger.error("创建装置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "创建装置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "创建装置失败: " + e.getMessage()));
         }
     }
 
@@ -123,10 +122,10 @@ public class AssemblyController {
      * 更新装置
      * PUT /api/assemblies/:id
      */
-    public String updateAssembly(Request request, Response response) {
+    public void updateAssembly(Context ctx) {
         try {
-            String assemblyId = request.params(":id");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String assemblyId = ctx.pathParam("id");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             Assembly existing = assemblyService.getAssembly(assemblyId);
             Assembly assembly = new Assembly();
             assembly.setName((String) body.get("name"));
@@ -158,16 +157,16 @@ public class AssemblyController {
 
             Assembly updated = assemblyService.updateAssembly(assemblyId, assembly);
             if (updated == null) {
-                response.status(404);
-                return createErrorResponse(404, "装置不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "装置不存在"));
+                return;
             }
-
-            response.status(200);
-            return createSuccessResponse(updated.toMap());
+            ctx.status(200);
+            ctx.result(createSuccessResponse(updated.toMap()));
         } catch (Exception e) {
             logger.error("更新装置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "更新装置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "更新装置失败: " + e.getMessage()));
         }
     }
 
@@ -175,21 +174,21 @@ public class AssemblyController {
      * 删除装置
      * DELETE /api/assemblies/:id
      */
-    public String deleteAssembly(Request request, Response response) {
+    public void deleteAssembly(Context ctx) {
         try {
-            String assemblyId = request.params(":id");
+            String assemblyId = ctx.pathParam("id");
             boolean deleted = assemblyService.deleteAssembly(assemblyId);
             if (!deleted) {
-                response.status(404);
-                return createErrorResponse(404, "装置不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "装置不存在"));
+                return;
             }
-
-            response.status(200);
-            return createSuccessResponse(Map.of("message", "删除成功"));
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "删除成功")));
         } catch (Exception e) {
             logger.error("删除装置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "删除装置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "删除装置失败: " + e.getMessage()));
         }
     }
 
@@ -197,26 +196,26 @@ public class AssemblyController {
      * 添加设备到装置
      * POST /api/assemblies/:id/devices
      */
-    public String addDeviceToAssembly(Request request, Response response) {
+    public void addDeviceToAssembly(Context ctx) {
         try {
-            String assemblyId = request.params(":id");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
+            String assemblyId = ctx.pathParam("id");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String deviceId = (String) body.get("deviceId");
             String role = (String) body.get("role");
             String positionInfo = (String) body.get("positionInfo");
 
             AssemblyDevice ad = assemblyService.addDeviceToAssembly(assemblyId, deviceId, role, positionInfo);
             if (ad == null) {
-                response.status(500);
-                return createErrorResponse(500, "添加设备到装置失败");
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "添加设备到装置失败"));
+                return;
             }
-
-            response.status(201);
-            return createSuccessResponse(ad.toMap());
+            ctx.status(201);
+            ctx.result(createSuccessResponse(ad.toMap()));
         } catch (Exception e) {
             logger.error("添加设备到装置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "添加设备到装置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "添加设备到装置失败: " + e.getMessage()));
         }
     }
 
@@ -224,22 +223,22 @@ public class AssemblyController {
      * 从装置移除设备
      * DELETE /api/assemblies/:id/devices/:deviceId
      */
-    public String removeDeviceFromAssembly(Request request, Response response) {
+    public void removeDeviceFromAssembly(Context ctx) {
         try {
-            String assemblyId = request.params(":id");
-            String deviceId = request.params(":deviceId");
+            String assemblyId = ctx.pathParam("id");
+            String deviceId = ctx.pathParam("deviceId");
             boolean removed = assemblyService.removeDeviceFromAssembly(assemblyId, deviceId);
             if (!removed) {
-                response.status(404);
-                return createErrorResponse(404, "设备不在装置中");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "设备不在装置中"));
+                return;
             }
-
-            response.status(200);
-            return createSuccessResponse(Map.of("message", "移除成功"));
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "移除成功")));
         } catch (Exception e) {
             logger.error("从装置移除设备失败", e);
-            response.status(500);
-            return createErrorResponse(500, "从装置移除设备失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "从装置移除设备失败: " + e.getMessage()));
         }
     }
 
@@ -247,20 +246,20 @@ public class AssemblyController {
      * 获取装置的所有设备
      * GET /api/assemblies/:id/devices
      */
-    public String getAssemblyDevices(Request request, Response response) {
+    public void getAssemblyDevices(Context ctx) {
         try {
-            String assemblyId = request.params(":id");
+            String assemblyId = ctx.pathParam("id");
             List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assemblyId);
             List<Map<String, Object>> result = devices.stream()
                     .map(AssemblyDevice::toMap)
                     .collect(java.util.stream.Collectors.toList());
 
-            response.status(200);
-            return createSuccessResponse(result);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取装置设备列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取装置设备列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取装置设备列表失败: " + e.getMessage()));
         }
     }
 
@@ -268,20 +267,20 @@ public class AssemblyController {
      * 获取设备所属的所有装置
      * GET /api/devices/:deviceId/assemblies
      */
-    public String getAssembliesByDevice(Request request, Response response) {
+    public void getAssembliesByDevice(Context ctx) {
         try {
-            String deviceId = request.params(":deviceId");
+            String deviceId = ctx.pathParam("deviceId");
             List<Assembly> assemblies = assemblyService.getAssembliesByDevice(deviceId);
             List<Map<String, Object>> result = assemblies.stream()
                     .map(Assembly::toMap)
                     .collect(java.util.stream.Collectors.toList());
 
-            response.status(200);
-            return createSuccessResponse(result);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取设备所属装置列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取设备所属装置列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取设备所属装置列表失败: " + e.getMessage()));
         }
     }
 

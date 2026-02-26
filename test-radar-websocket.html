@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>雷达 WebSocket 连接测试</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 1rem; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    label { min-width: 5rem; }
+    input[type="text"] { flex: 1; min-width: 12rem; padding: 0.35rem 0.5rem; }
+    button { padding: 0.4rem 0.75rem; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .log { background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: 6px; font-size: 13px; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
+    .log .ts { color: #6a9955; }
+    .log .open { color: #4ec9b0; }
+    .log .close { color: #ce9178; }
+    .log .error { color: #f48771; }
+    .log .in { color: #9cdcfe; }
+    .log .out { color: #dcdcaa; }
+    .status { margin-bottom: 0.5rem; font-weight: 500; }
+    .status.connected { color: #22c55e; }
+    .status.disconnected { color: #94a3b8; }
+    .status.error { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>雷达 WebSocket 连接测试</h1>
+  <p style="color:#64748b; font-size: 0.875rem;">Socket 免 Token，用于测试与后端的连接与收发包。</p>
+
+  <div class="row">
+    <label>后端地址</label>
+    <input type="text" id="host" value="192.168.1.210:8084" placeholder="host:port 或 域名" />
+  </div>
+  <div class="row">
+    <label>deviceId</label>
+    <input type="text" id="deviceId" value="radar_192_168_1_123" placeholder="例如 radar_192_168_1_123" />
+  </div>
+  <div class="row">
+    <label></label>
+    <button id="btnConnect">连接</button>
+    <button id="btnDisconnect" disabled>断开</button>
+    <label style="min-width:auto;"><input type="checkbox" id="sendSubscribe" checked /> 连接后发送 subscribe</label>
+  </div>
+
+  <div class="status disconnected" id="status">未连接</div>
+  <div class="log" id="log"></div>
+
+  <script>
+    const hostInput = document.getElementById('host');
+    const deviceIdInput = document.getElementById('deviceId');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnDisconnect = document.getElementById('btnDisconnect');
+    const sendSubscribeCheck = document.getElementById('sendSubscribe');
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+
+    let ws = null;
+
+    function ts() {
+      return new Date().toLocaleTimeString('zh-CN', { hour12: false }) + '.' + (Date.now() % 1000).toString().padStart(3, '0');
+    }
+
+    function log(msg, type = '') {
+      const span = document.createElement('span');
+      if (type) span.className = type;
+      span.appendChild(document.createTextNode('[' + ts() + '] '));
+      const rest = document.createElement('span');
+      if (type) rest.className = type;
+      rest.textContent = msg;
+      span.appendChild(rest);
+      logEl.appendChild(span);
+      logEl.appendChild(document.createTextNode('\n'));
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(text, state) {
+      statusEl.textContent = text;
+      statusEl.className = 'status ' + (state || 'disconnected');
+    }
+
+    function connect() {
+      const host = (hostInput.value || '192.168.1.210:8084').trim().replace(/^https?:\/\//, '');
+      const deviceId = (deviceIdInput.value || 'radar_192_168_1_123').trim();
+      const wsUrl = 'ws://' + host + '/ws/radar/stream?deviceId=' + encodeURIComponent(deviceId);
+
+      log('正在连接: ' + wsUrl, 'out');
+      setStatus('连接中…', '');
+      btnConnect.disabled = true;
+      btnDisconnect.disabled = false;
+
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (e) {
+        log('创建 WebSocket 失败: ' + e.message, 'error');
+        setStatus('错误: ' + e.message, 'error');
+        btnConnect.disabled = false;
+        btnDisconnect.disabled = true;
+        return;
+      }
+
+      ws.onopen = function () {
+        log('连接已建立 (无需 Token)', 'open');
+        setStatus('已连接', 'connected');
+        if (sendSubscribeCheck.checked) {
+          const msg = JSON.stringify({ type: 'subscribe', topics: ['pointcloud', 'intrusion', 'status'] });
+          ws.send(msg);
+          log('已发送: ' + msg, 'out');
+        }
+      };
+
+      ws.binaryType = 'arraybuffer'; // 确保二进制数据以 ArrayBuffer 形式接收
+
+      ws.onmessage = function (event) {
+        const raw = event.data;
+        if (raw instanceof ArrayBuffer) {
+          // 解析二进制点云帧
+          // 格式：1B type + 8B timestamp + 4B count + 每点 13B (x,y,z float + r byte)，小端序
+          const HEADER_SIZE = 1 + 8 + 4;
+          const POINT_SIZE = 13;
+          
+          if (raw.byteLength < HEADER_SIZE) {
+            log('收到二进制 ' + raw.byteLength + ' 字节 (数据太短，无法解析)', 'in');
+            return;
+          }
+          
+          const dv = new DataView(raw);
+          const type = dv.getUint8(0);
+          const timestamp = Number(dv.getBigUint64(1, true));
+          const pointCount = dv.getUint32(9, true);
+          
+          const expectedSize = HEADER_SIZE + pointCount * POINT_SIZE;
+          if (raw.byteLength < expectedSize) {
+            log('收到二进制 ' + raw.byteLength + ' 字节 (期望 ' + expectedSize + ' 字节)', 'in');
+            return;
+          }
+          
+          // 解析前几个点用于展示
+          const maxShowPoints = 5;
+          const showCount = Math.min(pointCount, maxShowPoints);
+          let pointsInfo = '';
+          let offset = HEADER_SIZE;
+          
+          let minR = 255, maxR = 0, sumR = 0;
+          let minX = Infinity, maxX = -Infinity;
+          let minY = Infinity, maxY = -Infinity;
+          let minZ = Infinity, maxZ = -Infinity;
+          
+          for (let i = 0; i < pointCount; i++) {
+            const x = dv.getFloat32(offset, true);
+            const y = dv.getFloat32(offset + 4, true);
+            const z = dv.getFloat32(offset + 8, true);
+            const r = dv.getUint8(offset + 12);
+            offset += POINT_SIZE;
+            
+            // 统计
+            if (r < minR) minR = r;
+            if (r > maxR) maxR = r;
+            sumR += r;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+            
+            // 记录前几个点
+            if (i < maxShowPoints) {
+              pointsInfo += '\n  [' + i + '] x=' + x.toFixed(3) + ', y=' + y.toFixed(3) + ', z=' + z.toFixed(3) + ', r=' + r;
+            }
+          }
+          
+          const avgR = pointCount > 0 ? (sumR / pointCount).toFixed(1) : 0;
+          
+          log('收到点云帧: type=' + type + ', timestamp=' + timestamp + ', 点数=' + pointCount, 'in');
+          log('  范围: X=[' + minX.toFixed(2) + ', ' + maxX.toFixed(2) + '], Y=[' + minY.toFixed(2) + ', ' + maxY.toFixed(2) + '], Z=[' + minZ.toFixed(2) + ', ' + maxZ.toFixed(2) + ']', 'in');
+          log('  反射率: min=' + minR + ', max=' + maxR + ', avg=' + avgR, 'in');
+          if (showCount > 0) {
+            log('  前' + showCount + '个点:' + pointsInfo, 'in');
+          }
+          return;
+        }
+        if (raw instanceof Blob) {
+          log('收到 Blob ' + raw.size + ' 字节', 'in');
+          return;
+        }
+        try {
+          const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          log('收到: ' + JSON.stringify(obj), 'in');
+          if (obj.error === 'radar_unavailable') {
+            log('后端返回: 雷达服务不可用 (如 Livox SDK 未加载)', 'error');
+          }
+        } catch (e) {
+          log('收到(原文): ' + String(raw).slice(0, 200), 'in');
+        }
+      };
+
+      ws.onerror = function (e) {
+        log('WebSocket 错误 (详见控制台)', 'error');
+        setStatus('连接错误', 'error');
+      };
+
+      ws.onclose = function (event) {
+        log('连接关闭 code=' + event.code + ' reason=' + (event.reason || '(无)'), 'close');
+        setStatus('未连接', 'disconnected');
+        btnConnect.disabled = false;
+        btnDisconnect.disabled = true;
+        ws = null;
+      };
+    }
+
+    function disconnect() {
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+    }
+
+    btnConnect.addEventListener('click', connect);
+    btnDisconnect.addEventListener('click', disconnect);
+
+    log('页面已加载。修改「后端地址」和「deviceId」后点击「连接」。Socket 免 Token。', 'ts');
+  </script>
+</body>
+</html>

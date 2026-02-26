@@ -3,14 +3,14 @@ package com.digital.video.gateway.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.AlarmRecord;
 import com.digital.video.gateway.service.AlarmRecordService;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 报警记录控制器
@@ -24,53 +24,43 @@ public class AlarmRecordController {
         this.alarmRecordService = alarmRecordService;
     }
 
-    /**
-     * 获取报警记录列表
-     * GET /api/alarm-records
-     */
-    public String getAlarmRecords(Request request, Response response) {
+    public void getAlarmRecords(Context ctx) {
         try {
-            String deviceId = request.queryParams("deviceId");
-            String assemblyId = request.queryParams("assemblyId");
-            String alarmType = request.queryParams("alarmType");
-            String startTime = request.queryParams("startTime");
-            String endTime = request.queryParams("endTime");
-            String limitStr = request.queryParams("limit");
+            String deviceId = ctx.queryParam("deviceId");
+            String assemblyId = ctx.queryParam("assemblyId");
+            String alarmType = ctx.queryParam("alarmType");
+            String startTime = ctx.queryParam("startTime");
+            String endTime = ctx.queryParam("endTime");
+            String limitStr = ctx.queryParam("limit");
             Integer limit = limitStr != null ? Integer.parseInt(limitStr) : null;
-            
+
             List<AlarmRecord> records = alarmRecordService.getAlarmRecords(deviceId, assemblyId, alarmType, startTime, endTime, limit);
-            List<Map<String, Object>> result = records.stream()
-                .map(AlarmRecord::toMap)
-                .collect(java.util.stream.Collectors.toList());
-            
-            response.status(200);
-            return createSuccessResponse(result);
+            List<Map<String, Object>> result = records.stream().map(AlarmRecord::toMap).collect(Collectors.toList());
+
+            ctx.status(200);
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取报警记录列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取报警记录列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取报警记录列表失败: " + e.getMessage()));
         }
     }
 
-    /**
-     * 获取报警记录详情
-     * GET /api/alarm-records/:id
-     */
-    public String getAlarmRecord(Request request, Response response) {
+    public void getAlarmRecord(Context ctx) {
         try {
-            String recordId = request.params(":id");
+            String recordId = ctx.pathParam("id");
             AlarmRecord record = alarmRecordService.getAlarmRecord(recordId);
             if (record == null) {
-                response.status(404);
-                return createErrorResponse(404, "报警记录不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "报警记录不存在"));
+                return;
             }
-            
-            response.status(200);
-            return createSuccessResponse(record.toMap());
+            ctx.status(200);
+            ctx.result(createSuccessResponse(record.toMap()));
         } catch (Exception e) {
             logger.error("获取报警记录详情失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取报警记录详情失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取报警记录详情失败: " + e.getMessage()));
         }
     }
 

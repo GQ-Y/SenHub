@@ -20,7 +20,7 @@ public class LoginPanel extends JPanel {
 	
 	//登陆参数
 	private String s_strIp		   = "172.13.137.176";/*"172.23.12.17";*/ //"192.168.7.61";
-	private Integer s_nPort        = new Integer("37777");
+	private Integer s_nPort        = Integer.valueOf(37777);
 	private String s_strUser       = "admin";
 	private String s_strPassword   = "admin123";
 	

@@ -48,6 +48,7 @@ public class ZlmMediaService {
      * 启动 ZLM 内嵌服务（HTTP/RTSP/RTMP 端口）
      * 按 zlm4j 示例：先 mk_ini_default + 设置全局协议参数 → 再 mk_env_init1 初始化
      */
+    @SuppressWarnings("deprecation")
     public void start() {
         if (!isEnabled()) {
             logger.info("ZLM 未启用，跳过启动");

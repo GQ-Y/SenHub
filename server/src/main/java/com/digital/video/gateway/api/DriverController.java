@@ -2,10 +2,9 @@ package com.digital.video.gateway.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.Database;
+import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import spark.Request;
-import spark.Response;
 
 import java.io.File;
 import java.util.*;
@@ -27,16 +26,16 @@ public class DriverController {
      * 获取驱动列表
      * GET /api/drivers
      */
-    public String getDrivers(Request request, Response response) {
+    public void getDrivers(Context ctx) {
         try {
             List<Map<String, Object>> drivers = database.getAllDrivers();
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(drivers);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(drivers));
         } catch (Exception e) {
             logger.error("获取驱动列表失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取驱动列表失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取驱动列表失败: " + e.getMessage()));
         }
     }
 
@@ -44,23 +43,22 @@ public class DriverController {
      * 获取驱动详情
      * GET /api/drivers/:id
      */
-    public String getDriver(Request request, Response response) {
+    public void getDriver(Context ctx) {
         try {
-            String driverId = request.params(":id");
+            String driverId = ctx.pathParam("id");
             Map<String, Object> driver = database.getDriver(driverId);
-            
             if (driver == null) {
-                response.status(404);
-                return createErrorResponse(404, "驱动不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "驱动不存在"));
+                return;
             }
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(driver);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(driver));
         } catch (Exception e) {
             logger.error("获取驱动详情失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取驱动详情失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取驱动详情失败: " + e.getMessage()));
         }
     }
 
@@ -68,36 +66,31 @@ public class DriverController {
      * 更新驱动配置
      * PUT /api/drivers/:id
      */
-    public String updateDriver(Request request, Response response) {
+    @SuppressWarnings("unchecked")
+    public void updateDriver(Context ctx) {
         try {
-            String driverId = request.params(":id");
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
-            
+            String driverId = ctx.pathParam("id");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String name = (String) body.getOrDefault("name", "");
             String version = (String) body.getOrDefault("version", "");
             String libPath = (String) body.get("libPath");
             String logPath = (String) body.get("logPath");
             int logLevel = body.get("logLevel") != null ? ((Number) body.get("logLevel")).intValue() : 1;
             String status = (String) body.getOrDefault("status", "INACTIVE");
-            
             if (libPath == null || libPath.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "libPath不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "libPath不能为空"));
+                return;
             }
-            
-            // 保存驱动配置
             database.saveOrUpdateDriver(driverId, name, version, libPath, logPath, logLevel, status);
-            
-            // 获取更新后的驱动信息
             Map<String, Object> driver = database.getDriver(driverId);
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(driver);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(driver));
         } catch (Exception e) {
             logger.error("更新驱动配置失败", e);
-            response.status(500);
-            return createErrorResponse(500, "更新驱动配置失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "更新驱动配置失败: " + e.getMessage()));
         }
     }
 
@@ -105,41 +98,35 @@ public class DriverController {
      * 添加新驱动
      * POST /api/drivers
      */
-    public String addDriver(Request request, Response response) {
+    @SuppressWarnings("unchecked")
+    public void addDriver(Context ctx) {
         try {
-            Map<String, Object> body = objectMapper.readValue(request.body(), Map.class);
-            
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             String name = (String) body.get("name");
             String version = (String) body.getOrDefault("version", "1.0.0");
             String libPath = (String) body.get("libPath");
             String logPath = (String) body.getOrDefault("logPath", "/var/log/new_sdk.log");
             int logLevel = body.get("logLevel") != null ? ((Number) body.get("logLevel")).intValue() : 1;
-            
             if (name == null || name.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "name不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "name不能为空"));
+                return;
             }
             if (libPath == null || libPath.isEmpty()) {
-                response.status(400);
-                return createErrorResponse(400, "libPath不能为空");
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "libPath不能为空"));
+                return;
             }
-            
-            // 生成驱动ID
             String driverId = "drv_" + name.toLowerCase().replaceAll("[^a-z0-9]", "_");
-            
-            // 保存驱动配置
             database.saveOrUpdateDriver(driverId, name, version, libPath, logPath, logLevel, "INACTIVE");
-            
-            // 获取新创建的驱动信息
             Map<String, Object> driver = database.getDriver(driverId);
-            
-            response.status(201);
-            response.type("application/json");
-            return createSuccessResponse(driver);
+            ctx.status(201);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(driver));
         } catch (Exception e) {
             logger.error("添加驱动失败", e);
-            response.status(500);
-            return createErrorResponse(500, "添加驱动失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "添加驱动失败: " + e.getMessage()));
         }
     }
 
@@ -147,24 +134,22 @@ public class DriverController {
      * 删除驱动
      * DELETE /api/drivers/:id
      */
-    public String deleteDriver(Request request, Response response) {
+    public void deleteDriver(Context ctx) {
         try {
-            String driverId = request.params(":id");
-            
+            String driverId = ctx.pathParam("id");
             if (database.getDriver(driverId) == null) {
-                response.status(404);
-                return createErrorResponse(404, "驱动不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "驱动不存在"));
+                return;
             }
-            
             database.deleteDriver(driverId);
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(Map.of("message", "驱动已删除"));
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(Map.of("message", "驱动已删除")));
         } catch (Exception e) {
             logger.error("删除驱动失败", e);
-            response.status(500);
-            return createErrorResponse(500, "删除驱动失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "删除驱动失败: " + e.getMessage()));
         }
     }
 
@@ -173,11 +158,10 @@ public class DriverController {
      * GET /api/drivers/check-all
      */
     @SuppressWarnings("unchecked")
-    public String checkAllDrivers(Request request, Response response) {
+    public void checkAllDrivers(Context ctx) {
         try {
             List<Map<String, Object>> drivers = database.getAllDrivers();
             List<Map<String, Object>> results = new ArrayList<>();
-            
             for (Map<String, Object> driver : drivers) {
                 String driverId = (String) driver.get("id");
                 Map<String, Object> checkResult = checkDriverHealth(driverId);
@@ -189,14 +173,13 @@ public class DriverController {
                     results.add(result);
                 }
             }
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(results);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(results));
         } catch (Exception e) {
             logger.error("检查所有SDK健康状态失败", e);
-            response.status(500);
-            return createErrorResponse(500, "检查所有SDK健康状态失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "检查所有SDK健康状态失败: " + e.getMessage()));
         }
     }
 
@@ -262,23 +245,22 @@ public class DriverController {
      * 检查SDK文件是否存在及权限
      * GET /api/drivers/:id/check
      */
-    public String checkDriver(Request request, Response response) {
+    public void checkDriver(Context ctx) {
         try {
-            String driverId = request.params(":id");
+            String driverId = ctx.pathParam("id");
             Map<String, Object> checkResult = checkDriverHealth(driverId);
-            
             if (checkResult == null) {
-                response.status(404);
-                return createErrorResponse(404, "驱动不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "驱动不存在"));
+                return;
             }
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(checkResult);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(checkResult));
         } catch (Exception e) {
             logger.error("检查SDK文件失败", e);
-            response.status(500);
-            return createErrorResponse(500, "检查SDK文件失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "检查SDK文件失败: " + e.getMessage()));
         }
     }
 
@@ -286,46 +268,39 @@ public class DriverController {
      * 获取统一的驱动日志
      * GET /api/drivers/logs
      */
-    public String getDriverLogs(Request request, Response response) {
+    public void getDriverLogs(Context ctx) {
         try {
-            String linesParam = request.queryParams("lines");
+            String linesParam = ctx.queryParam("lines");
             int lines = linesParam != null ? Integer.parseInt(linesParam) : 100;
-            if (lines > 1000) lines = 1000; // 限制最大行数
-            
-            // 读取统一的SDK日志文件（使用logback配置的日志路径）
+            if (lines > 1000) lines = 1000;
             File logFile = new File("./logs/sdk.log");
             if (!logFile.exists()) {
-                // 如果主日志文件不存在，尝试查找其他日志文件
                 File logDir = new File("./logs");
                 if (logDir.exists() && logDir.isDirectory()) {
                     File[] logFiles = logDir.listFiles((dir, name) -> name.endsWith(".log") && name.startsWith("sdk"));
                     if (logFiles != null && logFiles.length > 0) {
-                        // 按修改时间排序，使用最新的日志文件
                         Arrays.sort(logFiles, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
                         logFile = logFiles[0];
                     }
                 }
             }
-            
             if (!logFile.exists()) {
-                response.status(404);
-                return createErrorResponse(404, "驱动日志文件不存在");
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "驱动日志文件不存在"));
+                return;
             }
-            
             List<String> logLines = readLastLines(logFile, lines);
-            
             Map<String, Object> result = new HashMap<>();
             result.put("file", logFile.getAbsolutePath());
             result.put("lines", logLines.size());
             result.put("content", logLines);
-            
-            response.status(200);
-            response.type("application/json");
-            return createSuccessResponse(result);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(result));
         } catch (Exception e) {
             logger.error("获取驱动日志失败", e);
-            response.status(500);
-            return createErrorResponse(500, "获取驱动日志失败: " + e.getMessage());
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取驱动日志失败: " + e.getMessage()));
         }
     }
 
