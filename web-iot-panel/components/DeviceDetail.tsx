@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import flvjs from 'flv.js';
+import mpegts from 'mpegts.js';
 import {
   ArrowLeft,
   Camera,
@@ -70,8 +70,9 @@ export const DeviceDetail: React.FC = () => {
   const [flvPlaybackKey, setFlvPlaybackKey] = useState<string | null>(null); // 仅回放转码时有值，用于 transcode-stop
   const [isLoadingLive, setIsLoadingLive] = useState(false);
   const [isLoadingTranscode, setIsLoadingTranscode] = useState(false);
+  const [playbackCodecError, setPlaybackCodecError] = useState(false);
   const liveVideoRef = useRef<HTMLVideoElement>(null);
-  const flvPlayerRef = useRef<ReturnType<typeof flvjs.createPlayer> | null>(null);
+  const flvPlayerRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
 
   // 云台控制速率 (1-100)
   const [ptzRate, setPtzRate] = useState<number>(50);
@@ -174,17 +175,25 @@ export const DeviceDetail: React.FC = () => {
     }
   }, [playbackSpeed, playbackVideoUrl]);
 
-  // 实时直播/回放转码：flv.js 绑定/销毁
+  // 实时直播/回放转码：mpegts.js 绑定/销毁（支持 H.265 Enhanced FLV）
   useEffect(() => {
     if (!flvPlaybackUrl || !liveVideoRef.current) return;
-    if (!flvjs.isSupported()) {
+    if (!mpegts.isSupported()) {
       modal.showModal({ message: '当前浏览器不支持 HTTP-FLV 播放', type: 'error' });
       setFlvPlaybackUrl(null);
       setFlvPlaybackKey(null);
       return;
     }
     const isLive = flvPlaybackKey == null;
-    const player = flvjs.createPlayer({ type: 'flv', url: flvPlaybackUrl }, { isLive });
+    const player = mpegts.createPlayer({
+      type: 'flv',
+      url: flvPlaybackUrl,
+      isLive,
+    }, {
+      liveBufferLatencyChasing: isLive,
+      liveBufferLatencyMaxLatency: 1.5,
+      liveBufferLatencyMinRemain: 0.3,
+    });
     player.attachMediaElement(liveVideoRef.current);
     player.load();
     player.play();
@@ -435,6 +444,7 @@ export const DeviceDetail: React.FC = () => {
     setDownloadProgress(0);
     if (playbackVideoUrl && playbackVideoUrl.startsWith('blob:')) URL.revokeObjectURL(playbackVideoUrl);
     setPlaybackVideoUrl(null);
+    setPlaybackCodecError(false);
 
     const fullStartTime = `${selectedDate} ${start}:00`;
     const fullEndTime = `${selectedDate} ${end}:00`;
@@ -807,47 +817,82 @@ export const DeviceDetail: React.FC = () => {
                       </div>
                     ) : playbackVideoUrl ? (
                       <div className="w-full h-full flex flex-col">
-                        <video
-                          ref={videoRef}
-                          src={playbackVideoUrl}
-                          controls
-                          autoPlay
-                          className="w-full h-full"
-                          onError={(e) => {
-                            const video = e.currentTarget;
-                            const err = video?.error;
-                            let message = '视频播放失败，文件格式可能不受浏览器支持。';
-                            if (err) {
-                              // MEDIA_ERR_ABORTED=1, MEDIA_ERR_NETWORK=2, MEDIA_ERR_DECODE=3, MEDIA_ERR_SRC_NOT_SUPPORTED=4
-                              if (err.code === 3 || err.code === 4) {
-                                const detail = err.message ? `（${err.message}）` : '';
-                                message = `当前浏览器不支持该视频编码${detail}。请使用 Safari 尝试播放，或点击下方「导出录像」下载后用 VLC 等本地播放器观看。`;
-                              } else if (err.code === 2) {
-                                message = '视频加载失败，请检查网络后重试。';
+                        {playbackCodecError ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                            <div className="text-center text-gray-300 px-6 max-w-md">
+                              <VideoIcon size={40} className="mx-auto mb-3 text-amber-400" />
+                              <p className="text-sm font-medium mb-2">该录像编码（H.265）不受当前浏览器支持</p>
+                              <p className="text-xs text-gray-400 mb-4">点击下方「转码播放」通过服务器转码在线观看，或「导出录像」下载后用 VLC 等本地播放器观看。</p>
+                              <div className="flex gap-2 justify-center">
+                                <button
+                                  onClick={() => {
+                                    setPlaybackCodecError(false);
+                                    handleStartTranscodePlayback();
+                                  }}
+                                  disabled={isLoadingTranscode || !playbackFilePath}
+                                  className="px-4 py-2 bg-amber-500 text-white text-xs rounded-lg hover:bg-amber-600 disabled:opacity-50 font-medium"
+                                >
+                                  {isLoadingTranscode ? '转码中...' : '转码播放'}
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (playbackFilePath && deviceId) {
+                                      try {
+                                        const blobUrl = await deviceService.fetchPlaybackBlob(deviceId, playbackFilePath);
+                                        const link = document.createElement('a');
+                                        link.href = blobUrl;
+                                        link.download = `playback_${deviceId}_${Date.now()}.mp4`;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                        URL.revokeObjectURL(blobUrl);
+                                      } catch (err: any) {
+                                        modal.showModal({ message: err.message || '导出失败', type: 'error' });
+                                      }
+                                    }
+                                  }}
+                                  disabled={!playbackFilePath}
+                                  className="px-4 py-2 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600 disabled:opacity-50 font-medium"
+                                >
+                                  导出录像
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <video
+                            ref={videoRef}
+                            src={playbackVideoUrl}
+                            controls
+                            autoPlay
+                            className="w-full h-full"
+                            onError={(e) => {
+                              const video = e.currentTarget;
+                              const err = video?.error;
+                              if (err && (err.code === 3 || err.code === 4)) {
+                                setPlaybackCodecError(true);
+                              } else if (err && err.code === 2) {
+                                modal.showModal({ message: '视频加载失败，请检查网络后重试。', type: 'error' });
                               }
-                              console.error('视频播放失败:', err.code, err.message, err);
-                            } else {
-                              console.error('视频播放失败:', e);
-                            }
-                            modal.showModal({ message, type: 'error' });
-                          }}
-                          onLoadedMetadata={() => {
-                            if (videoRef.current) videoRef.current.playbackRate = playbackSpeed;
-                          }}
-                          onEnded={() => {
-                            const seg = playbackSegmentRef.current;
-                            if (!seg) return;
-                            let nextHour = seg.hour;
-                            let nextMinute = seg.minute + 1;
-                            if (nextMinute >= 60) {
-                              nextMinute = 0;
-                              nextHour += 1;
-                            }
-                            if (nextHour > 23) return;
-                            if (isMinuteInFuture(nextHour, nextMinute)) return;
-                            handleMinuteClick(nextHour, nextMinute);
-                          }}
-                        />
+                            }}
+                            onLoadedMetadata={() => {
+                              if (videoRef.current) videoRef.current.playbackRate = playbackSpeed;
+                            }}
+                            onEnded={() => {
+                              const seg = playbackSegmentRef.current;
+                              if (!seg) return;
+                              let nextHour = seg.hour;
+                              let nextMinute = seg.minute + 1;
+                              if (nextMinute >= 60) {
+                                nextMinute = 0;
+                                nextHour += 1;
+                              }
+                              if (nextHour > 23) return;
+                              if (isMinuteInFuture(nextHour, nextMinute)) return;
+                              handleMinuteClick(nextHour, nextMinute);
+                            }}
+                          />
+                        )}
                         {downloadProgress > 0 && downloadProgress < 100 && (
                           <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 text-sm">
                             下载进度: {downloadProgress}%

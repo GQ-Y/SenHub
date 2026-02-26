@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * ZLM 拉流代理服务：按需将设备 RTSP 拉入 ZLM，返回 HTTP-FLV/HLS 播放地址；回放转码（MP4 → FFmpeg → FLV）
@@ -225,15 +226,19 @@ public class ZlmProxyService {
         }
     }
 
+    /** FFmpeg 推流进程：key -> Process */
+    private final Map<String, Process> ffmpegProcesses = new ConcurrentHashMap<>();
+    private final AtomicLong ffmpegKeySeq = new AtomicLong(0);
+
     /**
-     * 回放转码：将本地 MP4 通过 ZLM addFFmpegSource 转为 HTTP-FLV 流（需服务器安装 FFmpeg）
+     * 回放转码：启动 FFmpeg 子进程将本地 MP4 推流到 ZLM RTMP，前端通过 HTTP-FLV 播放。
+     * 内嵌 ZLM 模式下 HTTP API addFFmpegSource 不可用，因此直接用 FFmpeg 子进程替代。
      * @param deviceId 设备 ID
      * @param filePath 相对或绝对路径，必须在 ./storage/downloads 下
      * @param hostForUrl 返回地址使用的主机
      * @return map 含 flv_url、key；失败返回 null
      */
     public Map<String, String> getPlaybackTranscodeUrl(String deviceId, String filePath, String hostForUrl) {
-        if (client == null) return null;
         File file = new File(filePath);
         try {
             File downloadsRoot = new File("./storage/downloads");
@@ -250,10 +255,46 @@ public class ZlmProxyService {
             return null;
         }
         String streamId = "playback_" + sanitizeStreamId(deviceId) + "_" + System.currentTimeMillis();
-        String srcUrl = "file://" + file.getAbsolutePath().replace("\\", "/");
         String dstUrl = "rtmp://127.0.0.1:" + rtmpPort + "/" + APP + "/" + streamId;
-        String key = client.addFFmpegSource(srcUrl, dstUrl, 60_000L, false, false, null);
-        if (key == null) return null;
+        String key = "ffmpeg_" + ffmpegKeySeq.incrementAndGet();
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    "ffmpeg",
+                    "-re",
+                    "-i", file.getAbsolutePath(),
+                    "-c", "copy",
+                    "-f", "flv",
+                    dstUrl
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            // 消费 stdout/stderr 避免进程阻塞
+            Thread convergThread = new Thread(() -> {
+                try (var is = process.getInputStream()) {
+                    byte[] buf = new byte[4096];
+                    while (is.read(buf) != -1) { /* drain */ }
+                } catch (Exception ignored) {}
+            }, "ffmpeg-drain-" + key);
+            convergThread.setDaemon(true);
+            convergThread.start();
+
+            // 等待 FFmpeg 短暂启动，确认进程存活
+            Thread.sleep(1500);
+            if (!process.isAlive()) {
+                int exitCode = process.exitValue();
+                logger.warn("FFmpeg 推流进程启动后立即退出: exitCode={}, file={}", exitCode, filePath);
+                return null;
+            }
+
+            ffmpegProcesses.put(key, process);
+            logger.info("FFmpeg 推流已启动: key={}, file={}, dst={}", key, file.getName(), dstUrl);
+        } catch (Exception e) {
+            logger.error("启动 FFmpeg 推流失败: {}", e.getMessage(), e);
+            return null;
+        }
+
         String host = (hostForUrl != null && !hostForUrl.isEmpty()) ? hostForUrl : "127.0.0.1";
         String flvUrl = "http://" + host + ":" + httpPort + "/" + APP + "/" + streamId + ".live.flv?vhost=" + VHOST;
         Map<String, String> out = new HashMap<>();
@@ -263,10 +304,19 @@ public class ZlmProxyService {
     }
 
     /**
-     * 停止回放转码任务
+     * 停止回放转码任务（销毁 FFmpeg 子进程）
      */
     public boolean stopPlaybackTranscode(String key) {
-        return client != null && client.delFFmpegSource(key);
+        Process process = ffmpegProcesses.remove(key);
+        if (process != null) {
+            process.destroyForcibly();
+            logger.info("FFmpeg 推流已停止: key={}", key);
+            return true;
+        }
+        if (client != null) {
+            return client.delFFmpegSource(key);
+        }
+        return false;
     }
 
     private static final int DEFAULT_RTSP_PORT = 554;

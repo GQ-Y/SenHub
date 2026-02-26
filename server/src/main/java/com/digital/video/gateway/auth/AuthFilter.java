@@ -3,6 +3,7 @@ package com.digital.video.gateway.auth;
 import spark.Filter;
 import spark.Request;
 import spark.Response;
+import spark.Spark;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,20 +50,18 @@ public class AuthFilter implements Filter {
             token = request.queryParams("token");
         }
         if (token == null) {
-            response.status(401);
-            response.type("application/json");
-            response.body("{\"code\":401,\"errorCode\":\"MISSING_TOKEN\",\"message\":\"Missing or invalid Authorization header\",\"data\":null}");
             logger.warn("未授权的请求: {}", path);
+            response.type("application/json");
+            Spark.halt(401, "{\"code\":401,\"errorCode\":\"MISSING_TOKEN\",\"message\":\"Missing or invalid Authorization header\",\"data\":null}");
             return;
         }
 
         String username = JwtUtil.verifyToken(token);
 
         if (username == null) {
-            response.status(401);
-            response.type("application/json");
-            response.body("{\"code\":401,\"errorCode\":\"TOKEN_INVALID\",\"message\":\"Token invalid or expired\",\"data\":null}");
             logger.warn("无效的token: {}", path);
+            response.type("application/json");
+            Spark.halt(401, "{\"code\":401,\"errorCode\":\"TOKEN_INVALID\",\"message\":\"Token invalid or expired\",\"data\":null}");
             return;
         }
 
