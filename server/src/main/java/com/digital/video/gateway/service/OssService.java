@@ -124,10 +124,11 @@ public class OssService {
                     return;
                 }
                 httpClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
                         .connectTimeout(Duration.ofSeconds(30))
                         .build();
                 enabled = true;
-                logger.info("自定义OSS 服务初始化成功: endpoint={}", endpoint);
+                logger.info("自定义OSS 服务初始化成功(HTTP/1.1): endpoint={}", endpoint);
                 return;
             }
 
@@ -261,8 +262,8 @@ public class OssService {
         String url = buildUrl(ossConfig.getEndpoint(), ossConfig.getFormDataUploadPath());
         String boundary = "----VideoGatewayBoundary" + System.currentTimeMillis();
 
+        byte[] bodyBytes;
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-            // file part
             bos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
             bos.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + file.getName() + "\"\r\n")
                     .getBytes(StandardCharsets.UTF_8));
@@ -270,7 +271,6 @@ public class OssService {
             bos.write(Files.readAllBytes(file.toPath()));
             bos.write("\r\n".getBytes(StandardCharsets.UTF_8));
 
-            // objectKey part (optional)
             if (objectKey != null && !objectKey.isEmpty()) {
                 bos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
                 bos.write(("Content-Disposition: form-data; name=\"objectKey\"\r\n\r\n")
@@ -280,25 +280,42 @@ public class OssService {
             }
 
             bos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(45))
-                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(bos.toByteArray()))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            logger.debug("自定义OSS FormData上传响应: {}", response.body());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                String resolvedUrl = extractUrlFromResponse(response.body(), objectKey, url);
-                logger.info("FormData上传 自定义OSS 成功: localPath={}, url={}", localFilePath, resolvedUrl);
-                return resolvedUrl;
-            } else {
-                logger.warn("自定义OSS FormData上传失败: status={}, body={}", response.statusCode(), response.body());
-            }
+            bodyBytes = bos.toByteArray();
         } catch (Exception e) {
-            logger.error("自定义OSS FormData上传异常: localPath={}, key={}", localFilePath, objectKey, e);
+            logger.error("自定义OSS FormData构建失败: localPath={}", localFilePath, e);
+            return null;
+        }
+
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .timeout(Duration.ofSeconds(45))
+                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(bodyBytes))
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                logger.debug("自定义OSS FormData上传响应: {}", response.body());
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    String resolvedUrl = extractUrlFromResponse(response.body(), objectKey, url);
+                    logger.info("FormData上传 自定义OSS 成功: localPath={}, url={}", localFilePath, resolvedUrl);
+                    return resolvedUrl;
+                } else {
+                    logger.warn("自定义OSS FormData上传失败(第{}次): status={}, body={}", attempt, response.statusCode(), response.body());
+                }
+            } catch (java.io.IOException e) {
+                logger.warn("自定义OSS FormData上传IO异常(第{}/{}次): localPath={}, error={}", attempt, maxRetries, localFilePath, e.getMessage());
+                if (attempt < maxRetries) {
+                    try { Thread.sleep(500L * attempt); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                    continue;
+                }
+                logger.error("自定义OSS FormData上传最终失败: localPath={}, key={}", localFilePath, objectKey, e);
+            } catch (Exception e) {
+                logger.error("自定义OSS FormData上传异常: localPath={}, key={}", localFilePath, objectKey, e);
+                break;
+            }
         }
         return null;
     }
@@ -323,30 +340,40 @@ public class OssService {
             String base64 = Base64.getEncoder().encodeToString(data);
             String objectKey = fileName != null ? fileName : ("upload-" + System.currentTimeMillis());
 
-            try {
-                // 服务器期望的字段名是 srcPicData
-                String payload = "{\"fileName\":\"" + escapeJson(fileName) + "\",\"srcPicData\":\"" + base64 + "\",\"objectKey\":\""
-                        + escapeJson(objectKey) + "\"}";
+            String payload = "{\"fileName\":\"" + escapeJson(fileName) + "\",\"srcPicData\":\"" + base64 + "\",\"objectKey\":\""
+                    + escapeJson(objectKey) + "\"}";
 
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(45))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(payload))
-                        .build();
+            int maxRetries = 3;
+            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(url))
+                            .timeout(Duration.ofSeconds(45))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(payload))
+                            .build();
 
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    logger.debug("自定义OSS Base64上传响应: {}", response.body());
-                    String resolvedUrl = extractUrlFromResponse(response.body(), objectKey, url);
-                    logger.info("Base64上传 自定义OSS 成功: fileName={}, url={}, 原始响应包含url字段={}", 
-                            fileName, resolvedUrl, response.body().contains("\"url\""));
-                    return resolvedUrl;
-                } else {
-                    logger.warn("自定义OSS Base64上传失败: status={}, body={}", response.statusCode(), response.body());
+                    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                        logger.debug("自定义OSS Base64上传响应: {}", response.body());
+                        String resolvedUrl = extractUrlFromResponse(response.body(), objectKey, url);
+                        logger.info("Base64上传 自定义OSS 成功: fileName={}, url={}, 原始响应包含url字段={}", 
+                                fileName, resolvedUrl, response.body().contains("\"url\""));
+                        return resolvedUrl;
+                    } else {
+                        logger.warn("自定义OSS Base64上传失败(第{}次): status={}, body={}", attempt, response.statusCode(), response.body());
+                    }
+                } catch (java.io.IOException e) {
+                    logger.warn("自定义OSS Base64上传IO异常(第{}/{}次): fileName={}, error={}", attempt, maxRetries, fileName, e.getMessage());
+                    if (attempt < maxRetries) {
+                        try { Thread.sleep(500L * attempt); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                        continue;
+                    }
+                    logger.error("自定义OSS Base64上传最终失败: fileName={}", fileName, e);
+                } catch (Exception e) {
+                    logger.error("自定义OSS Base64上传异常: fileName={}", fileName, e);
+                    break;
                 }
-            } catch (Exception e) {
-                logger.error("自定义OSS Base64上传异常: fileName={}", fileName, e);
             }
             return null;
         }
