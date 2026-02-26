@@ -148,6 +148,14 @@ public class FlowDefinition {
                     String from = raw.get("from") != null ? raw.get("from").toString() : null;
                     String to = raw.get("to") != null ? raw.get("to").toString() : null;
                     String condition = raw.get("condition") != null ? raw.get("condition").toString() : null;
+                    if (condition == null || condition.isEmpty()) {
+                        String fromPort = raw.get("fromPort") != null ? raw.get("fromPort").toString() : null;
+                        if ("yes".equalsIgnoreCase(fromPort)) {
+                            condition = "true";
+                        } else if ("no".equalsIgnoreCase(fromPort)) {
+                            condition = "false";
+                        }
+                    }
                     connDefinitions.add(new FlowConnection(from, to, condition));
                 }
                 definition.setConnections(connDefinitions);
