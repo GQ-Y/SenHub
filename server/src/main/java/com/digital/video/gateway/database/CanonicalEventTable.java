@@ -490,6 +490,36 @@ public class CanonicalEventTable {
     }
 
     /**
+     * 获取所有标准事件并附带关联品牌列表
+     * 每个事件增加 brands 字段：该事件在 brand_event_mapping 中被哪些品牌映射
+     */
+    public static List<Map<String, Object>> getAllCanonicalEventsWithBrands(Connection connection) {
+        List<Map<String, Object>> events = getAllCanonicalEvents(connection);
+        if (events.isEmpty()) return events;
+
+        // 一次性查出所有映射的 event_key -> brands
+        Map<String, List<String>> eventBrandsMap = new HashMap<>();
+        String sql = "SELECT DISTINCT event_key, brand FROM brand_event_mapping WHERE enabled = 1 ORDER BY event_key, brand";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                String ek = rs.getString("event_key");
+                String brand = rs.getString("brand");
+                eventBrandsMap.computeIfAbsent(ek, k -> new ArrayList<>()).add(brand);
+            }
+        } catch (SQLException e) {
+            logger.error("查询事件品牌映射失败", e);
+        }
+
+        for (Map<String, Object> event : events) {
+            String eventKey = (String) event.get("eventKey");
+            List<String> brands = eventBrandsMap.getOrDefault(eventKey, new ArrayList<>());
+            event.put("brands", brands);
+        }
+        return events;
+    }
+
+    /**
      * 根据品牌、源类型、源代码查找映射的标准事件
      */
     public static Map<String, Object> resolveEvent(Connection connection, String brand, String sourceKind, int sourceCode) {

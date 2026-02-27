@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flowService, eventTypeService } from '../src/api/services';
-import { AlarmFlow, CanvasConnection, CanvasNode, FlowComponentDefinition, FlowNodeType, CameraEventType } from '../types';
+import { AlarmFlow, CanvasConnection, CanvasNode, FlowComponentDefinition, FlowNodeType, CanonicalEvent } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import {
   Plus, Trash2, RefreshCw, Save, X, Download, Upload, ZoomIn, ZoomOut,
@@ -113,9 +113,10 @@ export const FlowManagement: React.FC = () => {
 
   // 事件触发器抽屉
   const [showEventTriggerDrawer, setShowEventTriggerDrawer] = useState(false);
-  const [eventTypes, setEventTypes] = useState<Record<string, CameraEventType[]>>({});
+  const [canonicalEvents, setCanonicalEvents] = useState<CanonicalEvent[]>([]);
   const [eventTypesLoading, setEventTypesLoading] = useState(false);
   const [expandedBrands, setExpandedBrands] = useState<Record<string, boolean>>({});
+  const [eventBrandFilter, setEventBrandFilter] = useState<string | null>(null);
 
   // 全屏状态
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -157,10 +158,10 @@ export const FlowManagement: React.FC = () => {
     try {
       const res = await eventTypeService.getEventTypes();
       if (res.data) {
-        setEventTypes(res.data);
-        // 默认展开所有品牌
+        setCanonicalEvents(res.data.events || []);
+        const grouped = res.data.grouped || {};
         const expanded: Record<string, boolean> = {};
-        Object.keys(res.data).forEach(brand => { expanded[brand] = true; });
+        Object.keys(grouped).forEach(cat => { expanded[cat] = true; });
         setExpandedBrands(expanded);
       }
     } catch (e) {
@@ -1315,9 +1316,16 @@ export const FlowManagement: React.FC = () => {
               <div>
                 <label className="block text-gray-600 mb-1">{t('config_alarm_types')}</label>
                 <div className="text-xs text-gray-500 mb-1">
-                  {t('selected')}: {(selectedNode.config?.alarmTypes || []).length === 0 
-                    ? t('all_types') 
-                    : `${(selectedNode.config?.alarmTypes || []).length} ${t('types_selected')}`}
+                  {t('selected')}: {(selectedNode.config?.alarmTypes || []).length === 0
+                    ? t('all_types')
+                    : (() => {
+                        const keys: string[] = selectedNode.config?.alarmTypes || [];
+                        const names = keys.slice(0, 3).map(k => {
+                          const ev = canonicalEvents.find(e => e.eventKey === k);
+                          return ev ? ev.nameZh : k;
+                        });
+                        return keys.length <= 3 ? names.join('、') : `${names.join('、')} 等${keys.length}个`;
+                      })()}
                 </div>
                 <button
                   onClick={() => setShowEventTriggerDrawer(true)}
@@ -1892,14 +1900,14 @@ export const FlowManagement: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-2">{t('config_device_brands_hint')}</p>
               </div>
 
-              {/* 报警类型过滤 */}
+              {/* 报警类型过滤（按 category 分组，含品牌筛选） */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-sm font-medium text-gray-700">{t('config_alarm_types')}</label>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-gray-500">
-                      {(selectedNode.config?.alarmTypes || []).length === 0 
-                        ? t('all_types') 
+                      {(selectedNode.config?.alarmTypes || []).length === 0
+                        ? t('all_types')
                         : `${(selectedNode.config?.alarmTypes || []).length} ${t('types_selected')}`}
                     </span>
                     <button
@@ -1911,87 +1919,115 @@ export const FlowManagement: React.FC = () => {
                   </div>
                 </div>
 
+                {/* 品牌筛选 */}
+                <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                  <span className="text-xs text-gray-400">品牌:</span>
+                  <button
+                    onClick={() => setEventBrandFilter(null)}
+                    className={`px-2 py-1 rounded text-xs border transition ${eventBrandFilter === null ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  >全部</button>
+                  {(() => {
+                    const brands = new Set<string>();
+                    canonicalEvents.forEach(ev => ev.brands?.forEach(b => brands.add(b)));
+                    const brandLabelMap: Record<string, string> = { hikvision: '海康', tiandy: '天地伟业', dahua: '大华' };
+                    return Array.from(brands).sort().map(b => (
+                      <button
+                        key={b}
+                        onClick={() => setEventBrandFilter(eventBrandFilter === b ? null : b)}
+                        className={`px-2 py-1 rounded text-xs border transition ${eventBrandFilter === b ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                      >{brandLabelMap[b] || b}</button>
+                    ));
+                  })()}
+                </div>
+
                 {eventTypesLoading ? (
                   <div className="text-center py-4 text-gray-500">{t('loading')}</div>
-                ) : Object.keys(eventTypes).length === 0 ? (
+                ) : canonicalEvents.length === 0 ? (
                   <div className="text-center py-4 text-gray-500">{t('no_data')}</div>
                 ) : (
                   <div className="space-y-2 max-h-[400px] overflow-auto">
-                    {Object.entries(eventTypes).map(([brand, types]: [string, CameraEventType[]]) => {
-                      const brandLabels: Record<string, string> = { hikvision: '海康威视', tiandy: '天地伟业', dahua: '大华' };
-                      const isExpanded = expandedBrands[brand] ?? true;
-                      const selectedTypes: string[] = selectedNode.config?.alarmTypes || [];
-                      
-                      // 按分类分组
-                      const typesByCategory: Record<string, CameraEventType[]> = {};
-                      types.forEach(t => {
-                        const cat = t.category || 'other';
-                        if (!typesByCategory[cat]) typesByCategory[cat] = [];
-                        typesByCategory[cat].push(t);
-                      });
-                      
+                    {(() => {
                       const categoryLabels: Record<string, string> = {
-                        basic: '基础报警',
-                        vca: '智能分析',
-                        face: '人脸识别',
-                        its: '交通/车辆',
-                        other: '其他'
+                        basic: '基础报警', vca: '智能分析', face: '人脸识别',
+                        its: '交通/车辆', unknown: '未分类', other: '其他'
                       };
+                      const brandLabelMap: Record<string, string> = { hikvision: '海康', tiandy: '天地伟业', dahua: '大华' };
+                      const brandColorMap: Record<string, string> = {
+                        hikvision: 'bg-red-50 text-red-500',
+                        tiandy: 'bg-teal-50 text-teal-500',
+                        dahua: 'bg-orange-50 text-orange-500',
+                      };
+                      const filtered = eventBrandFilter
+                        ? canonicalEvents.filter(ev => ev.brands?.includes(eventBrandFilter))
+                        : canonicalEvents;
+                      const grouped: Record<string, CanonicalEvent[]> = {};
+                      filtered.forEach(ev => {
+                        const cat = ev.category || 'other';
+                        if (!grouped[cat]) grouped[cat] = [];
+                        grouped[cat].push(ev);
+                      });
+                      const selectedTypes: string[] = selectedNode.config?.alarmTypes || [];
 
-                      return (
-                        <div key={brand} className="border border-gray-100 rounded-lg overflow-hidden">
-                          <button
-                            onClick={() => setExpandedBrands(prev => ({ ...prev, [brand]: !isExpanded }))}
-                            className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition"
-                          >
-                            <span className="font-medium text-gray-700">{brandLabels[brand] || brand}</span>
-                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </button>
-                          
-                          {isExpanded && (
-                            <div className="p-2 space-y-2">
-                              {Object.entries(typesByCategory).map(([category, catTypes]) => (
-                                <div key={category}>
-                                  <div className="text-xs text-gray-500 font-medium mb-1 px-1">
-                                    {categoryLabels[category] || category}
-                                  </div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {catTypes.map(eventType => {
-                                      const typeKey = `${brand}:${eventType.eventCode}`;
-                                      const isSelected = selectedTypes.length === 0 || selectedTypes.includes(typeKey);
-                                      return (
-                                        <button
-                                          key={typeKey}
-                                          onClick={() => {
-                                            if (selectedTypes.length === 0) {
-                                              updateNodeConfig('alarmTypes', [typeKey]);
-                                            } else if (selectedTypes.includes(typeKey)) {
-                                              const newTypes = selectedTypes.filter(t => t !== typeKey);
-                                              updateNodeConfig('alarmTypes', newTypes);
-                                            } else {
-                                              updateNodeConfig('alarmTypes', [...selectedTypes, typeKey]);
-                                            }
-                                          }}
-                                          className={`px-2 py-1 rounded text-xs border transition ${
-                                            isSelected
-                                              ? 'bg-blue-50 border-blue-200 text-blue-700'
-                                              : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                                          }`}
-                                          title={eventType.description}
-                                        >
-                                          {isSelected && <Check size={10} className="inline mr-0.5" />}
-                                          {eventType.eventName}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
+                      if (Object.keys(grouped).length === 0) {
+                        return <div className="text-center py-4 text-gray-400 text-sm">该品牌暂无关联的事件</div>;
+                      }
+
+                      return Object.entries(grouped).map(([category, events]) => {
+                        const isExpanded = expandedBrands[category] ?? true;
+                        return (
+                          <div key={category} className="border border-gray-100 rounded-lg overflow-hidden">
+                            <button
+                              onClick={() => setExpandedBrands(prev => ({ ...prev, [category]: !isExpanded }))}
+                              className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-gray-700">{categoryLabels[category] || category}</span>
+                                <span className="text-xs text-gray-400">{events.length}</span>
+                              </div>
+                              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            </button>
+                            {isExpanded && (
+                              <div className="p-2">
+                                <div className="flex flex-wrap gap-1">
+                                  {events.map(ev => {
+                                    const isSelected = selectedTypes.length === 0 || selectedTypes.includes(ev.eventKey);
+                                    return (
+                                      <button
+                                        key={ev.eventKey}
+                                        onClick={() => {
+                                          if (selectedTypes.length === 0) {
+                                            updateNodeConfig('alarmTypes', [ev.eventKey]);
+                                          } else if (selectedTypes.includes(ev.eventKey)) {
+                                            const newTypes = selectedTypes.filter(k => k !== ev.eventKey);
+                                            updateNodeConfig('alarmTypes', newTypes);
+                                          } else {
+                                            updateNodeConfig('alarmTypes', [...selectedTypes, ev.eventKey]);
+                                          }
+                                        }}
+                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border transition ${
+                                          isSelected
+                                            ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                            : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                                        }`}
+                                        title={`${ev.description || ev.eventKey}${ev.brands?.length ? ' [' + ev.brands.map(b => brandLabelMap[b] || b).join(', ') + ']' : ''}`}
+                                      >
+                                        {isSelected && <Check size={10} className="inline" />}
+                                        {ev.nameZh}
+                                        {ev.brands && ev.brands.length > 0 && ev.brands.map(b => (
+                                          <span key={b} className={`text-[9px] px-0.5 rounded ${brandColorMap[b] || 'bg-gray-100 text-gray-400'}`}>
+                                            {brandLabelMap[b]?.[0] || b[0]}
+                                          </span>
+                                        ))}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-2">{t('config_alarm_types_hint')}</p>

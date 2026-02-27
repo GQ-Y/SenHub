@@ -775,14 +775,13 @@ public class HikvisionSDK implements DeviceSDK {
                 if (isAlarmCommand && deviceIP != null) {
                     int channel = 1; // 默认通道1
                     String alarmType;
-                    // COMM_ALARM_V30/COMM_ALARM 的 pAlarmInfo 为 NET_DVR_ALARMINFO_V30，解析 dwAlarmType 以区分具体事件（0=信号量/报警输入,3=移动侦测,6=遮挡等）
-                    int[] parsed = parseAlarmInfoV30(lCommand, pAlarmInfo, dwBufLen);
+                    // 三种基础报警结构体不同，统一用 parseAlarmInfoBase 解析 dwAlarmType + 通道
+                    int[] parsed = parseAlarmInfoBase(lCommand, pAlarmInfo, dwBufLen);
                     if (parsed != null) {
                         int dwAlarmType = parsed[0];
                         channel = parsed[1];
-                        // 使用 Hikvision_Alarm_N 格式，AlarmService 会通过 EventResolver 按 alarm_type 解析为 ALARM_INPUT/MOTION_DETECTION/VIDEO_TAMPER 等
                         alarmType = "Hikvision_Alarm_" + dwAlarmType;
-                        logger.info("海康V30报警解析: dwAlarmType={}, channel={}", dwAlarmType, channel);
+                        logger.info("海康报警解析: lCommand=0x{}, dwAlarmType={}, channel={}", Integer.toHexString(lCommand), dwAlarmType, channel);
                     } else {
                         alarmType = getAlarmTypeName(lCommand);
                     }
@@ -852,28 +851,40 @@ public class HikvisionSDK implements DeviceSDK {
         }
         
         /**
-         * 解析 COMM_ALARM_V30 的 pAlarmInfo（NET_DVR_ALARMINFO_V30），得到具体报警类型与通道。
+         * 统一解析“基础报警”的 pAlarmInfo，得到 dwAlarmType 与通道。三种命令对应结构体不同，不能共用同一解析：
+         * - COMM_ALARM (0x1100) 8000 系列 → NET_DVR_ALARMINFO（int[] 数组）
+         * - COMM_ALARM_V30 (0x4000) 9000 系列 → NET_DVR_ALARMINFO_V30（byte[] 数组）
+         * - COMM_ALARM_V40 (0x4007) → NET_DVR_ALARMINFO_V40（固定头 + pAlarmData，只读固定头即可）
          * dwAlarmType: 0=信号量/报警输入, 1=硬盘满, 2=信号丢失, 3=移动侦测, 4=硬盘未格式化, 5=读写硬盘出错, 6=遮挡报警, 7=制式不匹配, 8=非法访问, 0xa=GPS(车载)。
          * @return int[2] = { dwAlarmType, channel }，解析失败返回 null
          */
-        private int[] parseAlarmInfoV30(int lCommand, Pointer pAlarmInfo, int dwBufLen) {
-            if (pAlarmInfo == null || lCommand != HCNetSDK.COMM_ALARM_V30) {
+        private int[] parseAlarmInfoBase(int lCommand, Pointer pAlarmInfo, int dwBufLen) {
+            if (pAlarmInfo == null) {
                 return null;
             }
+            if (lCommand == HCNetSDK.COMM_ALARM_V30) {
+                return parseAlarmInfoV30(pAlarmInfo, dwBufLen);
+            }
+            if (lCommand == HCNetSDK.COMM_ALARM) {
+                return parseAlarmInfo8000(pAlarmInfo, dwBufLen);
+            }
+            if (lCommand == HCNetSDK.COMM_ALARM_V40) {
+                return parseAlarmInfoV40(pAlarmInfo, dwBufLen);
+            }
+            return null;
+        }
+
+        private int[] parseAlarmInfoV30(Pointer pAlarmInfo, int dwBufLen) {
             try {
                 HCNetSDK.NET_DVR_ALARMINFO_V30 stru = new HCNetSDK.NET_DVR_ALARMINFO_V30();
-                int size = stru.size();
-                if (dwBufLen < size) {
+                if (dwBufLen < stru.size()) {
                     return null;
                 }
-                byte[] buf = pAlarmInfo.getByteArray(0, size);
+                byte[] buf = pAlarmInfo.getByteArray(0, stru.size());
                 Pointer p = stru.getPointer();
-                if (p != null) {
-                    p.write(0, buf, 0, buf.length);
-                    stru.read();
-                } else {
-                    return null;
-                }
+                if (p == null) return null;
+                p.write(0, buf, 0, buf.length);
+                stru.read();
                 int channel = 1;
                 for (int i = 0; i < stru.byChannel.length; i++) {
                     if (stru.byChannel[i] != 0) {
@@ -884,6 +895,52 @@ public class HikvisionSDK implements DeviceSDK {
                 return new int[] { stru.dwAlarmType, channel };
             } catch (Exception e) {
                 logger.debug("解析 NET_DVR_ALARMINFO_V30 失败: dwBufLen={}", dwBufLen, e);
+                return null;
+            }
+        }
+
+        private int[] parseAlarmInfo8000(Pointer pAlarmInfo, int dwBufLen) {
+            try {
+                HCNetSDK.NET_DVR_ALARMINFO stru = new HCNetSDK.NET_DVR_ALARMINFO();
+                if (dwBufLen < stru.size()) {
+                    return null;
+                }
+                byte[] buf = pAlarmInfo.getByteArray(0, stru.size());
+                Pointer p = stru.getPointer();
+                if (p == null) return null;
+                p.write(0, buf, 0, buf.length);
+                stru.read();
+                int channel = 1;
+                for (int i = 0; i < stru.dwChannel.length; i++) {
+                    if (stru.dwChannel[i] != 0) {
+                        channel = i + 1;
+                        break;
+                    }
+                }
+                return new int[] { stru.dwAlarmType, channel };
+            } catch (Exception e) {
+                logger.debug("解析 NET_DVR_ALARMINFO(8000) 失败: dwBufLen={}", dwBufLen, e);
+                return null;
+            }
+        }
+
+        private int[] parseAlarmInfoV40(Pointer pAlarmInfo, int dwBufLen) {
+            try {
+                HCNetSDK.NET_DVR_ALRAM_FIXED_HEADER header = new HCNetSDK.NET_DVR_ALRAM_FIXED_HEADER();
+                int size = header.size();
+                if (dwBufLen < size) {
+                    return null;
+                }
+                byte[] buf = pAlarmInfo.getByteArray(0, size);
+                Pointer p = header.getPointer();
+                if (p == null) return null;
+                p.write(0, buf, 0, buf.length);
+                header.read();
+                int ch = header.wDevInfoIvmsChannel & 0xFFFF;
+                int channel = (ch > 0) ? ch : 1;
+                return new int[] { header.dwAlarmType, channel };
+            } catch (Exception e) {
+                logger.debug("解析 NET_DVR_ALARMINFO_V40 固定头失败: dwBufLen={}", dwBufLen, e);
                 return null;
             }
         }

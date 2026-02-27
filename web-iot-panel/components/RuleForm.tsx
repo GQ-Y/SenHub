@@ -1,82 +1,87 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AlarmRule, RuleScope, AlarmFlow, CameraEventType } from '../types';
+import { AlarmRule, RuleScope, AlarmFlow, CanonicalEvent } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import { deviceService, assemblyService } from '../src/api/services';
 import { Device, Assembly } from '../types';
-import { ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Workflow } from 'lucide-react';
+import { ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Workflow, Filter } from 'lucide-react';
 
 interface RuleFormProps {
   rule?: AlarmRule;
   onSave: (rule: Partial<AlarmRule>) => void;
   onCancel: () => void;
   flows?: AlarmFlow[];
-  eventTypes?: Record<string, CameraEventType[]>;
+  allEvents?: CanonicalEvent[];
 }
 
-// 事件类型开关组件
-const EventTypeToggle: React.FC<{
-  event: CameraEventType;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}> = ({ event, checked, onChange }) => {
+const brandLabels: Record<string, string> = {
+  hikvision: '海康',
+  tiandy: '天地伟业',
+  dahua: '大华',
+};
+
+const brandColors: Record<string, string> = {
+  hikvision: 'bg-red-50 text-red-600 border-red-200',
+  tiandy: 'bg-teal-50 text-teal-600 border-teal-200',
+  dahua: 'bg-orange-50 text-orange-600 border-orange-200',
+};
+
+const BrandTags: React.FC<{ brands?: string[] }> = ({ brands }) => {
+  if (!brands || brands.length === 0) {
+    return <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-400 rounded border border-gray-200">通用</span>;
+  }
   return (
-    <label className="flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-lg cursor-pointer">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-800">{event.eventName}</span>
-          {event.eventKey && (
-            <span className="text-xs text-gray-400 px-1.5 py-0.5 bg-gray-100 rounded">
-              {event.eventKey}
-            </span>
-          )}
-        </div>
-        {event.description && (
-          <span className="text-xs text-gray-400 ml-2 block mt-0.5">{event.description}</span>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          onChange(!checked);
-        }}
-        className="flex-shrink-0 ml-2"
-      >
-        {checked ? (
-          <ToggleRight className="text-blue-600" size={24} />
-        ) : (
-          <ToggleLeft className="text-gray-300" size={24} />
-        )}
-      </button>
-    </label>
+    <>
+      {brands.map(b => (
+        <span key={b} className={`text-[10px] px-1 py-0.5 rounded border ${brandColors[b] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+          {brandLabels[b] || b}
+        </span>
+      ))}
+    </>
   );
 };
 
-// 品牌事件组
-const BrandEventGroup: React.FC<{
-  brand: string;
-  brandLabel: string;
-  events: CameraEventType[];
-  selectedIds: number[];
-  onToggle: (eventId: number, checked: boolean) => void;
-}> = ({ brand, brandLabel, events, selectedIds, onToggle }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
-  
-  // 按类别和sourceKind分组（优先按sourceKind分组，以便区分基础报警和智能分析）
-  const groupedEvents = useMemo(() => {
-    const groups: Record<string, CameraEventType[]> = {};
-    events.forEach(event => {
-      // 优先使用sourceKind来分组，如果没有则使用category
-      const groupKey = event.sourceKind 
-        ? `${event.category}_${event.sourceKind}` 
-        : event.category || 'basic';
-      if (!groups[groupKey]) groups[groupKey] = [];
-      groups[groupKey].push(event);
-    });
-    return groups;
-  }, [events]);
+const EventToggle: React.FC<{
+  event: CanonicalEvent;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ event, checked, onChange }) => (
+  <label className="flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-sm text-gray-800">{event.nameZh}</span>
+        <BrandTags brands={event.brands} />
+        <span className="text-xs text-gray-400 px-1.5 py-0.5 bg-gray-100 rounded">{event.eventKey}</span>
+      </div>
+      {event.description && (
+        <span className="text-xs text-gray-400 block mt-0.5">{event.description}</span>
+      )}
+    </div>
+    <button
+      type="button"
+      onClick={(e) => { e.preventDefault(); onChange(!checked); }}
+      className="flex-shrink-0 ml-2"
+    >
+      {checked ? <ToggleRight className="text-blue-600" size={24} /> : <ToggleLeft className="text-gray-300" size={24} />}
+    </button>
+  </label>
+);
 
-  const selectedCount = events.filter(e => selectedIds.includes(e.id)).length;
+const categoryLabels: Record<string, string> = {
+  basic: '基础事件',
+  vca: '智能分析',
+  face: '人脸识别',
+  its: '交通事件',
+  unknown: '未分类',
+};
+
+const CategoryGroup: React.FC<{
+  category: string;
+  events: CanonicalEvent[];
+  selectedKeys: string[];
+  onToggle: (eventKey: string, checked: boolean) => void;
+}> = ({ category, events, selectedKeys, onToggle }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const selectedCount = events.filter(e => selectedKeys.includes(e.eventKey)).length;
 
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -86,35 +91,23 @@ const BrandEventGroup: React.FC<{
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
       >
         <div className="flex items-center space-x-2">
-          <span className="font-medium text-gray-800">{brandLabel}</span>
+          <span className="font-medium text-gray-800">{categoryLabels[category] || category}</span>
+          <span className="text-xs text-gray-400">{events.length}个</span>
           {selectedCount > 0 && (
-            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
-              {selectedCount}
-            </span>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{selectedCount}</span>
           )}
         </div>
         {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
       </button>
       {isExpanded && (
-        <div className="p-3 space-y-2 max-h-64 overflow-y-auto">
-          {Object.entries(groupedEvents).map(([category, categoryEvents]) => (
-            <div key={category}>
-              {Object.keys(groupedEvents).length > 1 && (
-                <div className="text-xs font-medium text-gray-500 uppercase mb-1 px-2">
-                  {getCategoryLabel(category)}
-                </div>
-              )}
-              <div className="space-y-1">
-                {categoryEvents.map(event => (
-                  <EventTypeToggle
-                    key={event.id}
-                    event={event}
-                    checked={selectedIds.includes(event.id)}
-                    onChange={(checked) => onToggle(event.id, checked)}
-                  />
-                ))}
-              </div>
-            </div>
+        <div className="p-3 space-y-1 max-h-64 overflow-y-auto">
+          {events.map(event => (
+            <EventToggle
+              key={event.eventKey}
+              event={event}
+              checked={selectedKeys.includes(event.eventKey)}
+              onChange={(checked) => onToggle(event.eventKey, checked)}
+            />
           ))}
         </div>
       )}
@@ -122,86 +115,68 @@ const BrandEventGroup: React.FC<{
   );
 };
 
-// 获取类别标签
-const getCategoryLabel = (groupKey: string): string => {
-  // 处理格式：category_sourceKind 或 category
-  const parts = groupKey.split('_');
-  const category = parts[0];
-  const sourceKind = parts[1];
-  
-  const categoryLabels: Record<string, string> = {
-    basic: '基础事件',
-    vca: '智能分析',
-    face: '人脸识别',
-    its: '交通事件',
-  };
-  
-  const sourceKindLabels: Record<string, string> = {
-    alarm_type: '基础报警',
-    vca_event: '智能分析事件',
-    command: '命令事件',
-  };
-  
-  let label = categoryLabels[category] || category;
-  if (sourceKind && sourceKindLabels[sourceKind]) {
-    label += ` (${sourceKindLabels[sourceKind]})`;
-  }
-  
-  return label;
-};
-
-export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flows = [], eventTypes = {} }) => {
+export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flows = [], allEvents = [] }) => {
   const { t } = useAppContext();
-  
+
   const [formData, setFormData] = useState<Partial<AlarmRule>>({
     name: '',
     scope: RuleScope.GLOBAL,
     enabled: true,
-    eventTypeIds: [],
+    eventKeys: [],
     flowId: undefined,
-    conditions: {
-      area: 'all',
-    },
+    conditions: { area: 'all' },
   });
 
   const [devices, setDevices] = useState<Device[]>([]);
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showRadarEvent, setShowRadarEvent] = useState(false);
+  const [brandFilter, setBrandFilter] = useState<string | null>(null);
 
-  // 解析已选事件类型
-  const selectedEventTypeIds = useMemo(() => {
-    if (!formData.eventTypeIds) return [];
-    if (typeof formData.eventTypeIds === 'string') {
-      try {
-        return JSON.parse(formData.eventTypeIds);
-      } catch {
-        return [];
-      }
+  const selectedEventKeys = useMemo(() => {
+    if (!formData.eventKeys) return [];
+    if (typeof formData.eventKeys === 'string') {
+      try { return JSON.parse(formData.eventKeys as any); } catch { return []; }
     }
-    return formData.eventTypeIds;
-  }, [formData.eventTypeIds]);
+    return formData.eventKeys;
+  }, [formData.eventKeys]);
+
+  const availableBrands = useMemo(() => {
+    const set = new Set<string>();
+    allEvents.forEach(e => e.brands?.forEach(b => set.add(b)));
+    return Array.from(set).sort();
+  }, [allEvents]);
+
+  const filteredEvents = useMemo(() => {
+    if (!brandFilter) return allEvents;
+    return allEvents.filter(e => e.brands?.includes(brandFilter));
+  }, [allEvents, brandFilter]);
+
+  const groupedEvents = useMemo(() => {
+    const groups: Record<string, CanonicalEvent[]> = {};
+    filteredEvents.forEach(e => {
+      const cat = e.category || 'unknown';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(e);
+    });
+    return groups;
+  }, [filteredEvents]);
 
   useEffect(() => {
     if (rule) {
-      let parsedEventTypeIds: number[] = [];
-      if (rule.eventTypeIds) {
-        if (typeof rule.eventTypeIds === 'string') {
-          try {
-            parsedEventTypeIds = JSON.parse(rule.eventTypeIds);
-          } catch {
-            parsedEventTypeIds = [];
-          }
+      let parsedKeys: string[] = [];
+      if (rule.eventKeys) {
+        if (typeof rule.eventKeys === 'string') {
+          try { parsedKeys = JSON.parse(rule.eventKeys as any); } catch { parsedKeys = []; }
         } else {
-          parsedEventTypeIds = rule.eventTypeIds;
+          parsedKeys = rule.eventKeys;
         }
       }
       setFormData({
         ...rule,
-        eventTypeIds: parsedEventTypeIds,
+        eventKeys: parsedKeys,
         conditions: rule.conditions || { area: 'all' },
       });
-      // 检查是否有雷达事件
       if (rule.alarmType === 'radar_pointcloud') {
         setShowRadarEvent(true);
       }
@@ -233,56 +208,38 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
       alert('请输入规则名称');
       return;
     }
-    if (selectedEventTypeIds.length === 0 && !showRadarEvent) {
+    if (selectedEventKeys.length === 0 && !showRadarEvent) {
       alert('请至少选择一个报警事件类型');
       return;
     }
-    
-    // 构建提交数据
     const submitData: Partial<AlarmRule> = {
       ...formData,
-      eventTypeIds: selectedEventTypeIds,
-      // 如果选择了雷达事件，设置alarmType为兼容
+      eventKeys: selectedEventKeys,
       alarmType: showRadarEvent ? ('radar_pointcloud' as any) : undefined,
     };
-    
     onSave(submitData);
   };
 
-  const handleToggleEventType = (eventId: number, checked: boolean) => {
-    const current = [...selectedEventTypeIds];
+  const handleToggleEvent = (eventKey: string, checked: boolean) => {
+    const current = [...selectedEventKeys];
     if (checked) {
-      if (!current.includes(eventId)) {
-        current.push(eventId);
-      }
+      if (!current.includes(eventKey)) current.push(eventKey);
     } else {
-      const index = current.indexOf(eventId);
-      if (index > -1) {
-        current.splice(index, 1);
-      }
+      const idx = current.indexOf(eventKey);
+      if (idx > -1) current.splice(idx, 1);
     }
-    setFormData({ ...formData, eventTypeIds: current });
+    setFormData({ ...formData, eventKeys: current });
   };
 
-  const updateCondition = (key: keyof typeof formData.conditions, value: any) => {
+  const updateCondition = (key: string, value: any) => {
     setFormData({
       ...formData,
-      conditions: {
-        ...formData.conditions!,
-        [key]: value,
-      },
+      conditions: { ...(formData.conditions as any), [key]: value },
     });
-  };
-
-  const brandLabels: Record<string, string> = {
-    hikvision: t('brand_hikvision'),
-    tiandy: t('brand_tiandy'),
-    dahua: t('brand_dahua'),
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* 基本信息 */}
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -307,18 +264,13 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
               <button
                 key={scope}
                 type="button"
-                onClick={() => {
-                  setFormData({
-                    ...formData,
-                    scope,
-                    deviceId: scope !== RuleScope.DEVICE ? undefined : formData.deviceId,
-                    assemblyId: scope !== RuleScope.ASSEMBLY ? undefined : formData.assemblyId,
-                  });
-                }}
+                onClick={() => setFormData({
+                  ...formData, scope,
+                  deviceId: scope !== RuleScope.DEVICE ? undefined : formData.deviceId,
+                  assemblyId: scope !== RuleScope.ASSEMBLY ? undefined : formData.assemblyId,
+                })}
                 className={`flex-1 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                  formData.scope === scope
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  formData.scope === scope ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
                 {scope === RuleScope.GLOBAL && t('global_rule')}
@@ -339,10 +291,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
               required
             >
               <option value="">请选择装置</option>
-              {assemblies.map((assembly) => (
-                <option key={assembly.id} value={assembly.assemblyId || assembly.id}>
-                  {assembly.name}
-                </option>
+              {assemblies.map((a) => (
+                <option key={a.id} value={a.assemblyId || a.id}>{a.name}</option>
               ))}
             </select>
           </div>
@@ -358,10 +308,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
               required
             >
               <option value="">请选择设备</option>
-              {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name} ({device.ip})
-                </option>
+              {devices.map((d) => (
+                <option key={d.id} value={d.id}>{d.name} ({d.ip})</option>
               ))}
             </select>
           </div>
@@ -371,31 +319,66 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
       {/* 报警事件类型选择 */}
       <div className="space-y-4">
         <h3 className="font-bold text-gray-800">{t('select_event_types')} <span className="text-red-500">*</span></h3>
-        <div className="text-sm text-gray-500 mb-2">
-          {selectedEventTypeIds.length > 0 ? (
-            <span className="text-blue-600 font-medium">
-              {t('event_types_selected')}: {selectedEventTypeIds.length}
-            </span>
-          ) : (
-            <span>{t('no_event_selected')}</span>
-          )}
-        </div>
-        
-        {/* 品牌事件分组 */}
-        <div className="space-y-3">
-          {Object.entries(eventTypes).map(([brand, events]) => (
-            <BrandEventGroup
-              key={brand}
-              brand={brand}
-              brandLabel={brandLabels[brand] || brand}
-              events={events}
-              selectedIds={selectedEventTypeIds}
-              onToggle={handleToggleEventType}
-            />
+
+        {/* 品牌筛选栏 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter size={14} className="text-gray-400" />
+          <button
+            type="button"
+            onClick={() => setBrandFilter(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              brandFilter === null ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            全部品牌
+          </button>
+          {availableBrands.map(b => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => setBrandFilter(brandFilter === b ? null : b)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                brandFilter === b
+                  ? (brandColors[b]?.replace('bg-', 'bg-').replace('50', '100') || 'bg-blue-100 text-blue-700 border-blue-300')
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {brandLabels[b] || b}
+            </button>
           ))}
         </div>
 
-        {/* 雷达入侵事件（独立选项） */}
+        <div className="text-sm text-gray-500">
+          {selectedEventKeys.length > 0 ? (
+            <span className="text-blue-600 font-medium">{t('event_types_selected')}: {selectedEventKeys.length}</span>
+          ) : (
+            <span>{t('no_event_selected')}</span>
+          )}
+          {brandFilter && (
+            <span className="ml-2 text-xs text-gray-400">
+              (仅显示 {brandLabels[brandFilter] || brandFilter} 支持的事件)
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {Object.entries(groupedEvents).map(([category, events]) => (
+            <CategoryGroup
+              key={category}
+              category={category}
+              events={events}
+              selectedKeys={selectedEventKeys}
+              onToggle={handleToggleEvent}
+            />
+          ))}
+          {Object.keys(groupedEvents).length === 0 && brandFilter && (
+            <div className="text-center py-6 text-gray-400 text-sm">
+              该品牌暂无关联的事件类型
+            </div>
+          )}
+        </div>
+
+        {/* 雷达入侵事件 */}
         <div className="border border-gray-200 rounded-xl overflow-hidden">
           <label className="flex items-center justify-between px-4 py-3 bg-purple-50 hover:bg-purple-100 cursor-pointer">
             <div className="flex items-center space-x-2">
@@ -404,15 +387,8 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
                 <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs">1</span>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowRadarEvent(!showRadarEvent)}
-            >
-              {showRadarEvent ? (
-                <ToggleRight className="text-purple-600" size={24} />
-              ) : (
-                <ToggleLeft className="text-gray-300" size={24} />
-              )}
+            <button type="button" onClick={() => setShowRadarEvent(!showRadarEvent)}>
+              {showRadarEvent ? <ToggleRight className="text-purple-600" size={24} /> : <ToggleLeft className="text-gray-300" size={24} />}
             </button>
           </label>
           {showRadarEvent && (
@@ -421,32 +397,20 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">最小距离（米）</label>
                   <input
-                    type="number"
-                    min="0"
+                    type="number" min="0"
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.conditions?.distanceRange?.[0] || ''}
-                    onChange={(e) =>
-                      updateCondition('distanceRange', [
-                        parseFloat(e.target.value) || 0,
-                        formData.conditions?.distanceRange?.[1] || 100,
-                      ])
-                    }
+                    value={(formData.conditions as any)?.distanceRange?.[0] || ''}
+                    onChange={(e) => updateCondition('distanceRange', [parseFloat(e.target.value) || 0, (formData.conditions as any)?.distanceRange?.[1] || 100])}
                     placeholder="0"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">最大距离（米）</label>
                   <input
-                    type="number"
-                    min="0"
+                    type="number" min="0"
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.conditions?.distanceRange?.[1] || ''}
-                    onChange={(e) =>
-                      updateCondition('distanceRange', [
-                        formData.conditions?.distanceRange?.[0] || 0,
-                        parseFloat(e.target.value) || 100,
-                      ])
-                    }
+                    value={(formData.conditions as any)?.distanceRange?.[1] || ''}
+                    onChange={(e) => updateCondition('distanceRange', [(formData.conditions as any)?.distanceRange?.[0] || 0, parseFloat(e.target.value) || 100])}
                     placeholder="100"
                   />
                 </div>
@@ -475,24 +439,14 @@ export const RuleForm: React.FC<RuleFormProps> = ({ rule, onSave, onCancel, flow
           </select>
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
         </div>
-        <p className="text-xs text-gray-500">
-          选择触发报警后执行的工作流程，工作流程在"工作流"模块中配置。
-        </p>
+        <p className="text-xs text-gray-500">选择触发报警后执行的工作流程，工作流程在"工作流"模块中配置。</p>
       </div>
 
-      {/* 按钮 */}
       <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
-        >
+        <button type="button" onClick={onCancel} className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium">
           {t('cancel')}
         </button>
-        <button
-          type="submit"
-          className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200"
-        >
+        <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200">
           {t('save')}
         </button>
       </div>

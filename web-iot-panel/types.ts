@@ -139,20 +139,24 @@ export enum AlarmType {
   RADAR_POINTCLOUD = 'radar_pointcloud'
 }
 
-// 摄像头事件类型（从后端获取）
-export interface CameraEventType {
+// 标准事件类型（从 canonical_events 获取）
+export interface CanonicalEvent {
   id: number;
-  brand: 'hikvision' | 'tiandy' | 'dahua';
-  eventCode: number;
-  eventName: string;
-  eventNameEn?: string;
-  category: 'basic' | 'vca' | 'face' | 'its';
+  eventId?: number;
+  eventKey: string;
+  nameZh: string;
+  nameEn?: string;
+  category: string;
   description?: string;
+  severity?: string;
   enabled?: boolean;
-  // 新字段：支持标准事件映射
-  sourceKind?: string; // 事件来源类型：'alarm_type' | 'vca_event' | 'command' 等
-  eventKey?: string; // 标准事件键（如 'ALARM_INPUT', 'PERIMETER_INTRUSION' 等）
+  isGeneric?: boolean;
+  aiVerifyPrompt?: string;
+  brands?: string[];
 }
+
+/** @deprecated 使用 CanonicalEvent 替代 */
+export type CameraEventType = CanonicalEvent;
 
 // 规则范围枚举
 export enum RuleScope {
@@ -211,8 +215,8 @@ export interface AlarmRule {
   id: string;
   ruleId: string;
   name: string;
-  alarmType?: AlarmType;  // 旧字段，保留兼容
-  eventTypeIds?: number[];  // 新字段：选中的事件类型ID列表
+  alarmType?: AlarmType;
+  eventKeys?: string[];
   scope: RuleScope;
   deviceId?: string; // 设备级规则
   assemblyId?: string; // 装置级规则

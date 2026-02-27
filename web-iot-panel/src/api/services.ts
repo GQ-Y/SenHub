@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { get, post, put, del, setToken, getToken } from './client';
 import { API_CONFIG } from './config';
-import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus, AlarmFlow, CameraEventType } from '../../types';
+import { Device, Driver, SystemConfig, Assembly, AssemblyDevice, DeviceRole, AlarmRule, AlarmType, RuleScope, AlarmRecord, DeviceStatus, AlarmFlow, CanonicalEvent } from '../../types';
 
 /**
  * 助手函数：转换后端设备数据格式到前端格式
@@ -714,18 +714,14 @@ export const assemblyService = {
 // ==================== 事件类型服务 ====================
 export const eventTypeService = {
   /**
-   * 获取所有事件类型（按品牌分组）
+   * 获取所有事件类型（统一从 canonical_events 获取，含品牌关联）
    */
   async getEventTypes() {
-    const response = await get<Record<string, CameraEventType[]>>('/event-types');
-    return response;
-  },
-
-  /**
-   * 获取指定品牌的事件类型
-   */
-  async getEventTypesByBrand(brand: string) {
-    const response = await get<CameraEventType[]>(`/event-types/${encodeURIComponent(brand)}`);
+    const response = await get<{
+      events: CanonicalEvent[];
+      grouped: Record<string, CanonicalEvent[]>;
+      brands: string[];
+    }>('/event-types');
     return response;
   },
 
@@ -733,7 +729,7 @@ export const eventTypeService = {
    * 获取所有事件类型（平铺列表）
    */
   async getAllEventTypesList() {
-    const response = await get<CameraEventType[]>('/event-types/all');
+    const response = await get<CanonicalEvent[]>('/event-types/all');
     return response;
   },
 };

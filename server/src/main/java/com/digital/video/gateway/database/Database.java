@@ -233,9 +233,6 @@ public class Database {
             RadarBackgroundTable.createTables(connection);
             RadarDefenseZoneTable.createTables(connection);
 
-            // 创建摄像头事件类型表
-            CameraEventTypeTable.createTables(connection);
-            
             // 创建标准事件表和品牌映射表
             CanonicalEventTable.createTables(connection);
             
