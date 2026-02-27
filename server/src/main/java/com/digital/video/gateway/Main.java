@@ -204,8 +204,12 @@ public class Main {
             deviceManager = new DeviceManager(database, config.getDevice());
             logger.info("设备管理器初始化成功");
 
+            // 4.5. 创建 ZLM 服务实例（暂不启动，等雷达 SDK 初始化完成后再 start，
+            //       避免两个原生库的 epoll/IO 线程初始化顺序冲突导致 Livox SDK SIGSEGV）
+            zlmMediaService = new ZlmMediaService(config.getZlm());
+
             // 5. 初始化功能服务类
-            recorderService = new RecorderService(deviceManager, config.getRecorder());
+            recorderService = new RecorderService(deviceManager, config.getRecorder(), zlmMediaService);
             captureService = new CaptureService(deviceManager, "./storage/captures");
             ptzService = new PTZService(deviceManager);
             ptzMonitorService = new PtzMonitorService(database, deviceManager, config);
@@ -230,14 +234,12 @@ public class Main {
             // 确保默认报警流程存在
             flowService.ensureDefaultAlarmFlow();
 
-            // 始终初始化雷达服务（即使数据库中暂时没有设备，后续可通过API添加）
+            // 雷达服务初始化（必须在 ZLM start 之前，两个原生库的 epoll 初始化顺序敏感）
             try {
                 radarService = new RadarService(ptzService, database);
-                // 设置抓拍服务，用于PTZ联动抓拍
                 if (captureService != null) {
                     radarService.setCaptureService(captureService);
                 }
-                // 设置装置服务，用于读取装置 PTZ 联动开关
                 if (assemblyService != null) {
                     radarService.setAssemblyService(assemblyService);
                 }
@@ -254,14 +256,18 @@ public class Main {
                 logger.info("新增服务初始化成功（RadarTestService 已关联 RadarService）");
 
             } catch (Throwable e) {
-                // 捕获所有异常和错误（包括NoClassDefFoundError等Error类型）
                 logger.error("雷达服务启动失败，将继续启动其他服务", e);
                 logger.warn("雷达服务不可用，可能是Livox SDK依赖问题，但不影响其他功能");
-                // 设置为null，避免后续调用时出现NPE
                 radarService = null;
-                // RadarTestService 仍可独立初始化（UDP 检测不依赖 SDK）
                 radarTestService = new RadarTestService();
                 logger.info("RadarTestService 已初始化（降级模式，仅支持 UDP 探测）");
+            }
+
+            // 5.7.5. 雷达 SDK 初始化完成后，再启动 ZLM 内嵌服务
+            //        （两个原生库的加载顺序：Livox SDK → ZLM mk_api，避免 epoll 冲突）
+            zlmMediaService.start();
+            if (zlmMediaService.isStarted()) {
+                logger.info("ZLM 内嵌服务已就绪（供海康循环录像使用）");
             }
 
             // 5.8. 启动PTZ监控服务
@@ -369,13 +375,6 @@ public class Main {
             // 10.6. 启动录像回放下载目录过期清理（每日凌晨2点，保留近3天）
             startPlaybackDownloadCleanupTask();
             logger.info("录像回放下载清理任务已启动（每日02:00，保留3天）");
-
-            // 10.7. 启动 ZLM 内嵌流媒体服务（可选：直播拉流、回放转码）
-            zlmMediaService = new ZlmMediaService(config.getZlm());
-            zlmMediaService.start();
-            if (zlmMediaService.isStarted()) {
-                logger.info("ZLM 内嵌服务已就绪");
-            }
 
             // 11. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
@@ -497,7 +496,10 @@ public class Main {
 
         // WebhookHandler 传入 ConfigService，从数据库读取全局通知配置
         executor.registerHandler("webhook", new WebhookHandler(configService));
-        executor.registerHandler("record", new RecordHandler(recordingTaskService, ossService));
+        RecordHandler recordHandler = new RecordHandler(recordingTaskService, ossService);
+        recordHandler.setRecorderService(recorderService);
+        recordHandler.setDeviceManager(deviceManager);
+        executor.registerHandler("record", recordHandler);
         executor.registerHandler("ptz_control", new PTZControlHandler(ptzService));
         executor.registerHandler("delay", new com.digital.video.gateway.workflow.handlers.DelayHandler());
         executor.registerHandler("condition", new com.digital.video.gateway.workflow.handlers.ConditionHandler());

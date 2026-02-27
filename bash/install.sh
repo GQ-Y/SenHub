@@ -144,14 +144,14 @@ step6_env() {
     cat > "$vgw_env" << EOF
 # SenHub 运行环境（systemd EnvironmentFile 格式，不可使用 export）
 VGW_HOME=$INSTALL_DIR
-LD_LIBRARY_PATH=$INSTALL_DIR/lib/x86/tiandy:$INSTALL_DIR/lib/x86/tiandy/lib:$INSTALL_DIR/lib/linux
-JAVA_LIB_PATH=$INSTALL_DIR/lib/x86/tiandy:$INSTALL_DIR/lib/x86/tiandy/lib:$INSTALL_DIR/lib/linux
+LD_LIBRARY_PATH=$INSTALL_DIR/lib/x86/hikvision:$INSTALL_DIR/lib/x86/hikvision/HCNetSDKCom:$INSTALL_DIR/lib/x86/tiandy:$INSTALL_DIR/lib/x86/tiandy/lib:$INSTALL_DIR/lib/linux
+JAVA_LIB_PATH=$INSTALL_DIR/lib/x86/hikvision:$INSTALL_DIR/lib/x86/hikvision/HCNetSDKCom:$INSTALL_DIR/lib/x86/tiandy:$INSTALL_DIR/lib/x86/tiandy/lib:$INSTALL_DIR/lib/linux
 EOF
     chmod 644 "$vgw_env"
     cat > /etc/profile.d/senhub.sh << EOF
 # SenHub 全局库路径（新开 shell 生效）
 export VGW_HOME="$INSTALL_DIR"
-export LD_LIBRARY_PATH="\$VGW_HOME/lib/x86/tiandy:\$VGW_HOME/lib/x86/tiandy/lib:\$VGW_HOME/lib/linux:\${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="\$VGW_HOME/lib/x86/hikvision:\$VGW_HOME/lib/x86/hikvision/HCNetSDKCom:\$VGW_HOME/lib/x86/tiandy:\$VGW_HOME/lib/x86/tiandy/lib:\$VGW_HOME/lib/linux:\${LD_LIBRARY_PATH}"
 EOF
     chmod 644 /etc/profile.d/senhub.sh
     echo "  已写入 $vgw_env 与 /etc/profile.d/senhub.sh"

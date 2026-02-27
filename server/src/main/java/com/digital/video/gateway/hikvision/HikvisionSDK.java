@@ -46,6 +46,8 @@ public class HikvisionSDK implements DeviceSDK {
     
     // 保持报警回调的强引用，防止被GC回收导致native回调失效
     private AlarmMessageCallback alarmCallback;
+    // 保持异常回调的强引用，防止被GC回收导致native回调野指针 → SIGSEGV
+    private FExceptionCallBack_Imp exceptionCallback;
 
     /** 海康 SDK 调用串行到单线程执行，避免多线程并发导致 native 崩溃；见 server/docs/hikvision-sdk-usage-and-thread-model.md */
     private volatile ExecutorService hikvisionExecutor;
@@ -101,9 +103,9 @@ public class HikvisionSDK implements DeviceSDK {
                 return false;
             }
 
-            // 设置异常回调（此时deviceManager和mqttClient可能还未设置，稍后通过setStatusCallbacks设置）
-            FExceptionCallBack_Imp exceptionCallback = new FExceptionCallBack_Imp();
-            if (!hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, exceptionCallback, null)) {
+            // 设置异常回调（保持为字段强引用，防止 GC 导致 SIGSEGV）
+            this.exceptionCallback = new FExceptionCallBack_Imp();
+            if (!hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, this.exceptionCallback, null)) {
                 logger.warn("设置异常回调失败");
             }
 
@@ -547,9 +549,8 @@ public class HikvisionSDK implements DeviceSDK {
         this.mqttClient = mqttClient;
         // 更新异常回调中的引用（如果回调已创建）
         if (hCNetSDK != null) {
-            // 重新设置异常回调，确保回调可以访问最新的deviceManager和mqttClient
-            FExceptionCallBack_Imp exceptionCallback = new FExceptionCallBack_Imp();
-            hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, exceptionCallback, null);
+            this.exceptionCallback = new FExceptionCallBack_Imp();
+            hCNetSDK.NET_DVR_SetExceptionCallBack_V30(0, 0, this.exceptionCallback, null);
         }
         logger.debug("已设置状态回调：DeviceManager和MqttClient");
     }

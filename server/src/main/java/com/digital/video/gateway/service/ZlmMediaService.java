@@ -15,6 +15,9 @@ import org.slf4j.LoggerFactory;
 public class ZlmMediaService {
     private static final Logger logger = LoggerFactory.getLogger(ZlmMediaService.class);
 
+    public static final String RECORD_BASE_PATH = "./storage/zlm_records";
+    public static final int RECORD_FILE_SECOND = 180;
+
     private final Config.ZlmConfig config;
     private ZLMApi api;
     private MK_INI mkIni;
@@ -72,6 +75,11 @@ public class ZlmMediaService {
             api.mk_ini_set_option_int(mkIni, "protocol.auto_close", 0);
             api.mk_ini_set_option_int(mkIni, "general.streamNoneReaderDelayMS", 30000);
             api.mk_ini_set_option_int(mkIni, "general.maxStreamWaitMS", 5000);
+
+            api.mk_ini_set_option(mkIni, "record.filePath", RECORD_BASE_PATH);
+            api.mk_ini_set_option_int(mkIni, "record.fileSecond", RECORD_FILE_SECOND);
+            api.mk_ini_set_option_int(mkIni, "record.fastStart", 1);
+            api.mk_ini_set_option_int(mkIni, "record.fileBufSize", 65536);
 
             // 2. 再调用 mk_env_init1 初始化（使用已设置的 INI 配置）
             api.mk_env_init1(0, 2, 1, null, 1, 0, null, 0, null, null);

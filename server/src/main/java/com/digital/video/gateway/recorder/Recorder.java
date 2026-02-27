@@ -141,32 +141,27 @@ public class Recorder {
     }
 
     /**
-     * 清理旧录制文件（循环存储）
+     * 清理旧录制文件（ZLM 录像目录 + 传统录像目录）
      */
     private void cleanupOldRecords() {
         try {
-            File recordDir = new File(config.getRecordPath());
-            if (!recordDir.exists()) {
-                return;
-            }
-
             long retentionMillis = config.getRetentionMinutes() * 60 * 1000L;
-            long cutoffTime = System.currentTimeMillis() - retentionMillis;
 
-                File[] files = recordDir.listFiles((dir, name) -> name.endsWith(".mp4"));
-            if (files == null) {
-                return;
+            if (recorderService != null) {
+                recorderService.cleanupOldRecords(retentionMillis);
             }
 
+            File recordDir = new File(config.getRecordPath());
+            if (!recordDir.exists()) return;
+            long cutoffTime = System.currentTimeMillis() - retentionMillis;
+            File[] files = recordDir.listFiles((dir, name) -> name.endsWith(".mp4"));
+            if (files == null) return;
             int deletedCount = 0;
             for (File file : files) {
                 if (file.lastModified() < cutoffTime) {
-                    if (file.delete()) {
-                        deletedCount++;
-                    }
+                    if (file.delete()) deletedCount++;
                 }
             }
-
             if (deletedCount > 0) {
                 logger.info("清理了 {} 个旧录制文件", deletedCount);
             }
