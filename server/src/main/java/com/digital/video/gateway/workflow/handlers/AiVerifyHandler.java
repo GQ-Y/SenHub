@@ -42,15 +42,24 @@ public class AiVerifyHandler implements FlowNodeHandler {
 
     private final AiGatewayClient aiClient;
     private final AiAnalysisService aiAnalysisService;
+    private final com.digital.video.gateway.database.Database database;
 
     public AiVerifyHandler(AiGatewayClient aiClient) {
         this.aiClient = aiClient;
         this.aiAnalysisService = null;
+        this.database = null;
     }
 
     public AiVerifyHandler(AiGatewayClient aiClient, AiAnalysisService aiAnalysisService) {
         this.aiClient = aiClient;
         this.aiAnalysisService = aiAnalysisService;
+        this.database = null;
+    }
+
+    public AiVerifyHandler(AiGatewayClient aiClient, AiAnalysisService aiAnalysisService, com.digital.video.gateway.database.Database database) {
+        this.aiClient = aiClient;
+        this.aiAnalysisService = aiAnalysisService;
+        this.database = database;
     }
 
     @Override
@@ -118,17 +127,38 @@ public class AiVerifyHandler implements FlowNodeHandler {
         }
 
         String alarmType = context.getAlarmType() != null ? context.getAlarmType() : "未知";
-        String userText = "当前报警事件类型为：" + alarmType + "。请根据图片内容判断：图片中的场景是否与该报警事件一致。\n"
+        String defaultText = "当前报警事件类型为：" + alarmType + "。请根据图片内容判断：图片中的场景是否与该报警事件一致。\n"
                 + "你必须严格按照以下JSON格式回复，不要包含其他文字：\n"
                 + "{\"match\": true或false, \"reason\": \"判定理由\"}\n"
                 + "其中 match 为 true 表示图片内容与报警事件一致，false 表示不一致。";
 
+        // 提示词优先级：节点独立配置 > 事件配置 > 默认
         Map<String, Object> cfg = node.getConfig();
+        String nodePrompt = null;
         if (cfg != null && cfg.get("prompt") instanceof String) {
-            String extra = ((String) cfg.get("prompt")).trim();
-            if (!extra.isEmpty()) {
-                userText = userText + "\n附加说明：" + extra;
+            String p = ((String) cfg.get("prompt")).trim();
+            if (!p.isEmpty()) nodePrompt = p;
+        }
+
+        String eventPrompt = null;
+        if (database != null && context.getVariables() != null) {
+            Object ek = context.getVariables().get("eventKey");
+            if (ek instanceof String && !((String) ek).isEmpty()) {
+                try (java.sql.Connection conn = database.getConnection()) {
+                    eventPrompt = com.digital.video.gateway.database.CanonicalEventTable.getAiVerifyPrompt(conn, (String) ek);
+                } catch (Exception e) {
+                    logger.debug("读取事件 ai_verify_prompt 失败: {}", e.getMessage());
+                }
             }
+        }
+
+        String userText;
+        if (nodePrompt != null) {
+            userText = defaultText + "\n附加说明：" + nodePrompt;
+        } else if (eventPrompt != null && !eventPrompt.isBlank()) {
+            userText = defaultText + "\n附加说明：" + eventPrompt;
+        } else {
+            userText = defaultText;
         }
 
         String model = null;

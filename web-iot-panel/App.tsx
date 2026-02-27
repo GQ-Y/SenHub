@@ -17,6 +17,7 @@ import { RadarDefenseZone } from './components/RadarDefenseZone';
 import { RadarMonitoring } from './components/RadarMonitoring';
 import { FlowManagement } from './components/FlowManagement';
 import { AiAnalysisRecords } from './components/AiAnalysisRecords';
+import { AiAlgorithmLibrary } from './components/AiAlgorithmLibrary';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 
 // 路由守卫组件
@@ -46,6 +47,7 @@ const getViewFromPath = (pathname: string): string => {
   if (pathname.startsWith('/radar')) return 'RADAR';
   if (pathname.startsWith('/flows')) return 'WORKFLOW';
   if (pathname.startsWith('/ai-analysis')) return 'AI_ANALYSIS';
+  if (pathname.startsWith('/ai-algorithm-library')) return 'AI_ALGORITHM_LIB';
   return 'DASHBOARD';
 };
 
@@ -181,6 +183,14 @@ const AppContent: React.FC = () => {
           element={
             <ProtectedRoute>
               <AiAnalysisRecords />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ai-algorithm-library"
+          element={
+            <ProtectedRoute>
+              <AiAlgorithmLibrary />
             </ProtectedRoute>
           }
         />

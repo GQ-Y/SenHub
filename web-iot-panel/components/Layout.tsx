@@ -101,6 +101,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
       case 'AI_ANALYSIS':
         navigate('/ai-analysis');
         break;
+      case 'AI_ALGORITHM_LIB':
+        navigate('/ai-algorithm-library');
+        break;
       default:
         navigate('/');
     }
@@ -255,6 +258,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               onClick={() => handleNavigate('AI_ANALYSIS')}
             />
             <SidebarItem 
+              icon={Server} 
+              label={t('ai_algorithm_lib')} 
+              isActive={currentView === 'AI_ALGORITHM_LIB'} 
+              onClick={() => handleNavigate('AI_ALGORITHM_LIB')}
+            />
+            <SidebarItem 
               icon={Settings} 
               label={t('system_config')} 
               isActive={currentView === 'SYSTEM_CONFIG'} 
@@ -294,6 +303,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
                 currentView === 'MQTT_CONFIG' ? t('mqtt_broker') :
                 currentView === 'ALARM_RULES' ? t('alarm_rules') :
                 currentView === 'AI_ANALYSIS' ? t('ai_analysis_records') :
+                currentView === 'AI_ALGORITHM_LIB' ? t('ai_algorithm_lib') :
                 t('system_config')}
             </h2>
           </div>

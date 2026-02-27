@@ -65,9 +65,19 @@ public class CanonicalEventTable {
                 "CREATE INDEX IF NOT EXISTS idx_brand_mapping_source ON brand_event_mapping(brand, source_kind, source_code); " +
                 "CREATE INDEX IF NOT EXISTS idx_brand_mapping_event_key ON brand_event_mapping(event_key);";
 
+        String createRawPayloadTable = "CREATE TABLE IF NOT EXISTS event_raw_payload (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "event_key TEXT NOT NULL, " +
+                "brand TEXT NOT NULL, " +
+                "raw_payload TEXT, " +
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "UNIQUE(event_key, brand)" +
+                ")";
+
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createCanonicalEventsTable);
             stmt.execute(createBrandMappingTable);
+            stmt.execute(createRawPayloadTable);
             stmt.execute(createIndex);
             logger.info("标准事件表和品牌映射表创建成功");
             // 初始化默认标准事件（仅当表为空时）
@@ -76,6 +86,8 @@ public class CanonicalEventTable {
             ensureEventIdColumnAndBackfill(connection);
             // 确保 GIS_INFO_UPLOAD 事件存在（含已有库迁移）
             ensureGisInfoUploadEvent(connection);
+            // 迁移：为已有表添加 is_generic、ai_verify_prompt 列
+            ensureNewColumns(connection);
         }
     }
 
@@ -550,6 +562,372 @@ public class CanonicalEventTable {
         return null;
     }
 
+    /**
+     * 迁移：为已有 canonical_events 表添加 is_generic、ai_verify_prompt 列（列已存在则忽略）
+     */
+    public static void ensureNewColumns(Connection connection) throws SQLException {
+        String[][] cols = {
+            {"is_generic", "ALTER TABLE canonical_events ADD COLUMN is_generic INTEGER DEFAULT 0"},
+            {"ai_verify_prompt", "ALTER TABLE canonical_events ADD COLUMN ai_verify_prompt TEXT"}
+        };
+        try (Statement stmt = connection.createStatement()) {
+            for (String[] col : cols) {
+                try {
+                    stmt.execute(col[1]);
+                    logger.info("已为 canonical_events 添加 {} 列", col[0]);
+                } catch (SQLException e) {
+                    // duplicate column 或已存在，忽略
+                    logger.debug("{} 列可能已存在: {}", col[0], e.getMessage());
+                }
+            }
+        }
+    }
+
+    // ==================== 未知事件自动入库 ====================
+
+    /**
+     * 检查事件是否已存在且标记为通用报警
+     */
+    public static boolean isGenericEvent(Connection connection, String eventKey) {
+        String sql = "SELECT is_generic FROM canonical_events WHERE event_key = ? LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("is_generic") == 1;
+            }
+        } catch (SQLException e) {
+            logger.debug("查询 is_generic 失败: eventKey={}, {}", eventKey, e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * 为未知事件自动入库：若 event_key 已存在且为通用报警则跳过（返回 false），否则 INSERT OR IGNORE。
+     * @return true 表示新写入了事件（或已存在的非通用事件）；false 表示跳过（通用报警）
+     */
+    public static boolean ensureEventForUnknown(Connection connection, String brand, String alarmType, String rawPayloadJson) {
+        if (alarmType == null || alarmType.isEmpty()) return false;
+
+        // 已存在且是通用报警 → 跳过，由上层走 SDK 细解析
+        if (isGenericEvent(connection, alarmType)) {
+            logger.debug("事件已标记为通用报警，跳过自动入库: eventKey={}", alarmType);
+            return false;
+        }
+
+        // 检查事件是否已存在（无论是否通用）
+        boolean eventExists = getCanonicalEvent(connection, alarmType) != null;
+        // 也检查 disabled 的
+        if (!eventExists) {
+            String checkSql = "SELECT COUNT(*) FROM canonical_events WHERE event_key = ?";
+            try (PreparedStatement pstmt = connection.prepareStatement(checkSql)) {
+                pstmt.setString(1, alarmType);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next() && rs.getInt(1) > 0) eventExists = true;
+            } catch (SQLException e) {
+                logger.debug("检查事件存在性失败: {}", e.getMessage());
+            }
+        }
+
+        if (!eventExists) {
+            // 写入 canonical_events
+            String insertEvent = "INSERT OR IGNORE INTO canonical_events (event_key, name_zh, name_en, category, description, severity, is_generic) " +
+                    "VALUES (?, ?, ?, 'unknown', ?, 'info', 0)";
+            try (PreparedStatement pstmt = connection.prepareStatement(insertEvent)) {
+                pstmt.setString(1, alarmType);
+                pstmt.setString(2, alarmType); // name_zh 暂用 event_key
+                pstmt.setString(3, alarmType); // name_en 暂用 event_key
+                pstmt.setString(4, "系统自动发现的未知事件: " + alarmType);
+                pstmt.executeUpdate();
+                logger.info("自动入库未知事件: eventKey={}, brand={}", alarmType, brand);
+            } catch (SQLException e) {
+                logger.warn("自动入库事件失败: eventKey={}, {}", alarmType, e.getMessage());
+            }
+
+            // 写入 brand_event_mapping
+            String insertMapping = "INSERT OR IGNORE INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) " +
+                    "VALUES (?, 'event_key', 0, ?, 0, ?)";
+            try (PreparedStatement pstmt = connection.prepareStatement(insertMapping)) {
+                pstmt.setString(1, brand.toLowerCase());
+                pstmt.setString(2, alarmType);
+                pstmt.setString(3, "系统自动发现 (" + brand + ")");
+                pstmt.executeUpdate();
+            } catch (SQLException e) {
+                logger.debug("自动入库映射失败: {}", e.getMessage());
+            }
+        }
+
+        // 写入原始报警数据（首次样本，已有则不覆盖）
+        if (rawPayloadJson != null && !rawPayloadJson.isEmpty()) {
+            insertRawPayload(connection, alarmType, brand, rawPayloadJson);
+        }
+
+        return true;
+    }
+
+    // ==================== event_raw_payload 操作 ====================
+
+    public static void insertRawPayload(Connection connection, String eventKey, String brand, String rawPayload) {
+        String sql = "INSERT OR IGNORE INTO event_raw_payload (event_key, brand, raw_payload) VALUES (?, ?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            pstmt.setString(2, brand.toLowerCase());
+            pstmt.setString(3, rawPayload);
+            int n = pstmt.executeUpdate();
+            if (n > 0) {
+                logger.info("写入原始报警数据样本: eventKey={}, brand={}", eventKey, brand);
+            }
+        } catch (SQLException e) {
+            logger.debug("写入原始报警数据失败: eventKey={}, {}", eventKey, e.getMessage());
+        }
+    }
+
+    public static Map<String, Object> getRawPayload(Connection connection, String eventKey, String brand) {
+        String sql = "SELECT * FROM event_raw_payload WHERE event_key = ? AND brand = ? LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            pstmt.setString(2, brand.toLowerCase());
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("id", rs.getInt("id"));
+                m.put("eventKey", rs.getString("event_key"));
+                m.put("brand", rs.getString("brand"));
+                m.put("rawPayload", rs.getString("raw_payload"));
+                m.put("createdAt", rs.getString("created_at"));
+                return m;
+            }
+        } catch (SQLException e) {
+            logger.debug("查询原始报警数据失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    public static List<Map<String, Object>> getRawPayloadsByEventKey(Connection connection, String eventKey) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        String sql = "SELECT * FROM event_raw_payload WHERE event_key = ? ORDER BY created_at DESC";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("id", rs.getInt("id"));
+                m.put("eventKey", rs.getString("event_key"));
+                m.put("brand", rs.getString("brand"));
+                m.put("rawPayload", rs.getString("raw_payload"));
+                m.put("createdAt", rs.getString("created_at"));
+                list.add(m);
+            }
+        } catch (SQLException e) {
+            logger.debug("查询原始报警数据失败: {}", e.getMessage());
+        }
+        return list;
+    }
+
+    // ==================== CRUD 扩展 ====================
+
+    /**
+     * 按 ID 查询单条事件（含 is_generic、ai_verify_prompt）
+     */
+    public static Map<String, Object> getCanonicalEventById(Connection connection, int id) {
+        String sql = "SELECT * FROM canonical_events WHERE id = ? LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return mapResultSetToEvent(rs);
+            }
+        } catch (SQLException e) {
+            logger.error("查询标准事件失败: id={}", id, e);
+        }
+        return null;
+    }
+
+    /**
+     * 带筛选条件的事件列表（不限 enabled）
+     */
+    public static List<Map<String, Object>> listCanonicalEvents(Connection connection,
+            String eventKey, String category, String brand, Boolean enabled, Boolean isGeneric) {
+        List<Map<String, Object>> events = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("SELECT DISTINCT e.* FROM canonical_events e ");
+        List<Object> params = new ArrayList<>();
+
+        if (brand != null && !brand.isEmpty()) {
+            sql.append("JOIN brand_event_mapping m ON e.event_key = m.event_key AND m.brand = ? ");
+            params.add(brand.toLowerCase());
+        }
+
+        sql.append("WHERE 1=1 ");
+        if (eventKey != null && !eventKey.isEmpty()) {
+            sql.append("AND e.event_key LIKE ? ");
+            params.add("%" + eventKey + "%");
+        }
+        if (category != null && !category.isEmpty()) {
+            sql.append("AND e.category = ? ");
+            params.add(category);
+        }
+        if (enabled != null) {
+            sql.append("AND e.enabled = ? ");
+            params.add(enabled ? 1 : 0);
+        }
+        if (isGeneric != null) {
+            sql.append("AND e.is_generic = ? ");
+            params.add(isGeneric ? 1 : 0);
+        }
+        sql.append("ORDER BY e.category, e.event_key");
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                Object p = params.get(i);
+                if (p instanceof Integer) pstmt.setInt(i + 1, (Integer) p);
+                else pstmt.setString(i + 1, p.toString());
+            }
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                events.add(mapResultSetToEvent(rs));
+            }
+        } catch (SQLException e) {
+            logger.error("查询事件列表失败", e);
+        }
+        return events;
+    }
+
+    /**
+     * 新增标准事件
+     */
+    public static int insertCanonicalEvent(Connection connection, String eventKey, String nameZh, String nameEn,
+            String category, String severity, String description, boolean isGeneric, String aiVerifyPrompt) throws SQLException {
+        String sql = "INSERT INTO canonical_events (event_key, name_zh, name_en, category, severity, description, is_generic, ai_verify_prompt) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, eventKey);
+            pstmt.setString(2, nameZh);
+            pstmt.setString(3, nameEn != null ? nameEn : "");
+            pstmt.setString(4, category != null ? category : "unknown");
+            pstmt.setString(5, severity != null ? severity : "info");
+            pstmt.setString(6, description != null ? description : "");
+            pstmt.setInt(7, isGeneric ? 1 : 0);
+            pstmt.setString(8, aiVerifyPrompt);
+            pstmt.executeUpdate();
+            ResultSet keys = pstmt.getGeneratedKeys();
+            if (keys.next()) return keys.getInt(1);
+        }
+        return -1;
+    }
+
+    /**
+     * 更新标准事件
+     */
+    public static boolean updateCanonicalEvent(Connection connection, int id, String nameZh, String nameEn,
+            String category, String severity, String description, Boolean enabled, Boolean isGeneric, String aiVerifyPrompt) throws SQLException {
+        StringBuilder sql = new StringBuilder("UPDATE canonical_events SET updated_at = CURRENT_TIMESTAMP");
+        List<Object> params = new ArrayList<>();
+        if (nameZh != null) { sql.append(", name_zh = ?"); params.add(nameZh); }
+        if (nameEn != null) { sql.append(", name_en = ?"); params.add(nameEn); }
+        if (category != null) { sql.append(", category = ?"); params.add(category); }
+        if (severity != null) { sql.append(", severity = ?"); params.add(severity); }
+        if (description != null) { sql.append(", description = ?"); params.add(description); }
+        if (enabled != null) { sql.append(", enabled = ?"); params.add(enabled ? 1 : 0); }
+        if (isGeneric != null) { sql.append(", is_generic = ?"); params.add(isGeneric ? 1 : 0); }
+        if (aiVerifyPrompt != null) { sql.append(", ai_verify_prompt = ?"); params.add(aiVerifyPrompt); }
+        sql.append(" WHERE id = ?");
+        params.add(id);
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                Object p = params.get(i);
+                if (p instanceof Integer) pstmt.setInt(i + 1, (Integer) p);
+                else pstmt.setString(i + 1, p.toString());
+            }
+            return pstmt.executeUpdate() > 0;
+        }
+    }
+
+    /**
+     * 删除标准事件及其品牌映射和原始数据
+     */
+    public static boolean deleteCanonicalEvent(Connection connection, int id) throws SQLException {
+        // 先查 event_key
+        Map<String, Object> event = getCanonicalEventById(connection, id);
+        if (event == null) return false;
+        String eventKey = (String) event.get("eventKey");
+
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute("DELETE FROM event_raw_payload WHERE event_key = '" + eventKey.replace("'", "''") + "'");
+            stmt.execute("DELETE FROM brand_event_mapping WHERE event_key = '" + eventKey.replace("'", "''") + "'");
+            stmt.execute("DELETE FROM canonical_events WHERE id = " + id);
+        }
+        return true;
+    }
+
+    // ==================== brand_event_mapping CRUD ====================
+
+    public static List<Map<String, Object>> getMappingsByEventKey(Connection connection, String eventKey) {
+        List<Map<String, Object>> mappings = new ArrayList<>();
+        String sql = "SELECT * FROM brand_event_mapping WHERE event_key = ? ORDER BY brand, source_kind, source_code";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("id", rs.getInt("id"));
+                m.put("brand", rs.getString("brand"));
+                m.put("sourceKind", rs.getString("source_kind"));
+                m.put("sourceCode", rs.getInt("source_code"));
+                m.put("eventKey", rs.getString("event_key"));
+                m.put("priority", rs.getInt("priority"));
+                m.put("note", rs.getString("note"));
+                m.put("enabled", rs.getInt("enabled") == 1);
+                mappings.add(m);
+            }
+        } catch (SQLException e) {
+            logger.error("查询事件映射失败: eventKey={}", eventKey, e);
+        }
+        return mappings;
+    }
+
+    public static int insertMapping(Connection connection, String brand, String sourceKind, int sourceCode,
+            String eventKey, int priority, String note) throws SQLException {
+        String sql = "INSERT INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) VALUES (?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, brand.toLowerCase());
+            pstmt.setString(2, sourceKind);
+            pstmt.setInt(3, sourceCode);
+            pstmt.setString(4, eventKey);
+            pstmt.setInt(5, priority);
+            pstmt.setString(6, note);
+            pstmt.executeUpdate();
+            ResultSet keys = pstmt.getGeneratedKeys();
+            if (keys.next()) return keys.getInt(1);
+        }
+        return -1;
+    }
+
+    public static boolean deleteMapping(Connection connection, int mappingId) throws SQLException {
+        String sql = "DELETE FROM brand_event_mapping WHERE id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, mappingId);
+            return pstmt.executeUpdate() > 0;
+        }
+    }
+
+    /**
+     * 获取事件的 ai_verify_prompt
+     */
+    public static String getAiVerifyPrompt(Connection connection, String eventKey) {
+        String sql = "SELECT ai_verify_prompt FROM canonical_events WHERE event_key = ? AND enabled = 1 LIMIT 1";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, eventKey);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("ai_verify_prompt");
+            }
+        } catch (SQLException e) {
+            logger.debug("查询 ai_verify_prompt 失败: eventKey={}, {}", eventKey, e.getMessage());
+        }
+        return null;
+    }
+
     private static Map<String, Object> mapResultSetToEvent(ResultSet rs) throws SQLException {
         Map<String, Object> event = new HashMap<>();
         event.put("id", rs.getInt("id"));
@@ -565,6 +943,22 @@ public class CanonicalEventTable {
         event.put("description", rs.getString("description"));
         event.put("severity", rs.getString("severity"));
         event.put("enabled", rs.getInt("enabled") == 1);
+        try {
+            event.put("isGeneric", rs.getInt("is_generic") == 1);
+        } catch (SQLException e) {
+            event.put("isGeneric", false);
+        }
+        try {
+            event.put("aiVerifyPrompt", rs.getString("ai_verify_prompt"));
+        } catch (SQLException e) {
+            event.put("aiVerifyPrompt", null);
+        }
+        try {
+            event.put("createdAt", rs.getString("created_at"));
+            event.put("updatedAt", rs.getString("updated_at"));
+        } catch (SQLException e) {
+            // ignore
+        }
         return event;
     }
 }

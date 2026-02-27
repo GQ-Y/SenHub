@@ -1237,3 +1237,87 @@ export const aiAnalysisService = {
   },
 };
 
+// ==================== 事件库（AI算法库）服务 ====================
+export interface EventLibraryItem {
+  id: number;
+  eventId?: number;
+  eventKey: string;
+  nameZh: string;
+  nameEn?: string;
+  category: string;
+  description?: string;
+  severity: string;
+  enabled: boolean;
+  isGeneric: boolean;
+  aiVerifyPrompt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  mappings?: EventBrandMapping[];
+  rawPayloads?: EventRawPayload[];
+}
+
+export interface EventBrandMapping {
+  id: number;
+  brand: string;
+  sourceKind: string;
+  sourceCode: number;
+  eventKey: string;
+  priority: number;
+  note?: string;
+  enabled?: boolean;
+}
+
+export interface EventRawPayload {
+  id: number;
+  eventKey: string;
+  brand: string;
+  rawPayload?: string;
+  createdAt?: string;
+}
+
+export const eventLibraryService = {
+  async getEvents(params?: {
+    eventKey?: string;
+    category?: string;
+    brand?: string;
+    enabled?: boolean;
+    isGeneric?: boolean;
+  }): Promise<EventLibraryItem[]> {
+    const response = await get<EventLibraryItem[]>('/event-library/events', params as any);
+    const raw = response as any;
+    return raw?.data ?? raw ?? [];
+  },
+
+  async getEvent(id: number): Promise<EventLibraryItem> {
+    const response = await get<EventLibraryItem>(`/event-library/events/${id}`);
+    const raw = response as any;
+    return raw?.data ?? raw;
+  },
+
+  async createEvent(body: Partial<EventLibraryItem> & { mappings?: Partial<EventBrandMapping>[] }): Promise<EventLibraryItem> {
+    const response = await post<EventLibraryItem>('/event-library/events', body);
+    const raw = response as any;
+    return raw?.data ?? raw;
+  },
+
+  async updateEvent(id: number, body: Partial<EventLibraryItem>): Promise<EventLibraryItem> {
+    const response = await put<EventLibraryItem>(`/event-library/events/${id}`, body);
+    const raw = response as any;
+    return raw?.data ?? raw;
+  },
+
+  async deleteEvent(id: number): Promise<void> {
+    await del<any>(`/event-library/events/${id}`);
+  },
+
+  async addMapping(eventId: number, mapping: Partial<EventBrandMapping>): Promise<{ id: number }> {
+    const response = await post<{ id: number }>(`/event-library/events/${eventId}/mappings`, mapping);
+    const raw = response as any;
+    return raw?.data ?? raw;
+  },
+
+  async deleteMapping(eventId: number, mappingId: number): Promise<void> {
+    await del<any>(`/event-library/events/${eventId}/mappings/${mappingId}`);
+  },
+};
+

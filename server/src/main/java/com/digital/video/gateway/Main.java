@@ -539,7 +539,7 @@ public class Main {
         executor.registerHandler("ai_inference", new com.digital.video.gateway.workflow.handlers.AiInferenceHandler());
         com.digital.video.gateway.service.AiGatewayClient aiClient = new com.digital.video.gateway.service.AiGatewayClient(configService);
         aiAnalysisService = new AiAnalysisService(database);
-        executor.registerHandler("ai_verify", new com.digital.video.gateway.workflow.handlers.AiVerifyHandler(aiClient, aiAnalysisService));
+        executor.registerHandler("ai_verify", new com.digital.video.gateway.workflow.handlers.AiVerifyHandler(aiClient, aiAnalysisService, database));
         executor.registerHandler("ai_alert_text", new com.digital.video.gateway.workflow.handlers.AiAlertTextHandler(aiClient, aiAnalysisService));
         executor.registerHandler("ai_tts", new com.digital.video.gateway.workflow.handlers.AiTtsHandler(configService, aiAnalysisService));
         executor.registerHandler("system_speaker", new com.digital.video.gateway.workflow.handlers.SystemSpeakerHandler());
@@ -1106,6 +1106,15 @@ public class Main {
         app.get("/api/event-types", eventTypeController::getAllEventTypes);
         app.get("/api/event-types/all", eventTypeController::getAllEventTypesList);
         app.get("/api/event-types/{brand}", eventTypeController::getEventTypesByBrand);
+
+        com.digital.video.gateway.api.EventLibraryController eventLibraryController = new com.digital.video.gateway.api.EventLibraryController(database);
+        app.get("/api/event-library/events", eventLibraryController::listEvents);
+        app.get("/api/event-library/events/{id}", eventLibraryController::getEvent);
+        app.post("/api/event-library/events", eventLibraryController::createEvent);
+        app.put("/api/event-library/events/{id}", eventLibraryController::updateEvent);
+        app.delete("/api/event-library/events/{id}", eventLibraryController::deleteEvent);
+        app.post("/api/event-library/events/{id}/mappings", eventLibraryController::addMapping);
+        app.delete("/api/event-library/events/{id}/mappings/{mappingId}", eventLibraryController::deleteMapping);
 
         app.get("/api/alarm-rules", alarmRuleController::getAlarmRules);
         app.get("/api/alarm-rules/{id}", alarmRuleController::getAlarmRule);

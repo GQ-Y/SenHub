@@ -228,8 +228,8 @@ public class EventResolver {
         
         String[] parts = alarmType.split("_");
         if (parts.length < 3 || !parts[1].equalsIgnoreCase("Alarm")) {
-            logger.warn("无效的alarmType格式: {}", alarmType);
-            return null;
+            // 非 Brand_Alarm_Code 格式，尝试按 event_key 直接查找
+            return resolveByEventKey(alarmType);
         }
         
         String brand = parts[0].toLowerCase();
@@ -257,11 +257,41 @@ public class EventResolver {
                 return null;
             }
         } catch (NumberFormatException e) {
-            logger.warn("alarmType代码解析失败: {}", alarmType);
-            return null;
+            // code 部分非数字（如 ALARM_V30 的 V30），尝试按 event_key 直接查找
+            return resolveByEventKey(alarmType);
         } catch (Exception e) {
             logger.error("从alarmType字符串解析失败: alarmType={}", alarmType, e);
             return null;
         }
+    }
+
+    /**
+     * 按 event_key 直接查找事件定义（支持自动入库的事件和标准事件）
+     */
+    public ResolveResult resolveByEventKey(String eventKey) {
+        if (eventKey == null || eventKey.isEmpty()) return null;
+        try (Connection conn = database.getConnection()) {
+            Map<String, Object> event = CanonicalEventTable.getCanonicalEvent(conn, eventKey);
+            if (event != null) {
+                boolean isGeneric = Boolean.TRUE.equals(event.get("isGeneric"));
+                ResolveResult result = new ResolveResult(
+                    (String) event.get("eventKey"),
+                    (String) event.get("nameZh"),
+                    (String) event.get("nameEn"),
+                    (String) event.get("category"),
+                    eventKey,
+                    new HashMap<>()
+                );
+                result.getMetadata().put("isGeneric", isGeneric);
+                return result;
+            }
+        } catch (Exception e) {
+            logger.debug("按 event_key 查找事件失败: eventKey={}, {}", eventKey, e.getMessage());
+        }
+        return null;
+    }
+
+    public Database getDatabase() {
+        return database;
     }
 }

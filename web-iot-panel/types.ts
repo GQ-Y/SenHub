@@ -111,7 +111,8 @@ export type ViewState =
   | 'ALARM_RULES'
   | 'RADAR'
   | 'WORKFLOW'
-  | 'AI_ANALYSIS';
+  | 'AI_ANALYSIS'
+  | 'AI_ALGORITHM_LIB';
 
 export interface AppState {
   currentView: ViewState;

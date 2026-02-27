@@ -184,19 +184,60 @@ public class AlarmService {
         String alarmTypeDisplay = alarmType;
         String alarmTypeName = null; // 纯中文名称（不含原始alarmType）
         
+        boolean isGenericAlarm = false;
         if (eventResolver != null) {
             try {
                 EventResolver.ResolveResult result = eventResolver.resolveFromAlarmTypeString(alarmType);
                 if (result != null) {
-                    eventKey = result.getEventKey();
-                    eventNameZh = result.getEventNameZh();
-                    eventNameEn = result.getEventNameEn();
-                    category = result.getCategory();
-                    alarmTypeDisplay = eventNameZh + "(" + alarmType + ")";
-                    alarmTypeName = eventNameZh;
-                    logger.info("事件解析成功: alarmType={}, eventKey={}, eventNameZh={}", 
-                            alarmType, eventKey, eventNameZh);
-                } else {
+                    isGenericAlarm = Boolean.TRUE.equals(result.getMetadata().get("isGeneric"));
+                    if (!isGenericAlarm) {
+                        eventKey = result.getEventKey();
+                        eventNameZh = result.getEventNameZh();
+                        eventNameEn = result.getEventNameEn();
+                        category = result.getCategory();
+                        alarmTypeDisplay = eventNameZh + "(" + alarmType + ")";
+                        alarmTypeName = eventNameZh;
+                        logger.info("事件解析成功: alarmType={}, eventKey={}, eventNameZh={}", 
+                                alarmType, eventKey, eventNameZh);
+                    } else {
+                        logger.info("事件为通用报警类型，需SDK细解析: alarmType={}, eventKey={}", alarmType, result.getEventKey());
+                    }
+                }
+
+                // 解析失败或通用报警：尝试按品牌自动入库
+                if (result == null && database != null) {
+                    DeviceInfo dev = deviceManager.getDevice(deviceId);
+                    String brand = dev != null ? dev.getBrand() : "unknown";
+                    if (brand == null || brand.isEmpty()) brand = "unknown";
+
+                    String rawJson = null;
+                    if (alarmData != null) {
+                        try { rawJson = objectMapper.writeValueAsString(alarmData); } catch (Exception ignored) {}
+                    }
+                    try (Connection conn = database.getConnection()) {
+                        boolean inserted = CanonicalEventTable.ensureEventForUnknown(conn, brand.toLowerCase(), alarmType, rawJson);
+                        if (inserted) {
+                            // 入库后重新解析
+                            result = eventResolver.resolveByEventKey(alarmType);
+                            if (result != null) {
+                                isGenericAlarm = Boolean.TRUE.equals(result.getMetadata().get("isGeneric"));
+                                if (!isGenericAlarm) {
+                                    eventKey = result.getEventKey();
+                                    eventNameZh = result.getEventNameZh();
+                                    eventNameEn = result.getEventNameEn();
+                                    category = result.getCategory();
+                                    alarmTypeDisplay = eventNameZh + "(" + alarmType + ")";
+                                    alarmTypeName = eventNameZh;
+                                    logger.info("自动入库后解析成功: alarmType={}, eventKey={}", alarmType, eventKey);
+                                }
+                            }
+                        }
+                    } catch (Exception ex) {
+                        logger.debug("自动入库/重解析异常: {}", ex.getMessage());
+                    }
+                }
+
+                if (result == null && !isGenericAlarm) {
                     logger.warn("事件解析失败，使用原始alarmType: alarmType={}", alarmType);
                 }
             } catch (Exception e) {
@@ -204,6 +245,12 @@ public class AlarmService {
             }
         } else {
             logger.warn("eventResolver为null，无法解析事件类型");
+        }
+        
+        // 通用报警：跳过直接处理（后续应由 SDK 细解析回调中的具体报警类型）
+        if (isGenericAlarm) {
+            logger.info("通用报警类型，等待SDK细解析具体事件: alarmType={}, deviceId={}", alarmType, deviceId);
+            return;
         }
         
         // 报警防抖检查：同一设备同一类型报警在防抖间隔内只处理一次（原子化，避免竞态）
