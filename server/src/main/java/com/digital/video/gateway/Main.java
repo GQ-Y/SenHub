@@ -49,7 +49,6 @@ import com.digital.video.gateway.workflow.handlers.SpeakerPlayHandler;
 import com.digital.video.gateway.workflow.handlers.WebhookHandler;
 import com.digital.video.gateway.workflow.handlers.RecordHandler;
 import com.digital.video.gateway.workflow.handlers.PTZControlHandler;
-import com.digital.video.gateway.Common.LogCleaner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.javalin.Javalin;
@@ -157,10 +156,6 @@ public class Main {
         logger.info("启动综合性数字视频监控网关预警系统...");
 
         try {
-            // 0. 清理旧日志（在logback初始化之前清理，避免删除正在使用的日志文件）
-            // 注意：logback在类加载时就会初始化，所以这里只清理旧的滚动日志文件
-            int cleanedCount = LogCleaner.cleanAllLogs("./logs", "./sdkLog");
-
             // 1. 加载配置（优先使用外部 ./config/config.yaml，便于部署时修改 zlm 等配置）
             java.io.File externalConfig = new java.io.File("./config/config.yaml");
             if (externalConfig.exists()) {
@@ -173,29 +168,6 @@ public class Main {
                 System.exit(1);
             }
             logger.info("配置文件加载成功");
-
-            // 1.5. 如果配置中的日志路径与默认路径不同，也清理配置中的路径
-            if (config.getLog() != null && config.getSdk() != null) {
-                String logFile = config.getLog().getFile();
-                if (logFile != null) {
-                    java.io.File logFileObj = new java.io.File(logFile);
-                    String logDir = logFileObj.getParent();
-                    if (logDir != null && !logDir.equals("./logs") && !logDir.equals("logs")) {
-                        int additionalCleaned = LogCleaner.cleanLogDirectory(logDir);
-                        cleanedCount += additionalCleaned;
-                    }
-                }
-
-                String sdkLogDir = config.getSdk().getLogPath();
-                if (sdkLogDir != null && !sdkLogDir.equals("./sdkLog") && !sdkLogDir.equals("sdkLog")) {
-                    int additionalCleaned = LogCleaner.cleanSdkLogDirectory(sdkLogDir);
-                    cleanedCount += additionalCleaned;
-                }
-            }
-
-            if (cleanedCount > 0) {
-                logger.info("已清理 {} 个旧日志文件", cleanedCount);
-            }
 
             // 2. 初始化多品牌SDK工厂
             SDKFactory.init(config);

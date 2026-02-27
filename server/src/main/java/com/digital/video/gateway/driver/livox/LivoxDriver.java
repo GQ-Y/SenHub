@@ -103,7 +103,7 @@ public class LivoxDriver {
                 return;
             }
 
-            // 3. 设置点云回调
+            // 4. 设置点云回调
             if (jniCallback != null) {
                 LivoxJNI.setPointCloudCallback(jniCallback);
             } else if (legacyCallback != null) {
@@ -112,7 +112,7 @@ public class LivoxDriver {
                 LivoxJNI.setPointCloudCallback(jniCallback);
             }
 
-            // 4. 启动 SDK
+            // 5. 启动 SDK
             try {
                 log.debug("准备启动 Livox SDK");
                 boolean startResult = LivoxJNI.start();

@@ -588,7 +588,9 @@ public class RecordingTaskService {
                 return current;
             }
             
-            logger.debug("录像下载中: taskId={}, progress={}", taskId, current.getProgress());
+            long elapsed = (System.currentTimeMillis() - startTimeMs) / 1000;
+            logger.info("录像下载中: taskId={}, status={}, progress={}%, 已等待{}秒/{}秒",
+                    taskId, current.getStatus(), current.getProgress(), elapsed, timeoutSeconds);
         }
         
         logger.warn("同步录像下载超时: taskId={}, 已等待{}秒", taskId, timeoutSeconds);

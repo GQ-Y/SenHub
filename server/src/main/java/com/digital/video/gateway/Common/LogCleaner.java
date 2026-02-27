@@ -118,4 +118,44 @@ public class LogCleaner {
         totalCleaned += cleanSdkLogDirectory(sdkLogDir);
         return totalCleaned;
     }
+
+    /**
+     * 启动时清理：删除目录下所有日志文件（含 app.log、sdk.log），
+     * 下次写入时由 logback 重新创建，实现每次重启从空日志开始。
+     */
+    public static int cleanLogDirectoryIncludingCurrent(String logDir) {
+        int cleanedCount = 0;
+        try {
+            Path logPath = Paths.get(logDir);
+            if (!Files.exists(logPath) || !Files.isDirectory(logPath)) {
+                logger.debug("日志目录不存在，跳过清理: {}", logDir);
+                return 0;
+            }
+            try (Stream<Path> paths = Files.list(logPath)) {
+                cleanedCount = (int) paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.endsWith(".log") || name.endsWith(".log.gz") || name.endsWith(".log.zip");
+                    })
+                    .mapToInt(path -> {
+                        try {
+                            Files.delete(path);
+                            logger.debug("已删除日志文件: {}", path);
+                            return 1;
+                        } catch (IOException e) {
+                            logger.warn("删除日志文件失败: {}, 错误: {}", path, e.getMessage());
+                            return 0;
+                        }
+                    })
+                    .sum();
+            }
+            if (cleanedCount > 0) {
+                logger.info("启动清理日志目录（含 app.log/sdk.log）: {} 个文件，目录: {}", cleanedCount, logDir);
+            }
+        } catch (Exception e) {
+            logger.error("清理日志目录失败: {}, 错误: {}", logDir, e.getMessage());
+        }
+        return cleanedCount;
+    }
 }

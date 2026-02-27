@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  * 
  * 功能：
  * 1. 以报警时间为中心，取前后N秒的录像
- * 2. 延迟执行：先等待 afterSeconds 秒再下载，否则“后段”录像尚未录完，下载不完整
+ * 2. 延迟执行：先等待 afterSeconds 秒再下载，否则"后段"录像尚未录完，下载不完整
  * 3. 前后两段分别下载后合并为一个视频，再上传 OSS
  * 4. 时间范围：[报警时间 - beforeSeconds, 报警时间 + afterSeconds]
  * 5. 针对海康设备自动进行ffmpeg转码（海康IPC下载的是私有PS流格式）
@@ -95,28 +95,41 @@ public class RecordHandler implements FlowNodeHandler {
             }
         }
 
-        final long alarmTime = System.currentTimeMillis();
+        // 优先使用 context 中的原始报警时间戳（由 AlarmService 设置），
+        // 避免因 AI 核验等前置节点耗时导致时间偏移
+        long alarmTime = System.currentTimeMillis();
+        Object alarmTs = context.getVariables().get("alarmTimestamp");
+        if (alarmTs instanceof Number) {
+            alarmTime = ((Number) alarmTs).longValue();
+            logger.info("使用原始报警时间戳: {}ms (当前偏移: {}ms)", alarmTime, System.currentTimeMillis() - alarmTime);
+        }
+        final long finalAlarmTime = alarmTime;
         final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        final String alarmTimeStr = sdf.format(new Date(alarmTime));
-        final String startTime = sdf.format(new Date(alarmTime - beforeSeconds * 1000));
-        final String endTime = sdf.format(new Date(alarmTime + afterSeconds * 1000));
-        final String midTime = alarmTimeStr;  // 报警时刻，用于前后分段
+        final String alarmTimeStr = sdf.format(new Date(finalAlarmTime));
+        final String startTime = sdf.format(new Date(finalAlarmTime - beforeSeconds * 1000));
+        final String endTime = sdf.format(new Date(finalAlarmTime + afterSeconds * 1000));
+        final String midTime = alarmTimeStr;
         
         final String deviceId = context.getDeviceId();
-        // 后多少秒就必须先等待多少秒再下载，否则“后段”录像未录完，下载不完整
-        final long delaySeconds = afterSeconds + 1;
+        // 需等到 alarmTime + afterSeconds + 1s 之后再下载，确保后段录制完成
+        long targetReadyTime = finalAlarmTime + (afterSeconds + 1) * 1000;
+        long remainingMs = targetReadyTime - System.currentTimeMillis();
+        final long delaySeconds = Math.max(remainingMs / 1000, 0);
         
-        logger.info("录像下载节点开始: deviceId={}, channel={}, 报警时间={}, 时间范围=[{} ~ {}], 先延迟{}秒等待后段录制完成",
+        logger.info("录像下载节点开始: deviceId={}, channel={}, 报警时间={}, 时间范围=[{} ~ {}], 还需等待{}秒",
                 deviceId, channel, alarmTimeStr, startTime, endTime, delaySeconds);
         
-        // 1. 先延迟等待，确保“后段”录像已录制完成
-        try {
-            logger.info("等待{}秒（后段{}秒），再开始下载...", delaySeconds, afterSeconds);
-            Thread.sleep(delaySeconds * 1000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("录像延迟等待被中断");
-            return false;
+        if (remainingMs > 0) {
+            try {
+                logger.info("等待{}秒，确保后段录像录制完成...", delaySeconds);
+                Thread.sleep(remainingMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warn("录像延迟等待被中断");
+                return false;
+            }
+        } else {
+            logger.info("后段录像已录制完成（已过目标时间{}ms），直接开始下载", -remainingMs);
         }
         
         String localPath;

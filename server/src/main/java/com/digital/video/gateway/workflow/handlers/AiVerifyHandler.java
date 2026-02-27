@@ -173,6 +173,7 @@ public class AiVerifyHandler implements FlowNodeHandler {
 
         boolean match = true;
         String reason = SKIP_REASON;
+        boolean gotResult = false;
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -181,6 +182,7 @@ public class AiVerifyHandler implements FlowNodeHandler {
                 if (result != null) {
                     match = result.match;
                     reason = result.reason != null ? result.reason : "";
+                    gotResult = true;
                     logger.info("ai_verify 核验结果: match={}, reason={}", match, reason);
                     break;
                 } else {
@@ -193,6 +195,11 @@ public class AiVerifyHandler implements FlowNodeHandler {
             if (attempt < MAX_RETRIES) {
                 try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             }
+        }
+
+        if (!gotResult) {
+            logger.info("ai_verify 所有 {} 次重试均失败，AI服务不可用，默认放行以确保报警上报", MAX_RETRIES);
+            reason = "AI服务不可用，默认放行";
         }
 
         context.putVariable("_last_node_branch", match ? "true" : "false");

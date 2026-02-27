@@ -36,6 +36,10 @@ public class AlarmService {
     private final ConcurrentHashMap<String, Long> lastAlarmTime = new ConcurrentHashMap<>();
     // 报警防抖间隔（毫秒）- 同一设备同一报警类型在此时间内只处理一次，可配置
     private long alarmDebounceIntervalMs = 5000; // 默认5秒
+
+    // 同一设备同一事件类型的报警日志节流：10 分钟内只打一次，避免频繁报警刷屏
+    private static final long ALARM_LOG_THROTTLE_MS = 10 * 60 * 1000L;
+    private final ConcurrentHashMap<String, Long> lastAlarmLogTime = new ConcurrentHashMap<>();
     
     private final DeviceManager deviceManager;
     private final CaptureService captureService;
@@ -197,8 +201,7 @@ public class AlarmService {
                         category = result.getCategory();
                         alarmTypeDisplay = eventNameZh + "(" + alarmType + ")";
                         alarmTypeName = eventNameZh;
-                        logger.info("事件解析成功: alarmType={}, eventKey={}, eventNameZh={}", 
-                                alarmType, eventKey, eventNameZh);
+                        // 日志在下方统一按节流间隔输出（同一设备同一类型 10 分钟一次）
                     } else {
                         logger.info("事件为通用报警类型，需SDK细解析: alarmType={}, eventKey={}", alarmType, result.getEventKey());
                     }
@@ -252,11 +255,21 @@ public class AlarmService {
             logger.info("通用报警类型，等待SDK细解析具体事件: alarmType={}, deviceId={}", alarmType, deviceId);
             return;
         }
+
+        // 同一设备同一事件类型：报警相关日志 10 分钟内只打一次，降低频繁报警刷屏
+        String logKey = deviceId + ":" + (eventKey != null ? eventKey : alarmType);
+        long now = System.currentTimeMillis();
+        boolean suppressAlarmLog = (now - lastAlarmLogTime.getOrDefault(logKey, 0L)) < ALARM_LOG_THROTTLE_MS;
+        if (!suppressAlarmLog) {
+            lastAlarmLogTime.put(logKey, now);
+            if (eventKey != null && eventNameZh != null) {
+                logger.info("事件解析成功: alarmType={}, eventKey={}, eventNameZh={}", alarmType, eventKey, eventNameZh);
+            }
+        }
         
         // 报警防抖检查：同一设备同一类型报警在防抖间隔内只处理一次（原子化，避免竞态）
         // 使用 eventKey（如果可用）作为防抖 key，确保相同标准事件不会重复触发
         String debounceKey = deviceId + ":" + (eventKey != null ? eventKey : alarmType);
-        long now = System.currentTimeMillis();
         Long previousTime = lastAlarmTime.compute(debounceKey, (k, lastTime) -> {
             if (lastTime != null && (now - lastTime) < alarmDebounceIntervalMs) {
                 return lastTime; // 仍在防抖期内，保留原值，不更新
@@ -268,10 +281,12 @@ public class AlarmService {
         if (!shouldProcess) {
             return;
         }
-        
-        logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, eventKey={}, message={}", 
-            deviceId, channel, alarmTypeDisplay, eventKey, alarmMessage);
-        
+
+        if (!suppressAlarmLog) {
+            logger.info("收到报警信号: deviceId={}, channel={}, alarmType={}, eventKey={}, message={}",
+                deviceId, channel, alarmTypeDisplay, eventKey, alarmMessage);
+        }
+
         // 工作流执行提交到专用线程池，避免阻塞 SDK 回调线程
         final String fDeviceId = deviceId;
         final int fChannel = channel;
@@ -284,16 +299,18 @@ public class AlarmService {
         final String fCategory = category;
         final String fAlarmTypeDisplay = alarmTypeDisplay;
         final String fAlarmTypeName = alarmTypeName;
+        final boolean fSuppressAlarmLog = suppressAlarmLog;
         alarmWorkflowExecutor.submit(() -> runAlarmWorkflow(fDeviceId, fChannel, fAlarmType, fAlarmMessage, fAlarmData,
-                fEventKey, fEventNameZh, fEventNameEn, fCategory, fAlarmTypeDisplay, fAlarmTypeName));
+                fEventKey, fEventNameZh, fEventNameEn, fCategory, fAlarmTypeDisplay, fAlarmTypeName, fSuppressAlarmLog));
     }
     
     /**
      * 在报警工作流线程池中执行：获取设备、匹配规则、执行工作流、写报警记录（不阻塞 SDK 回调）
+     * @param suppressAlarmLog 为 true 时跳过报警相关 INFO 日志（同一设备同一类型 10 分钟节流）
      */
     private void runAlarmWorkflow(String deviceId, int channel, String alarmType, String alarmMessage,
             Map<String, Object> alarmData, String eventKey, String eventNameZh, String eventNameEn, String category,
-            String alarmTypeDisplay, String alarmTypeName) {
+            String alarmTypeDisplay, String alarmTypeName, boolean suppressAlarmLog) {
         try {
             // 获取设备信息
             DeviceInfo device = deviceManager.getDevice(deviceId);
@@ -333,8 +350,10 @@ public class AlarmService {
             if (alarmRuleService != null) {
                 String matchKey = eventKey != null ? eventKey : alarmType;
                 matchedRules = alarmRuleService.matchRules(deviceId, assemblyId, matchKey, alarmData, alarmTypeDisplay);
-                logger.info("匹配到 {} 条规则: deviceId={}, eventKey={}, alarmType={}", 
-                        matchedRules.size(), deviceId, eventKey, alarmTypeDisplay);
+                if (!suppressAlarmLog) {
+                    logger.info("匹配到 {} 条规则: deviceId={}, eventKey={}, alarmType={}",
+                            matchedRules.size(), deviceId, eventKey, alarmTypeDisplay);
+                }
             }
             
             AlarmRecord alarmRecord = new AlarmRecord();
@@ -362,12 +381,16 @@ public class AlarmService {
                 baseContext.putVariable("eventNameEn", eventNameEn);
                 baseContext.putVariable("category", category);
                 baseContext.putVariable("originalAlarmType", alarmType);
-                logger.info("已设置标准事件信息到context: eventKey={}, eventNameZh={}, originalAlarmType={}", 
-                        eventKey, eventNameZh, alarmType);
+                if (!suppressAlarmLog) {
+                    logger.info("已设置标准事件信息到context: eventKey={}, eventNameZh={}, originalAlarmType={}",
+                            eventKey, eventNameZh, alarmType);
+                }
             }
             if (alarmTypeName != null) {
                 baseContext.putVariable("alarmTypeName", alarmTypeName);
-                logger.info("已设置alarmTypeName到context: {} (原始: {})", alarmTypeName, alarmType);
+                if (!suppressAlarmLog) {
+                    logger.info("已设置alarmTypeName到context: {} (原始: {})", alarmTypeName, alarmType);
+                }
             }
             
             Set<String> executedFlows = new HashSet<>();
@@ -396,10 +419,11 @@ public class AlarmService {
                     }
                 }
             } else {
-                logger.info("无匹配规则，跳过工作流执行: deviceId={}, alarmType={}", deviceId, alarmTypeDisplay);
-                // 明确区分：事件库已有该事件（解析成功即表示在库），只是未配置报警规则
-                logger.info("事件已在事件库中，但未匹配到任何报警规则（可在规则管理中为该事件添加规则）: eventKey={}, alarmType={}, deviceId={}, assemblyId={}",
-                        eventKey != null ? eventKey : alarmType, alarmTypeDisplay, deviceId, assemblyId);
+                if (!suppressAlarmLog) {
+                    logger.info("无匹配规则，跳过工作流执行: deviceId={}, alarmType={}", deviceId, alarmTypeDisplay);
+                    logger.info("事件已在事件库中，但未匹配到任何报警规则（可在规则管理中为该事件添加规则）: eventKey={}, alarmType={}, deviceId={}, assemblyId={}",
+                            eventKey != null ? eventKey : alarmType, alarmTypeDisplay, deviceId, assemblyId);
+                }
                 // 无规则时也记录原始报警样本到 event_raw_payload，便于后续在事件库中查看
                 if (eventKey != null && alarmData != null && database != null) {
                     try (Connection conn = database.getConnection()) {
@@ -475,6 +499,9 @@ public class AlarmService {
         context.setDeviceId(deviceId);
         context.setAssemblyId(assemblyId);
         context.setAlarmType(alarmType);
+        
+        // 记录原始报警时间戳，供 RecordHandler 等节点使用（避免用 System.currentTimeMillis() 导致时间偏移）
+        context.putVariable("alarmTimestamp", System.currentTimeMillis());
         
         // 将 alarmType 也放入 variables，供工作流节点使用
         if (alarmType != null) {
