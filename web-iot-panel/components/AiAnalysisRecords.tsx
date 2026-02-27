@@ -6,8 +6,18 @@ import { fetchWithAuthAsBlobUrl, appendTokenToStaticUrl } from '../src/api/clien
 import {
   Brain, Image as ImageIcon, Volume2, VolumeX, RefreshCw,
   Clock, ShieldCheck, ShieldX, Shield, AlertTriangle,
-  Megaphone, X, ZoomIn, ChevronLeft, ChevronRight
+  Megaphone, X, ZoomIn, ChevronLeft, ChevronRight, Trash2, Search
 } from 'lucide-react';
+
+const PAGE_SIZE_OPTIONS = [20, 50, 100];
+const EVENT_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '全部类型' },
+  { value: 'LOITERING', label: '徘徊检测' },
+  { value: 'PERIMETER_INTRUSION', label: '周界入侵' },
+  { value: 'MOTION_DETECTION', label: '移动侦测' },
+  { value: 'CROSS_LINE_DETECTION', label: '越线检测' },
+  { value: 'OTHER', label: '其他' },
+];
 
 /** 带鉴权的图片：/api/static/ 用 query token 直链，其它 /api 用 fetch+blob */
 const AuthImage: React.FC<{ url: string; alt: string; className?: string; loading?: 'lazy' | 'eager' }> = ({ url, alt, className, loading }) => {
@@ -46,27 +56,97 @@ const AuthImage: React.FC<{ url: string; alt: string; className?: string; loadin
 export const AiAnalysisRecords: React.FC = () => {
   const { t } = useAppContext();
   const [records, setRecords] = useState<AiAnalysisRecord[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [eventType, setEventType] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const loadRecords = async () => {
+  const loadRecords = useCallback(async (opts?: { page?: number }) => {
     setLoading(true);
     setError(null);
+    const p = opts?.page ?? page;
     try {
-      const res = await aiAnalysisService.getRecords({ limit: 100 });
+      const params: { limit: number; offset: number; eventType?: string; startTime?: string; endTime?: string } = {
+        limit: pageSize,
+        offset: (p - 1) * pageSize,
+      };
+      if (eventType) params.eventType = eventType;
+      if (startTime) params.startTime = startTime.trim().replace('T', ' ') || undefined;
+      if (endTime) params.endTime = endTime.trim().replace('T', ' ') || undefined;
+      const res = await aiAnalysisService.getRecords(params);
       setRecords(res.data || []);
+      setTotal(res.total ?? 0);
+      if (opts?.page != null) setPage(opts.page);
     } catch (e: any) {
       setRecords([]);
+      setTotal(0);
       setError(e?.message || '加载失败');
     } finally {
       setLoading(false);
     }
+  }, [page, pageSize, eventType, startTime, endTime]);
+
+  useEffect(() => { loadRecords(); }, [loadRecords]);
+
+  const handleQuery = () => {
+    setPage(1);
+    loadRecords({ page: 1 });
   };
 
-  useEffect(() => { loadRecords(); }, []);
+  const handleDeleteOne = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await aiAnalysisService.deleteRecord(id);
+      setSelectedIds((s) => { const n = new Set(s); n.delete(id); return n; });
+      await loadRecords();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0 || deleting) return;
+    setDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      await aiAnalysisService.deleteRecords(ids);
+      setSelectedIds(new Set());
+      await loadRecords();
+    } catch (err: any) {
+      setError(err?.message || '批量删除失败');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === records.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(records.map((r) => r.id)));
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const playVoice = async (id: string, url: string) => {
     if (!url) return;
@@ -138,11 +218,11 @@ export const AiAnalysisRecords: React.FC = () => {
           </div>
           <div>
             <h2 className="text-lg font-bold text-gray-800">{t('ai_analysis_records')}</h2>
-            <p className="text-xs text-gray-400">{records.length > 0 ? `${records.length} 条记录` : ''}</p>
+            <p className="text-xs text-gray-400">共 {total} 条记录</p>
           </div>
         </div>
         <button
-          onClick={loadRecords}
+          onClick={() => loadRecords()}
           disabled={loading}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-gray-600 text-sm font-medium hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 transition-all active:scale-95"
         >
@@ -150,6 +230,80 @@ export const AiAnalysisRecords: React.FC = () => {
           {t('refresh')}
         </button>
       </div>
+
+      {/* 筛选 */}
+      <div className="mb-4 p-4 rounded-xl border border-gray-100 bg-white flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">事件类型</label>
+          <select
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value)}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm min-w-[140px]"
+          >
+            {EVENT_TYPE_OPTIONS.map((o) => (
+              <option key={o.value || 'all'} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">开始时间</label>
+          <input
+            type="datetime-local"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">结束时间</label>
+          <input
+            type="datetime-local"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+          />
+        </div>
+        <button
+          onClick={handleQuery}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+        >
+          <Search size={14} />
+          查询
+        </button>
+      </div>
+
+      {/* 批量删除栏 */}
+      {selectedIds.size > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
+          <span className="text-sm text-amber-800">已选 {selectedIds.size} 条</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              className="text-sm text-amber-700 hover:underline"
+            >
+              {selectedIds.size === records.length ? '取消全选' : '全选当页'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-sm text-amber-700 hover:underline"
+            >
+              取消选择
+            </button>
+            <button
+              type="button"
+              onClick={handleBatchDelete}
+              disabled={deleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+              批量删除
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-xl bg-red-50 border border-red-100 text-red-600 px-4 py-3 text-sm flex items-center gap-2">
@@ -176,11 +330,34 @@ export const AiAnalysisRecords: React.FC = () => {
           {records.map((r, idx) => (
             <div
               key={r.id}
-              className="group rounded-2xl border border-gray-100 bg-white overflow-hidden hover:shadow-lg hover:border-gray-200 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+              className={`group relative rounded-2xl border bg-white overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer ${
+                selectedIds.has(r.id) ? 'border-blue-400 ring-2 ring-blue-200' : 'border-gray-100 hover:border-gray-200'
+              }`}
               onClick={() => openLightbox(idx)}
             >
               {/* 图片为主 */}
               <div className="aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
+                {/* 左上角复选框 */}
+                <div className="absolute top-2 left-2 z-10" onClick={(e) => toggleSelect(r.id, e)}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(r.id)}
+                    onChange={() => {}}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 bg-white/90"
+                  />
+                </div>
+                {/* 右上角删除（在核验角标左侧） */}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteOne(r.id, e)}
+                    disabled={deleting}
+                    className="p-1.5 rounded-lg bg-black/40 hover:bg-red-500/90 text-white transition-colors disabled:opacity-50"
+                    title="删除"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
                 {r.imageUrl ? (
                   <AuthImage
                     url={r.imageUrl}
@@ -193,8 +370,8 @@ export const AiAnalysisRecords: React.FC = () => {
                     <ImageIcon size={36} strokeWidth={1.5} />
                   </div>
                 )}
-                {/* 核验结果角标 */}
-                <span className={`absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm backdrop-blur-sm ${verifyBadgeClass(r)}`}>
+                {/* 核验结果角标（在删除按钮左侧） */}
+                <span className={`absolute top-2 right-12 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm backdrop-blur-sm ${verifyBadgeClass(r)}`}>
                   <VerifyIcon result={r.verifyResult} />
                   {verifyLabel(r)}
                 </span>
@@ -231,6 +408,46 @@ export const AiAnalysisRecords: React.FC = () => {
         </div>
       )}
 
+      {/* 分页 */}
+      {!loading && total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">每页</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n} 条</option>
+              ))}
+            </select>
+            <span className="text-sm text-gray-500">共 {total} 条</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm disabled:opacity-50 hover:bg-gray-50"
+            >
+              上一页
+            </button>
+            <span className="text-sm text-gray-600">
+              {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm disabled:opacity-50 hover:bg-gray-50"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 全屏 Lightbox */}
       {current && createPortal(
         <div className="fixed inset-0 z-[300] flex" onClick={closeLightbox}>
@@ -258,6 +475,17 @@ export const AiAnalysisRecords: React.FC = () => {
           >
             <X size={20} />
           </button>
+          {/* 删除当前记录（详情栏内） */}
+          {current && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDeleteOne(current.id, e); closeLightbox(); }}
+              disabled={deleting}
+              className="absolute top-4 right-[340px] z-20 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-500/90 hover:bg-red-600 text-white text-sm font-medium disabled:opacity-50"
+            >
+              <Trash2 size={16} />
+              删除
+            </button>
+          )}
 
           {/* 图片区（左侧） */}
           <div

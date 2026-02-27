@@ -2,7 +2,11 @@ package com.digital.video.gateway.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.AlarmRecord;
+import com.digital.video.gateway.database.Assembly;
+import com.digital.video.gateway.database.DeviceInfo;
+import com.digital.video.gateway.device.DeviceManager;
 import com.digital.video.gateway.service.AlarmRecordService;
+import com.digital.video.gateway.service.AssemblyService;
 import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,14 +18,52 @@ import java.util.stream.Collectors;
 
 /**
  * 报警记录控制器
+ * 返回报警记录时关联摄像头（设备）信息、装置信息、位置信息，便于前端展示“谁触发的报警、在哪”。
  */
 public class AlarmRecordController {
     private static final Logger logger = LoggerFactory.getLogger(AlarmRecordController.class);
     private final AlarmRecordService alarmRecordService;
+    private final DeviceManager deviceManager;
+    private final AssemblyService assemblyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AlarmRecordController(AlarmRecordService alarmRecordService) {
         this.alarmRecordService = alarmRecordService;
+        this.deviceManager = null;
+        this.assemblyService = null;
+    }
+
+    public AlarmRecordController(AlarmRecordService alarmRecordService, DeviceManager deviceManager, AssemblyService assemblyService) {
+        this.alarmRecordService = alarmRecordService;
+        this.deviceManager = deviceManager;
+        this.assemblyService = assemblyService;
+    }
+
+    /**
+     * 为单条报警记录附加设备名、装置名、位置信息
+     */
+    private Map<String, Object> enrichRecord(AlarmRecord record) {
+        Map<String, Object> map = record.toMap();
+        if (deviceManager != null && record.getDeviceId() != null) {
+            DeviceInfo device = deviceManager.getDevice(record.getDeviceId());
+            if (device != null) {
+                map.put("deviceName", device.getName());
+                map.put("deviceIp", device.getIp());
+                map.put("deviceBrand", device.getBrand());
+            }
+        }
+        if (assemblyService != null && record.getAssemblyId() != null) {
+            Assembly assembly = assemblyService.getAssembly(record.getAssemblyId());
+            if (assembly != null) {
+                map.put("assemblyName", assembly.getName());
+                Map<String, Object> position = new HashMap<>();
+                position.put("location", assembly.getLocation());
+                if (assembly.getLongitude() != null) position.put("longitude", assembly.getLongitude());
+                if (assembly.getLatitude() != null) position.put("latitude", assembly.getLatitude());
+                map.put("position", position);
+            }
+        }
+        return map;
     }
 
     public void getAlarmRecords(Context ctx) {
@@ -35,7 +77,7 @@ public class AlarmRecordController {
             Integer limit = limitStr != null ? Integer.parseInt(limitStr) : null;
 
             List<AlarmRecord> records = alarmRecordService.getAlarmRecords(deviceId, assemblyId, alarmType, startTime, endTime, limit);
-            List<Map<String, Object>> result = records.stream().map(AlarmRecord::toMap).collect(Collectors.toList());
+            List<Map<String, Object>> result = records.stream().map(this::enrichRecord).collect(Collectors.toList());
 
             ctx.status(200);
             ctx.result(createSuccessResponse(result));
@@ -56,7 +98,7 @@ public class AlarmRecordController {
                 return;
             }
             ctx.status(200);
-            ctx.result(createSuccessResponse(record.toMap()));
+            ctx.result(createSuccessResponse(enrichRecord(record)));
         } catch (Exception e) {
             logger.error("获取报警记录详情失败", e);
             ctx.status(500);

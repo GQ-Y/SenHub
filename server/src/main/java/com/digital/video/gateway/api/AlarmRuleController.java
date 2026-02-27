@@ -7,6 +7,8 @@ import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +39,7 @@ public class AlarmRuleController {
             
             List<AlarmRule> rules = alarmRuleService.getAlarmRules(deviceId, assemblyId, alarmType, enabled);
             List<Map<String, Object>> result = rules.stream()
-                .map(AlarmRule::toMap)
+                .map(this::ruleToResponseMap)
                 .collect(java.util.stream.Collectors.toList());
             
             ctx.status(200);
@@ -63,7 +65,7 @@ public class AlarmRuleController {
                 return;
             }
             ctx.status(200);
-            ctx.result(createSuccessResponse(rule.toMap()));
+            ctx.result(createSuccessResponse(ruleToResponseMap(rule)));
         } catch (Exception e) {
             logger.error("获取规则详情失败", e);
             ctx.status(500);
@@ -108,7 +110,7 @@ public class AlarmRuleController {
                 return;
             }
             ctx.status(201);
-            ctx.result(createSuccessResponse(created.toMap()));
+            ctx.result(createSuccessResponse(ruleToResponseMap(created)));
         } catch (Exception e) {
             logger.error("创建规则失败", e);
             ctx.status(500);
@@ -133,12 +135,12 @@ public class AlarmRuleController {
             rule.setEnabled(body.get("enabled") != null ? (Boolean) body.get("enabled") : true);
             rule.setPriority(body.get("priority") != null ? ((Number) body.get("priority")).intValue() : 0);
             rule.setFlowId((String) body.get("flowId"));
-            // 处理 eventKeys（标准事件键列表，JSON数组，优先使用）
+            // 仅当 eventKeys 为数组时写入，避免把前端回传的字符串再次写入导致双重编码；有 eventTypeIds 时由 service 层根据 eventTypeIds 重算 eventKeys
             Object eventKeys = body.get("eventKeys");
-            if (eventKeys != null) {
+            if (eventKeys instanceof List) {
                 rule.setEventKeys(objectMapper.writeValueAsString(eventKeys));
             }
-            // 兼容：处理 eventTypeIds（JSON数组，保留用于兼容旧规则）
+            // 兼容：处理 eventTypeIds（JSON数组）
             Object eventTypeIds = body.get("eventTypeIds");
             if (eventTypeIds != null) {
                 rule.setEventTypeIds(objectMapper.writeValueAsString(eventTypeIds));
@@ -154,7 +156,7 @@ public class AlarmRuleController {
                 return;
             }
             ctx.status(200);
-            ctx.result(createSuccessResponse(updated.toMap()));
+            ctx.result(createSuccessResponse(ruleToResponseMap(updated)));
         } catch (Exception e) {
             logger.error("更新规则失败", e);
             ctx.status(500);
@@ -201,7 +203,7 @@ public class AlarmRuleController {
                 return;
             }
             ctx.status(200);
-            ctx.result(createSuccessResponse(rule.toMap()));
+            ctx.result(createSuccessResponse(ruleToResponseMap(rule)));
         } catch (Exception e) {
             logger.error("切换规则状态失败", e);
             ctx.status(500);
@@ -218,7 +220,7 @@ public class AlarmRuleController {
             String deviceId = ctx.pathParam("deviceId");
             List<AlarmRule> rules = alarmRuleService.getDeviceRules(deviceId);
             List<Map<String, Object>> result = rules.stream()
-                .map(AlarmRule::toMap)
+                .map(this::ruleToResponseMap)
                 .collect(java.util.stream.Collectors.toList());
             
             ctx.status(200);
@@ -239,7 +241,7 @@ public class AlarmRuleController {
             String assemblyId = ctx.pathParam("assemblyId");
             List<AlarmRule> rules = alarmRuleService.getAssemblyRules(assemblyId);
             List<Map<String, Object>> result = rules.stream()
-                .map(AlarmRule::toMap)
+                .map(this::ruleToResponseMap)
                 .collect(java.util.stream.Collectors.toList());
             
             ctx.status(200);
@@ -249,6 +251,47 @@ public class AlarmRuleController {
             ctx.status(500);
             ctx.result(createErrorResponse(500, "获取装置规则列表失败: " + e.getMessage()));
         }
+    }
+
+    /**
+     * 将规则转为 API 响应 Map，对 eventKeys/eventTypeIds/conditions/actions 做 JSON 解析，
+     * 返回数组/对象而非原始字符串，避免前端回传时发生双重编码。
+     */
+    private Map<String, Object> ruleToResponseMap(AlarmRule rule) {
+        Map<String, Object> map = rule.toMap();
+        try {
+            if (rule.getEventKeys() != null && !rule.getEventKeys().isEmpty()) {
+                Object parsed = objectMapper.readValue(rule.getEventKeys(), Object.class);
+                if (parsed instanceof String) {
+                    parsed = objectMapper.readValue((String) parsed, new TypeReference<List<String>>() {});
+                }
+                map.put("eventKeys", parsed);
+            }
+            if (rule.getEventTypeIds() != null && !rule.getEventTypeIds().isEmpty()) {
+                map.put("eventTypeIds", objectMapper.readValue(rule.getEventTypeIds(), new TypeReference<List<Integer>>() {}));
+            }
+            if (rule.getConditions() != null && !rule.getConditions().isEmpty()) {
+                String c = rule.getConditions();
+                while (c != null && c.startsWith("\"") && c.endsWith("\"")) {
+                    try {
+                        c = objectMapper.readValue(c, String.class);
+                    } catch (Exception e) { break; }
+                }
+                map.put("conditions", objectMapper.readValue(c, new TypeReference<Map<String, Object>>() {}));
+            }
+            if (rule.getActions() != null && !rule.getActions().isEmpty()) {
+                String a = rule.getActions();
+                while (a != null && a.startsWith("\"") && a.endsWith("\"")) {
+                    try {
+                        a = objectMapper.readValue(a, String.class);
+                    } catch (Exception e) { break; }
+                }
+                map.put("actions", objectMapper.readValue(a, new TypeReference<Map<String, Object>>() {}));
+            }
+        } catch (Exception e) {
+            logger.debug("解析规则 JSON 字段失败: ruleId={}", rule.getRuleId(), e);
+        }
+        return map;
     }
 
     private String createSuccessResponse(Object data) {

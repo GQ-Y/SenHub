@@ -70,17 +70,68 @@ public class AiAnalysisService {
     }
 
     /**
-     * 查询记录列表（按时间倒序）。
+     * 查询记录列表（分页 + 事件类型 + 时间范围筛选）。
+     * @param eventType 事件类型，如 LOITERING、PERIMETER_INTRUSION；null 表示不过滤
+     * @param startTime 开始时间（含）；null 表示不限制
+     * @param endTime   结束时间（含）；null 表示不限制
+     * @return [list, totalCount]
      */
-    public List<Map<String, Object>> getRecords(int limit, int offset) {
+    public List<Map<String, Object>> getRecords(int limit, int offset, String eventType, String startTime, String endTime) {
         try {
             Connection conn = database.getConnection();
             synchronized (conn) {
-                return AiAnalysisRecordTable.list(conn, limit, offset);
+                return AiAnalysisRecordTable.list(conn, limit, offset, eventType, startTime, endTime);
             }
         } catch (Exception e) {
             logger.error("查询AI分析记录失败", e);
             return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 统计符合条件的记录总数
+     */
+    public int countRecords(String eventType, String startTime, String endTime) {
+        try {
+            Connection conn = database.getConnection();
+            synchronized (conn) {
+                return AiAnalysisRecordTable.count(conn, eventType, startTime, endTime);
+            }
+        } catch (Exception e) {
+            logger.error("统计AI分析记录失败", e);
+            return 0;
+        }
+    }
+
+    /**
+     * 删除单条记录
+     */
+    public boolean deleteRecord(String id) {
+        if (id == null || id.isEmpty()) return false;
+        try {
+            Connection conn = database.getConnection();
+            synchronized (conn) {
+                return AiAnalysisRecordTable.delete(conn, id);
+            }
+        } catch (Exception e) {
+            logger.error("删除AI分析记录失败: id={}", id, e);
+            return false;
+        }
+    }
+
+    /**
+     * 批量删除，返回实际删除条数
+     */
+    public int deleteRecords(List<String> ids) {
+        if (ids == null || ids.isEmpty()) return 0;
+        try {
+            Connection conn = database.getConnection();
+            synchronized (conn) {
+                return AiAnalysisRecordTable.deleteByIds(conn, ids);
+            }
+        } catch (Exception e) {
+            logger.error("批量删除AI分析记录失败", e);
+            return 0;
         }
     }
 }

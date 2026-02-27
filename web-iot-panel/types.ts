@@ -245,9 +245,13 @@ export interface AlarmRecord {
   speakerTriggered?: boolean;
   recordedAt: string;
   processedAt?: string;
-  // 显示用的关联信息
+  // 显示用的关联信息（接口关联返回）
   deviceName?: string;
+  deviceIp?: string;
+  deviceBrand?: string;
   assemblyName?: string;
+  /** 位置信息：装置或设备所在位置，含 location 文本及 longitude/latitude */
+  position?: { location?: string; longitude?: number; latitude?: number };
 }
 
 // 流程定义

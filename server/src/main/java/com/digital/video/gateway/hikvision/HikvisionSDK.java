@@ -774,6 +774,18 @@ public class HikvisionSDK implements DeviceSDK {
                 
                 if (isAlarmCommand && deviceIP != null) {
                     int channel = 1; // 默认通道1
+                    String alarmType;
+                    // COMM_ALARM_V30/COMM_ALARM 的 pAlarmInfo 为 NET_DVR_ALARMINFO_V30，解析 dwAlarmType 以区分具体事件（0=信号量/报警输入,3=移动侦测,6=遮挡等）
+                    int[] parsed = parseAlarmInfoV30(lCommand, pAlarmInfo, dwBufLen);
+                    if (parsed != null) {
+                        int dwAlarmType = parsed[0];
+                        channel = parsed[1];
+                        // 使用 Hikvision_Alarm_N 格式，AlarmService 会通过 EventResolver 按 alarm_type 解析为 ALARM_INPUT/MOTION_DETECTION/VIDEO_TAMPER 等
+                        alarmType = "Hikvision_Alarm_" + dwAlarmType;
+                        logger.info("海康V30报警解析: dwAlarmType={}, channel={}", dwAlarmType, channel);
+                    } else {
+                        alarmType = getAlarmTypeName(lCommand);
+                    }
 
                     // 只通过IP匹配设备（userId在同品牌和不同品牌间都可能重复）
                     if (deviceManager != null && alarmService != null) {
@@ -789,7 +801,6 @@ public class HikvisionSDK implements DeviceSDK {
                         }
 
                         if (deviceId != null) {
-                            String alarmType = getAlarmTypeName(lCommand);
                             String alarmMessage = "海康报警: " + alarmType;
                             
                             // 特殊处理GIS信息上传
@@ -840,6 +851,43 @@ public class HikvisionSDK implements DeviceSDK {
             }
         }
         
+        /**
+         * 解析 COMM_ALARM_V30 的 pAlarmInfo（NET_DVR_ALARMINFO_V30），得到具体报警类型与通道。
+         * dwAlarmType: 0=信号量/报警输入, 1=硬盘满, 2=信号丢失, 3=移动侦测, 4=硬盘未格式化, 5=读写硬盘出错, 6=遮挡报警, 7=制式不匹配, 8=非法访问, 0xa=GPS(车载)。
+         * @return int[2] = { dwAlarmType, channel }，解析失败返回 null
+         */
+        private int[] parseAlarmInfoV30(int lCommand, Pointer pAlarmInfo, int dwBufLen) {
+            if (pAlarmInfo == null || lCommand != HCNetSDK.COMM_ALARM_V30) {
+                return null;
+            }
+            try {
+                HCNetSDK.NET_DVR_ALARMINFO_V30 stru = new HCNetSDK.NET_DVR_ALARMINFO_V30();
+                int size = stru.size();
+                if (dwBufLen < size) {
+                    return null;
+                }
+                byte[] buf = pAlarmInfo.getByteArray(0, size);
+                Pointer p = stru.getPointer();
+                if (p != null) {
+                    p.write(0, buf, 0, buf.length);
+                    stru.read();
+                } else {
+                    return null;
+                }
+                int channel = 1;
+                for (int i = 0; i < stru.byChannel.length; i++) {
+                    if (stru.byChannel[i] != 0) {
+                        channel = i + 1;
+                        break;
+                    }
+                }
+                return new int[] { stru.dwAlarmType, channel };
+            } catch (Exception e) {
+                logger.debug("解析 NET_DVR_ALARMINFO_V30 失败: dwBufLen={}", dwBufLen, e);
+                return null;
+            }
+        }
+
         /**
          * 获取报警类型名称
          */

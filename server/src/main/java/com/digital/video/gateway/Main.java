@@ -981,7 +981,7 @@ public class Main {
         // 初始化新增控制器（使用已初始化的服务实例）
         AssemblyController assemblyController = new AssemblyController(assemblyService);
         AlarmRuleController alarmRuleController = new AlarmRuleController(alarmRuleService);
-        AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService);
+        AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService, deviceManager, assemblyService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
         flowController = new FlowController(flowService, flowExecutor);
@@ -1058,6 +1058,8 @@ public class Main {
         app.post("/api/system/notification/test", systemController::testNotification);
         app.post("/api/system/ai/test", systemController::testAiConnection);
         app.get("/api/system/ai-analysis-records", systemController::getAiAnalysisRecords);
+        app.post("/api/system/ai-analysis-records/batch-delete", systemController::batchDeleteAiAnalysisRecords);
+        app.delete("/api/system/ai-analysis-records/{id}", systemController::deleteAiAnalysisRecord);
 
         app.get("/api/dashboard/stats", dashboardController::getStats);
         app.get("/api/dashboard/chart", dashboardController::getChart);

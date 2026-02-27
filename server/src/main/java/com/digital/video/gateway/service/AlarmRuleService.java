@@ -135,11 +135,23 @@ public class AlarmRuleService {
 
     /**
      * 更新规则
+     * 若请求中带有 eventTypeIds 且未传有效 eventKeys，则根据 eventTypeIds 重新计算 eventKeys 并落库，保证匹配立即生效。
      */
     public AlarmRule updateAlarmRule(String ruleId, AlarmRule rule) {
-        // 兼容：未传 eventKeys 时保留库中原值，避免被覆盖为 null
         AlarmRule existing = getAlarmRule(ruleId);
-        if (existing != null && rule.getEventKeys() == null) {
+        // 若前端只传 eventTypeIds 未传 eventKeys，根据 eventTypeIds 重新计算 eventKeys 并写入，避免依赖旧/脏的 eventKeys
+        String eventTypeIdsStr = rule.getEventTypeIds();
+        if (eventTypeIdsStr != null && !eventTypeIdsStr.isEmpty() && !eventTypeIdsStr.trim().equals("null")) {
+            List<String> computedKeys = convertEventTypeIdsToEventKeys(eventTypeIdsStr);
+            try {
+                rule.setEventKeys(computedKeys == null || computedKeys.isEmpty() ? null : objectMapper.writeValueAsString(computedKeys));
+            } catch (Exception e) {
+                logger.warn("更新规则时根据 eventTypeIds 计算 eventKeys 失败，保留原 eventKeys: ruleId={}", ruleId, e);
+                if (existing != null && rule.getEventKeys() == null) {
+                    rule.setEventKeys(existing.getEventKeys());
+                }
+            }
+        } else if (existing != null && rule.getEventKeys() == null) {
             rule.setEventKeys(existing.getEventKeys());
         }
         // 兼容新版本：如果没有alarmType但有eventTypeIds，使用默认值
@@ -349,9 +361,9 @@ public class AlarmRuleService {
         List<String> ruleEventKeys = getRuleEventKeys(rule);
         
         if (ruleEventKeys == null || ruleEventKeys.isEmpty()) {
-            // 既没有eventKeys也没有eventTypeIds，匹配所有事件类型
-            logger.debug("规则 {} 未配置事件类型，匹配所有事件: alarmType={}", rule.getName(), alarmType);
-            return true;
+            // 未配置事件类型的规则不匹配任何报警，避免误触发（如云台操作产生的 GIS_INFO_UPLOAD 等）
+            logger.debug("规则 {} 未配置事件类型，不匹配: alarmType={}", rule.getName(), alarmType);
+            return false;
         }
         
         // 直接匹配eventKey
@@ -365,24 +377,44 @@ public class AlarmRuleService {
     }
     
     /**
+     * 解析 eventKeys 字符串为 List（兼容双重编码，如 "\"[\\\"LOITERING\\\"]\""）
+     */
+    private List<String> parseEventKeysString(String eventKeysStr) throws Exception {
+        if (eventKeysStr == null || eventKeysStr.isEmpty()) return null;
+        try {
+            Object parsed = objectMapper.readValue(eventKeysStr, Object.class);
+            if (parsed instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<String> list = (List<String>) parsed;
+                return list;
+            }
+            if (parsed instanceof String) {
+                return objectMapper.readValue((String) parsed, new TypeReference<List<String>>() {});
+            }
+        } catch (Exception e) {
+            // 忽略，由调用方处理
+        }
+        return null;
+    }
+
+    /**
      * 获取规则的事件键列表（显式 eventKeys 与 eventTypeIds 转换结果取并集，便于规则同时匹配多种事件）
      */
     private List<String> getRuleEventKeys(AlarmRule rule) {
         List<String> merged = new ArrayList<>();
         
-        // 1. 解析显式配置的 eventKeys
+        // 1. 解析显式配置的 eventKeys（兼容双重编码：DB 中可能存成字符串的字符串）
         String eventKeysStr = rule.getEventKeys();
         if (eventKeysStr != null && !eventKeysStr.isEmpty() && !eventKeysStr.trim().equals("null")) {
             try {
-                List<String> eventKeys = objectMapper.readValue(eventKeysStr, 
-                        new TypeReference<List<String>>() {});
+                List<String> eventKeys = parseEventKeysString(eventKeysStr);
                 if (eventKeys != null) {
                     for (String k : eventKeys) {
                         if (k != null && !k.isEmpty() && !merged.contains(k)) merged.add(k);
                     }
                 }
             } catch (Exception e) {
-                logger.error("解析eventKeys失败: ruleId={}, eventKeys={}", rule.getRuleId(), eventKeysStr, e);
+                logger.debug("解析eventKeys失败，将仅依赖 eventTypeIds: ruleId={}, eventKeys={}", rule.getRuleId(), eventKeysStr);
             }
         }
         

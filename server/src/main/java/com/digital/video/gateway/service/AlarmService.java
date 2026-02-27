@@ -350,6 +350,9 @@ public class AlarmService {
                 }
             } else {
                 logger.info("无匹配规则，跳过工作流执行: deviceId={}, alarmType={}", deviceId, alarmTypeDisplay);
+                // 未在规则中开启的事件类型仅记录，便于后续在规则中新增该事件类型
+                logger.info("未在规则中配置的事件类型（仅记录便于后续新增）: eventKey={}, alarmType={}, deviceId={}, assemblyId={}",
+                        eventKey != null ? eventKey : alarmType, alarmTypeDisplay, deviceId, assemblyId);
             }
             
             alarmRecord.setCaptureUrl(captureUrl);

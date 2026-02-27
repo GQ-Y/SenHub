@@ -159,6 +159,12 @@ export const AlarmHistory: React.FC<AlarmHistoryProps> = ({ deviceId, assemblyId
                           {record.assemblyName}
                         </div>
                       )}
+                      {(record.position?.location || (record.position?.latitude != null && record.position?.longitude != null)) && (
+                        <div>
+                          <span className="font-medium">位置：</span>
+                          {record.position?.location || `${record.position?.latitude?.toFixed(5)}, ${record.position?.longitude?.toFixed(5)}`}
+                        </div>
+                      )}
                       <div className="flex items-center text-gray-500">
                         <Calendar size={14} className="mr-1" />
                         <span>{formatTime(record.recordedAt)}</span>

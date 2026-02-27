@@ -74,6 +74,20 @@ public class CanonicalEventTable {
             initDefaultCanonicalEvents(connection);
             // 已有表可能缺少 event_id 列，尝试添加并回填；或新表已有 event_id 由 init 写入
             ensureEventIdColumnAndBackfill(connection);
+            // 确保 GIS_INFO_UPLOAD 事件存在（含已有库迁移）
+            ensureGisInfoUploadEvent(connection);
+        }
+    }
+
+    /**
+     * 确保 GIS_INFO_UPLOAD 标准事件及海康映射存在（云台操作会上报该事件，需入事件库以便规则可显式配置）
+     */
+    public static void ensureGisInfoUploadEvent(Connection connection) throws SQLException {
+        String insertEvent = "INSERT OR IGNORE INTO canonical_events (event_id, event_key, name_zh, name_en, category, description, severity) VALUES (1122, 'GIS_INFO_UPLOAD', 'GIS信息上传', 'GIS Info Upload', 'basic', '云台/球机上报GIS位置信息', 'info')";
+        String insertMapping = "INSERT OR IGNORE INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) VALUES ('hikvision', 'command', 16402, 'GIS_INFO_UPLOAD', 0, 'GIS信息上传 (COMM_GISINFO_UPLOAD 0x4012)')";
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute(insertEvent);
+            stmt.execute(insertMapping);
         }
     }
 
@@ -239,6 +253,7 @@ public class CanonicalEventTable {
                 { 1119, "REGION_EXITING", "离开区域", "Region Exiting", "vca", "目标离开指定区域", "info" },
                 { 1120, "FALL_DETECTION", "倒地检测", "Fall Detection", "vca", "人员倒地检测", "critical" },
                 { 1121, "PLAYING_PHONE", "玩手机", "Playing Phone", "vca", "玩手机检测", "warning" },
+                { 1122, "GIS_INFO_UPLOAD", "GIS信息上传", "GIS Info Upload", "basic", "云台/球机上报GIS位置信息（非安防报警，通常不需触发工作流）", "info" },
         };
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -340,6 +355,8 @@ public class CanonicalEventTable {
                 
                 // ========== 智能检测通用报警 (COMM_VCA_ALARM) ==========
                 { "hikvision", "command", 0x4993, "BEHAVIOR_ANALYSIS", 0, "智能检测通用报警 (COMM_VCA_ALARM)" },
+                // ========== GIS/云台信息上传（操作云台时上报，非安防报警） ==========
+                { "hikvision", "command", 0x4012, "GIS_INFO_UPLOAD", 0, "GIS信息上传 (COMM_GISINFO_UPLOAD)" },
         };
         
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {

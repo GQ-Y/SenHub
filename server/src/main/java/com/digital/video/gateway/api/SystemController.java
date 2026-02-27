@@ -790,14 +790,15 @@ public class SystemController {
     }
 
     /**
-     * 获取 AI 分析记录列表
-     * GET /api/system/ai-analysis-records?limit=100&offset=0
+     * 获取 AI 分析记录列表（分页 + 事件类型 + 时间范围筛选）
+     * GET /api/system/ai-analysis-records?limit=100&offset=0&eventType=LOITERING&startTime=2026-02-01&endTime=2026-02-28
      */
     public void getAiAnalysisRecords(Context ctx) {
         try {
             if (aiAnalysisService == null) {
                 ctx.status(200);
-                ctx.result(createSuccessResponse(java.util.Collections.emptyList()));
+                ctx.result(createSuccessResponse(Map.of("data", java.util.Collections.emptyList(), "total", 0)));
+                return;
             }
             int limit = 100;
             int offset = 0;
@@ -807,22 +808,88 @@ public class SystemController {
                 String o = ctx.queryParam("offset");
                 if (o != null) offset = Integer.parseInt(o);
             } catch (NumberFormatException ignored) {}
+            String eventType = ctx.queryParam("eventType");
+            String startTime = ctx.queryParam("startTime");
+            String endTime = ctx.queryParam("endTime");
 
-            java.util.List<java.util.Map<String, Object>> records = aiAnalysisService.getRecords(limit, offset);
+            java.util.List<java.util.Map<String, Object>> records = aiAnalysisService.getRecords(limit, offset, eventType, startTime, endTime);
+            int total = aiAnalysisService.countRecords(eventType, startTime, endTime);
 
-            // 将相对路径补全为完整 URL（voiceUrl、imageUrl）
             String baseUrl = ctx.scheme() + "://" + ctx.host();
             for (java.util.Map<String, Object> rec : records) {
                 resolveUrl(rec, "voiceUrl", baseUrl);
                 resolveUrl(rec, "imageUrl", baseUrl);
             }
 
+            Map<String, Object> body = new HashMap<>();
+            body.put("data", records);
+            body.put("total", total);
             ctx.status(200);
-            ctx.result(createSuccessResponse(records));
+            ctx.result(createSuccessResponse(body));
         } catch (Exception e) {
             logger.error("获取AI分析记录失败", e);
             ctx.status(500);
             ctx.result(createErrorResponse(500, "获取AI分析记录失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 删除单条 AI 分析记录
+     * DELETE /api/system/ai-analysis-records/:id
+     */
+    public void deleteAiAnalysisRecord(Context ctx) {
+        try {
+            if (aiAnalysisService == null) {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "服务不可用"));
+                return;
+            }
+            String id = ctx.pathParam("id");
+            boolean deleted = aiAnalysisService.deleteRecord(id);
+            if (!deleted) {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "记录不存在或已删除"));
+                return;
+            }
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "删除成功")));
+        } catch (Exception e) {
+            logger.error("删除AI分析记录失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "删除失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 批量删除 AI 分析记录
+     * POST /api/system/ai-analysis-records/batch-delete  body: { "ids": ["id1", "id2"] }
+     */
+    public void batchDeleteAiAnalysisRecords(Context ctx) {
+        try {
+            if (aiAnalysisService == null) {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "服务不可用"));
+                return;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
+            Object idsObj = body.get("ids");
+            List<String> ids = new ArrayList<>();
+            if (idsObj instanceof List) {
+                for (Object o : (List<?>) idsObj) {
+                    if (o != null) ids.add(o.toString());
+                }
+            }
+            int deleted = aiAnalysisService.deleteRecords(ids);
+            Map<String, Object> result = new HashMap<>();
+            result.put("deleted", deleted);
+            result.put("message", "成功删除 " + deleted + " 条");
+            ctx.status(200);
+            ctx.result(createSuccessResponse(result));
+        } catch (Exception e) {
+            logger.error("批量删除AI分析记录失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "批量删除失败: " + e.getMessage()));
         }
     }
 }

@@ -1214,10 +1214,26 @@ export interface AiAnalysisRecord {
 }
 
 export const aiAnalysisService = {
-  async getRecords(params?: { limit?: number; offset?: number }): Promise<{ data: AiAnalysisRecord[] }> {
-    const response = await get<AiAnalysisRecord[] | { data: AiAnalysisRecord[] }>('/system/ai-analysis-records', params);
-    const data = Array.isArray(response.data) ? response.data : (response.data as any)?.data ?? [];
-    return { data };
+  async getRecords(params?: {
+    limit?: number;
+    offset?: number;
+    eventType?: string;
+    startTime?: string;
+    endTime?: string;
+  }): Promise<{ data: AiAnalysisRecord[]; total: number }> {
+    const response = await get<{ data: AiAnalysisRecord[]; total: number } | AiAnalysisRecord[]>('/system/ai-analysis-records', params);
+    const raw = response.data as any;
+    const data = Array.isArray(raw) ? raw : raw?.data ?? [];
+    const total = typeof raw?.total === 'number' ? raw.total : data.length;
+    return { data, total };
+  },
+  async deleteRecord(id: string): Promise<void> {
+    await del<{ message: string }>(`/system/ai-analysis-records/${encodeURIComponent(id)}`);
+  },
+  async deleteRecords(ids: string[]): Promise<{ deleted: number }> {
+    const response = await post<{ deleted: number; message: string }>('/system/ai-analysis-records/batch-delete', { ids });
+    const data = (response as any)?.data ?? response;
+    return { deleted: data?.deleted ?? 0 };
   },
 };
 
