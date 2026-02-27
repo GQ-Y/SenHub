@@ -789,8 +789,11 @@ public class CanonicalEventTable {
 
         sql.append("WHERE 1=1 ");
         if (eventKey != null && !eventKey.isEmpty()) {
-            sql.append("AND e.event_key LIKE ? ");
-            params.add("%" + eventKey + "%");
+            String pattern = "%" + eventKey.trim() + "%";
+            sql.append("AND (e.event_key LIKE ? OR e.name_zh LIKE ? OR e.name_en LIKE ?) ");
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
         }
         if (category != null && !category.isEmpty()) {
             sql.append("AND e.category = ? ");

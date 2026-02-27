@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Search, Plus, Edit2, Trash2, X, Check, ChevronDown, ChevronUp,
-  AlertTriangle, Info, Shield, Eye, Code, Database as DbIcon
+  Search, Plus, Edit2, Trash2, X, Check,
+  AlertTriangle, Info, Code, Database as DbIcon
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { eventLibraryService, EventLibraryItem, EventBrandMapping, EventRawPayload } from '../src/api/services';
@@ -78,55 +78,56 @@ export const AiAlgorithmLibrary: React.FC = () => {
       setExpandedId(null);
       return;
     }
+    // 先展开（列表里已有 mappings），再后台拉取详情补全 rawPayloads 等
+    setExpandedId(id);
     try {
       const detail = await eventLibraryService.getEvent(id);
-      setEvents(prev => prev.map(e => e.id === id ? { ...e, ...detail } : e));
-      setExpandedId(id);
+      setEvents(prev => prev.map(e => Number(e.id) === Number(id) ? { ...e, ...detail } : e));
     } catch (err) {
       console.error('加载事件详情失败:', err);
     }
   };
 
   return (
-    <div className="p-6 space-y-6 overflow-auto h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col min-h-0 bg-[#f8f9fa]">
+      {/* Header - 极简扁平 */}
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200/80">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">{t('ai_algorithm_lib')}</h2>
-          <p className="text-sm text-gray-500 mt-1">{t('ai_algorithm_lib_desc')}</p>
+          <h2 className="text-lg font-semibold text-gray-800">{t('ai_algorithm_lib')}</h2>
+          <p className="text-xs text-gray-500 mt-0.5">{t('ai_algorithm_lib_desc')}</p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-md hover:bg-gray-700 transition-colors"
         >
-          <Plus size={18} />
+          <Plus size={16} />
           新增事件
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      {/* Filters - 扁平单行 */}
+      <div className="flex-shrink-0 flex items-center gap-3 px-6 py-3 bg-white border-b border-gray-100">
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             placeholder="搜索事件键 / 名称..."
             value={searchKey}
             onChange={e => setSearchKey(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-md text-sm bg-gray-50/50 focus:bg-white focus:border-gray-300 focus:outline-none"
           />
         </div>
         <select
           value={filterCategory}
           onChange={e => setFilterCategory(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 border border-gray-200 rounded-md text-sm bg-gray-50/50 focus:bg-white focus:border-gray-300 focus:outline-none"
         >
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
         <select
           value={filterGeneric}
           onChange={e => setFilterGeneric(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 border border-gray-200 rounded-md text-sm bg-gray-50/50 focus:bg-white focus:border-gray-300 focus:outline-none"
         >
           <option value="">全部类型</option>
           <option value="true">仅通用报警</option>
@@ -134,105 +135,123 @@ export const AiAlgorithmLibrary: React.FC = () => {
         </select>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-20 text-gray-400">加载中...</div>
-        ) : events.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-            <DbIcon size={48} className="mb-3 opacity-50" />
-            <p>暂无事件</p>
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase">
-                <th className="px-4 py-3 text-left font-medium">事件键</th>
-                <th className="px-4 py-3 text-left font-medium">中文名</th>
-                <th className="px-4 py-3 text-left font-medium">分类</th>
-                <th className="px-4 py-3 text-left font-medium">严重度</th>
-                <th className="px-4 py-3 text-center font-medium">通用</th>
-                <th className="px-4 py-3 text-center font-medium">启用</th>
-                <th className="px-4 py-3 text-center font-medium">映射</th>
-                <th className="px-4 py-3 text-center font-medium">提示词</th>
-                <th className="px-4 py-3 text-right font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map(event => (
-                <React.Fragment key={event.id}>
-                  <tr
-                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${expandedId === event.id ? 'bg-blue-50/50' : ''}`}
+      {/* 内容区 - 卡片占满 */}
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <div className="h-full min-h-[400px] rounded-lg border border-gray-200 bg-white flex flex-col">
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">加载中...</div>
+          ) : events.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm">
+              <DbIcon size={40} className="mb-2 opacity-40" />
+              <p>暂无事件</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-auto p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {events.map(event => (
+                  <div
+                    key={event.id}
+                    className={`rounded-lg border bg-white transition-colors cursor-pointer flex flex-col min-h-0 ${
+                      expandedId === event.id
+                        ? 'border-gray-400 ring-2 ring-gray-200'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                    }`}
                     onClick={() => toggleExpand(event.id)}
                   >
-                    <td className="px-4 py-3 font-mono text-xs text-gray-700">{event.eventKey}</td>
-                    <td className="px-4 py-3 text-gray-800 font-medium">{event.nameZh}</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
-                        {CATEGORY_LABELS[event.category] || event.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${SEVERITY_COLORS[event.severity] || 'bg-gray-100 text-gray-600'}`}>
-                        {event.severity}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {event.isGeneric ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700">
-                          <AlertTriangle size={12} /> 通用
+                    <div className="p-3 flex-1 flex flex-col min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-mono text-xs text-gray-500 truncate" title={event.eventKey}>
+                          {event.eventKey}
                         </span>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {event.enabled ? (
-                        <Check size={16} className="inline text-green-500" />
-                      ) : (
-                        <X size={16} className="inline text-red-400" />
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center text-gray-500">
-                      {event.mappings?.length ?? '-'}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {event.aiVerifyPrompt ? (
-                        <Info size={14} className="inline text-blue-500" title={event.aiVerifyPrompt} />
-                      ) : (
-                        <span className="text-gray-300">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setEditingEvent(event)}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="编辑"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(event.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="删除"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={e => { e.stopPropagation(); setEditingEvent(event); }}
+                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                            title="编辑"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); setDeleteConfirmId(event.id); }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="删除"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                    </td>
-                  </tr>
-                  {expandedId === event.id && (
-                    <tr>
-                      <td colSpan={9} className="px-6 py-4 bg-gray-50/70 border-b border-gray-200">
-                        <ExpandedDetail event={event} onRefresh={loadEvents} />
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        )}
+                      <p className="text-sm font-medium text-gray-800 mt-1 truncate" title={event.nameZh}>
+                        {event.nameZh}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                        <span className="px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
+                          {CATEGORY_LABELS[event.category] || event.category}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${SEVERITY_COLORS[event.severity] || 'bg-gray-100 text-gray-600'}`}>
+                          {event.severity}
+                        </span>
+                        {event.isGeneric && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-700">
+                            <AlertTriangle size={10} /> 通用
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                        <span className={event.enabled ? 'text-green-600' : 'text-gray-400'}>
+                          {event.enabled ? <><Check size={12} className="inline" /> 启用</> : <><X size={12} className="inline" /> 关闭</>}
+                        </span>
+                        <span>映射 {event.mappings?.length ?? 0}</span>
+                        {event.aiVerifyPrompt ? <Info size={12} className="text-blue-500" title={event.aiVerifyPrompt} /> : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* 右侧抽屉：事件详情 */}
+      {expandedId !== null && (() => {
+        const event = events.find(e => Number(e.id) === Number(expandedId));
+        if (!event) return null;
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-black/25 transition-opacity"
+              aria-hidden
+              onClick={() => setExpandedId(null)}
+            />
+            <div
+              className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-lg bg-white shadow-xl flex flex-col transition-transform duration-200 ease-out"
+              role="dialog"
+              aria-label="事件详情"
+            >
+              <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50/80">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-sm text-gray-600 truncate">{event.eventKey}</span>
+                  <span className="text-gray-400 flex-shrink-0">/</span>
+                  <span className="font-medium text-gray-800 truncate">{event.nameZh}</span>
+                  <span className="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-600 flex-shrink-0">
+                    {CATEGORY_LABELS[event.category] || event.category}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setExpandedId(null)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-md transition-colors flex-shrink-0"
+                  title="关闭"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto p-4">
+                <ExpandedDetail event={event} onRefresh={loadEvents} />
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Delete Confirm */}
       {deleteConfirmId !== null && (
@@ -287,112 +306,151 @@ const ExpandedDetail: React.FC<{ event: EventLibraryItem; onRefresh: () => void 
   };
 
   return (
-    <div className="space-y-4">
-      {/* Description & Prompt */}
-      <div className="grid grid-cols-2 gap-4">
+    <div className="space-y-6">
+      {/* 描述与提示词：左右分栏，留白充足 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <h4 className="text-xs font-medium text-gray-500 mb-1">描述</h4>
-          <p className="text-sm text-gray-700">{event.description || '-'}</p>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">描述</h4>
+          <p className="text-sm text-gray-600 leading-relaxed">{event.description || '—'}</p>
         </div>
         <div>
-          <h4 className="text-xs font-medium text-gray-500 mb-1">AI复核提示词</h4>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{event.aiVerifyPrompt || '未配置（使用默认）'}</p>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">AI 复核提示词</h4>
+          <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+            {event.aiVerifyPrompt || '未配置（使用默认）'}
+          </p>
         </div>
       </div>
 
-      {/* Mappings */}
+      {/* 品牌映射：表格式 + 添加表单 */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-medium text-gray-500">品牌映射</h4>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-sm font-medium text-gray-700">品牌映射</h4>
           <button
             onClick={() => setShowAddMapping(!showAddMapping)}
-            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
           >
             <Plus size={14} /> 添加映射
           </button>
         </div>
         {showAddMapping && (
-          <div className="flex items-center gap-2 mb-2 p-2 bg-white rounded-lg border border-gray-200">
-            <select
-              value={newMapping.brand}
-              onChange={e => setNewMapping(p => ({ ...p, brand: e.target.value }))}
-              className="px-2 py-1 border rounded text-xs"
-            >
-              <option value="">品牌</option>
-              <option value="hikvision">海康</option>
-              <option value="tiandy">天地伟业</option>
-              <option value="dahua">大华</option>
-            </select>
-            <select
-              value={newMapping.sourceKind}
-              onChange={e => setNewMapping(p => ({ ...p, sourceKind: e.target.value }))}
-              className="px-2 py-1 border rounded text-xs"
-            >
-              <option value="event_key">event_key</option>
-              <option value="command">command</option>
-              <option value="alarm_type">alarm_type</option>
-              <option value="vca_event">vca_event</option>
-            </select>
-            <input
-              type="number"
-              value={newMapping.sourceCode}
-              onChange={e => setNewMapping(p => ({ ...p, sourceCode: parseInt(e.target.value) || 0 }))}
-              className="w-20 px-2 py-1 border rounded text-xs"
-              placeholder="source_code"
-            />
-            <input
-              type="text"
-              value={newMapping.note}
-              onChange={e => setNewMapping(p => ({ ...p, note: e.target.value }))}
-              className="flex-1 px-2 py-1 border rounded text-xs"
-              placeholder="备注"
-            />
-            <button onClick={handleAddMapping} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
-              <Check size={14} />
-            </button>
-            <button onClick={() => setShowAddMapping(false)} className="px-2 py-1 bg-gray-200 text-gray-600 rounded text-xs hover:bg-gray-300">
-              <X size={14} />
-            </button>
+          <div className="flex flex-wrap items-end gap-3 mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">品牌</label>
+              <select
+                value={newMapping.brand}
+                onChange={e => setNewMapping(p => ({ ...p, brand: e.target.value }))}
+                className="px-3 py-2 border border-gray-200 rounded-md text-sm min-w-[120px]"
+              >
+                <option value="">请选择</option>
+                <option value="hikvision">海康</option>
+                <option value="tiandy">天地伟业</option>
+                <option value="dahua">大华</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">来源类型</label>
+              <select
+                value={newMapping.sourceKind}
+                onChange={e => setNewMapping(p => ({ ...p, sourceKind: e.target.value }))}
+                className="px-3 py-2 border border-gray-200 rounded-md text-sm min-w-[120px]"
+              >
+                <option value="event_key">event_key</option>
+                <option value="command">command</option>
+                <option value="alarm_type">alarm_type</option>
+                <option value="vca_event">vca_event</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">来源编码</label>
+              <input
+                type="number"
+                value={newMapping.sourceCode}
+                onChange={e => setNewMapping(p => ({ ...p, sourceCode: parseInt(e.target.value) || 0 }))}
+                className="w-24 px-3 py-2 border border-gray-200 rounded-md text-sm"
+              />
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-xs text-gray-500 mb-1">备注</label>
+              <input
+                type="text"
+                value={newMapping.note}
+                onChange={e => setNewMapping(p => ({ ...p, note: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                placeholder="如：开关量输入"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleAddMapping}
+                className="px-3 py-2 bg-gray-800 text-white text-sm rounded-md hover:bg-gray-700"
+              >
+                <Check size={16} className="inline" /> 添加
+              </button>
+              <button
+                onClick={() => setShowAddMapping(false)}
+                className="px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm rounded-md hover:bg-gray-50"
+              >
+                <X size={16} className="inline" /> 取消
+              </button>
+            </div>
           </div>
         )}
         {event.mappings && event.mappings.length > 0 ? (
-          <div className="space-y-1">
-            {event.mappings.map(m => (
-              <div key={m.id} className="flex items-center justify-between px-3 py-1.5 bg-white rounded-lg border border-gray-100 text-xs">
-                <div className="flex items-center gap-3">
-                  <span className="font-medium text-gray-700">{m.brand}</span>
-                  <span className="text-gray-400">{m.sourceKind}</span>
-                  <span className="font-mono text-gray-500">{m.sourceCode}</span>
-                  {m.note && <span className="text-gray-400">{m.note}</span>}
-                </div>
-                <button
-                  onClick={() => handleDeleteMapping(m.id)}
-                  className="p-1 text-gray-300 hover:text-red-500 transition-colors"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-gray-500 text-xs font-medium">
+                  <th className="px-4 py-2.5">品牌</th>
+                  <th className="px-4 py-2.5">来源类型</th>
+                  <th className="px-4 py-2.5">来源编码</th>
+                  <th className="px-4 py-2.5">备注</th>
+                  <th className="px-4 py-2.5 w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {event.mappings.map(m => (
+                  <tr key={m.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                    <td className="px-4 py-2.5 font-medium text-gray-800">{m.brand}</td>
+                    <td className="px-4 py-2.5 text-gray-600 font-mono text-xs">{m.sourceKind}</td>
+                    <td className="px-4 py-2.5 text-gray-600 font-mono">{m.sourceCode}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{m.note || '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <button
+                        onClick={() => handleDeleteMapping(m.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="删除"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
-          <p className="text-xs text-gray-400">暂无映射</p>
+          <p className="text-sm text-gray-400 py-4">暂无映射，点击「添加映射」新增</p>
         )}
       </div>
 
-      {/* Raw Payloads */}
+      {/* 原始报警数据样本 */}
       {event.rawPayloads && event.rawPayloads.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
-            <Code size={13} /> 原始报警数据样本
+          <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+            <Code size={14} /> 原始报警数据样本
           </h4>
-          {event.rawPayloads.map(rp => (
-            <div key={rp.id} className="mb-2">
-              <div className="text-xs text-gray-400 mb-0.5">{rp.brand} · {rp.createdAt}</div>
-              <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-40">
-                {formatJson(rp.rawPayload)}
-              </pre>
-            </div>
-          ))}
+          <div className="space-y-3">
+            {event.rawPayloads.map(rp => (
+              <div key={rp.id} className="rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 border-b border-gray-100">
+                  {rp.brand} · {rp.createdAt}
+                </div>
+                <pre className="p-4 text-xs bg-gray-900 text-green-400 overflow-x-auto max-h-48 font-mono">
+                  {formatJson(rp.rawPayload)}
+                </pre>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

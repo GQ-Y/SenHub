@@ -397,9 +397,21 @@ public class AlarmService {
                 }
             } else {
                 logger.info("无匹配规则，跳过工作流执行: deviceId={}, alarmType={}", deviceId, alarmTypeDisplay);
-                // 未在规则中开启的事件类型仅记录，便于后续在规则中新增该事件类型
-                logger.info("未在规则中配置的事件类型（仅记录便于后续新增）: eventKey={}, alarmType={}, deviceId={}, assemblyId={}",
+                // 明确区分：事件库已有该事件（解析成功即表示在库），只是未配置报警规则
+                logger.info("事件已在事件库中，但未匹配到任何报警规则（可在规则管理中为该事件添加规则）: eventKey={}, alarmType={}, deviceId={}, assemblyId={}",
                         eventKey != null ? eventKey : alarmType, alarmTypeDisplay, deviceId, assemblyId);
+                // 无规则时也记录原始报警样本到 event_raw_payload，便于后续在事件库中查看
+                if (eventKey != null && alarmData != null && database != null) {
+                    try (Connection conn = database.getConnection()) {
+                        DeviceInfo dev = deviceManager != null ? deviceManager.getDevice(deviceId) : null;
+                        String brand = dev != null && dev.getBrand() != null ? dev.getBrand() : "unknown";
+                        if (brand.isEmpty()) brand = "unknown";
+                        String rawJson = objectMapper.writeValueAsString(alarmData);
+                        CanonicalEventTable.insertRawPayload(conn, eventKey, brand.toLowerCase(), rawJson);
+                    } catch (Exception e) {
+                        logger.debug("记录报警原始样本失败: eventKey={}, {}", eventKey, e.getMessage());
+                    }
+                }
             }
             
             alarmRecord.setCaptureUrl(captureUrl);

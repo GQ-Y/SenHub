@@ -38,10 +38,10 @@ const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, children }) => 
         onClick={onClose}
       />
       <div
-        className="absolute right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out"
+        className="absolute right-0 top-0 h-screen w-2/3 max-w-full bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out"
         style={{ transform: isOpen ? 'translateX(0)' : 'translateX(100%)' }}
       >
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
+        <div className="flex-shrink-0 w-full px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
           <h3 className="text-lg font-bold text-gray-800">{title}</h3>
           <button
             onClick={onClose}
@@ -50,7 +50,7 @@ const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, children }) => 
             <X size={20} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">
           {children}
         </div>
       </div>
