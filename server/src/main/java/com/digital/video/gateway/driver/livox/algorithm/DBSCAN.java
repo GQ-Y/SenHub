@@ -5,49 +5,74 @@ import com.digital.video.gateway.driver.livox.model.Point;
 import java.util.*;
 
 /**
- * DBSCAN聚类算法实现
- * 用于对点云进行聚类，识别独立的物体
+ * DBSCAN聚类算法实现（网格加速版）
+ *
+ * 使用 3D 网格空间索引将 getNeighbors 从 O(n²) 优化到 O(n)。
+ * 每个点根据坐标映射到 (cellSize = eps) 的网格单元，
+ * 查找邻居时只扫描当前及相邻的 27 个网格单元。
  */
 public class DBSCAN {
-    private final float eps; // 邻域半径
-    private final int minPoints; // 最小点数
+    private final float eps;
+    private final int minPoints;
 
     public DBSCAN(float eps, int minPoints) {
         this.eps = eps;
         this.minPoints = minPoints;
     }
 
-    /**
-     * 对点云进行聚类
-     * 
-     * @param points 输入点云
-     * @return 聚类结果，每个List<Point>代表一个聚类
-     */
     public List<List<Point>> cluster(List<Point> points) {
         if (points == null || points.isEmpty()) {
             return new ArrayList<>();
         }
 
+        final int n = points.size();
+        final float cellSize = eps;
+        final float epsSq = eps * eps;
+
+        // 建立网格索引：cellKey -> 点索引列表
+        Map<Long, List<Integer>> grid = new HashMap<>(n);
+        for (int i = 0; i < n; i++) {
+            long key = cellKey(points.get(i), cellSize);
+            grid.computeIfAbsent(key, k -> new ArrayList<>()).add(i);
+        }
+
         List<List<Point>> clusters = new ArrayList<>();
-        Set<Integer> visited = new HashSet<>();
-        Set<Integer> noise = new HashSet<>();
+        int[] labels = new int[n]; // 0=unvisited, -1=noise, >0=clusterId
 
-        for (int i = 0; i < points.size(); i++) {
-            if (visited.contains(i)) {
-                continue;
-            }
+        int clusterId = 0;
+        for (int i = 0; i < n; i++) {
+            if (labels[i] != 0) continue;
 
-            visited.add(i);
-            List<Integer> neighbors = getNeighbors(points, i);
-
+            List<Integer> neighbors = regionQuery(points, i, grid, cellSize, epsSq);
             if (neighbors.size() < minPoints) {
-                noise.add(i);
+                labels[i] = -1;
                 continue;
             }
 
-            // 创建新聚类
+            clusterId++;
+            labels[i] = clusterId;
             List<Point> cluster = new ArrayList<>();
-            expandCluster(points, i, neighbors, cluster, visited, noise);
+            cluster.add(points.get(i));
+
+            Deque<Integer> seeds = new ArrayDeque<>(neighbors);
+            while (!seeds.isEmpty()) {
+                int q = seeds.poll();
+                if (labels[q] == -1) {
+                    labels[q] = clusterId;
+                    cluster.add(points.get(q));
+                    continue;
+                }
+                if (labels[q] != 0) continue;
+
+                labels[q] = clusterId;
+                cluster.add(points.get(q));
+
+                List<Integer> qNeighbors = regionQuery(points, q, grid, cellSize, epsSq);
+                if (qNeighbors.size() >= minPoints) {
+                    seeds.addAll(qNeighbors);
+                }
+            }
+
             if (!cluster.isEmpty()) {
                 clusters.add(cluster);
             }
@@ -56,62 +81,47 @@ public class DBSCAN {
         return clusters;
     }
 
-    /**
-     * 扩展聚类
-     */
-    private void expandCluster(List<Point> points, int pointIndex, List<Integer> neighbors,
-                               List<Point> cluster, Set<Integer> visited, Set<Integer> noise) {
-        cluster.add(points.get(pointIndex));
+    private List<Integer> regionQuery(List<Point> points, int idx,
+                                       Map<Long, List<Integer>> grid, float cellSize, float epsSq) {
+        Point p = points.get(idx);
+        int cx = cellCoord(p.x, cellSize);
+        int cy = cellCoord(p.y, cellSize);
+        int cz = cellCoord(p.z, cellSize);
 
-        Queue<Integer> seeds = new LinkedList<>(neighbors);
-
-        while (!seeds.isEmpty()) {
-            int currentIndex = seeds.poll();
-
-            if (noise.contains(currentIndex)) {
-                noise.remove(currentIndex);
-                cluster.add(points.get(currentIndex));
-                continue;
-            }
-
-            if (visited.contains(currentIndex)) {
-                continue;
-            }
-
-            visited.add(currentIndex);
-            cluster.add(points.get(currentIndex));
-
-            List<Integer> currentNeighbors = getNeighbors(points, currentIndex);
-            if (currentNeighbors.size() >= minPoints) {
-                seeds.addAll(currentNeighbors);
+        List<Integer> result = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    long key = packKey(cx + dx, cy + dy, cz + dz);
+                    List<Integer> cell = grid.get(key);
+                    if (cell == null) continue;
+                    for (int j : cell) {
+                        if (j == idx) continue;
+                        float ddx = p.x - points.get(j).x;
+                        float ddy = p.y - points.get(j).y;
+                        float ddz = p.z - points.get(j).z;
+                        if (ddx * ddx + ddy * ddy + ddz * ddz <= epsSq) {
+                            result.add(j);
+                        }
+                    }
+                }
             }
         }
+        return result;
     }
 
-    /**
-     * 获取点的邻居（在eps半径内）
-     */
-    private List<Integer> getNeighbors(List<Point> points, int pointIndex) {
-        List<Integer> neighbors = new ArrayList<>();
-        Point point = points.get(pointIndex);
-
-        for (int i = 0; i < points.size(); i++) {
-            if (i == pointIndex) {
-                continue;
-            }
-            float distance = point.distanceTo(points.get(i));
-            if (distance <= eps) {
-                neighbors.add(i);
-            }
-        }
-
-        return neighbors;
+    private static int cellCoord(float v, float cellSize) {
+        return (int) Math.floor(v / cellSize);
     }
 
-    /**
-     * 使用默认参数创建DBSCAN实例
-     * eps=0.3m, minPoints=5
-     */
+    private static long cellKey(Point p, float cellSize) {
+        return packKey(cellCoord(p.x, cellSize), cellCoord(p.y, cellSize), cellCoord(p.z, cellSize));
+    }
+
+    private static long packKey(int cx, int cy, int cz) {
+        return ((long) (cx + 1_000_000) * 2_000_001L + (cy + 1_000_000)) * 2_000_001L + (cz + 1_000_000);
+    }
+
     public static DBSCAN createDefault() {
         return new DBSCAN(0.3f, 5);
     }

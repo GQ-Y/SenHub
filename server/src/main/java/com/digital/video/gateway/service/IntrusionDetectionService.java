@@ -16,7 +16,11 @@ import java.util.stream.Collectors;
 
 /**
  * 侵入检测服务
- * 负责实时检测防区内的侵入物体
+ * 负责实时检测防区内的侵入物体。
+ * 
+ * Livox Mid-360 非重复扫描模式下单帧仅约 100 点，入侵前景点更少（通常 &lt; 10），
+ * 单帧无法满足 DBSCAN 最小点数要求。因此采用**滑动窗口累积**：
+ * 将最近 ACCUMULATION_WINDOW_MS 毫秒内的侵入前景点汇聚后再做聚类。
  */
 public class IntrusionDetectionService {
     private static final Logger logger = LoggerFactory.getLogger(IntrusionDetectionService.class);
@@ -25,12 +29,34 @@ public class IntrusionDetectionService {
     private final Connection connection;
     private final RadarIntrusionRecordDAO recordDAO;
 
-    // DBSCAN参数
-    private final float eps = 0.3f; // 邻域半径（米）
-    private final int minPoints = 5; // 最小点数
+    // DBSCAN 参数（适配累积后的点密度）
+    private final float eps = 1.0f;
+    private final int minPoints = 3;
+
+    /** 滑动窗口时长（毫秒），累积此时间段内的侵入点后再聚类 */
+    private static final long ACCUMULATION_WINDOW_MS = 800;
+    /** 聚类输出节流：同一防区两次聚类输出的最小间隔（毫秒），防止每帧都产生事件 */
+    private static final long CLUSTER_THROTTLE_MS = 1000;
+    /** 累积缓冲区最大点数，超出时淘汰最旧的点 */
+    private static final int MAX_ACCUMULATED_POINTS = 2000;
+
+    /** 按 zoneId 缓存的滑动窗口侵入点 */
+    private final Map<String, Deque<TimestampedPoint>> accumulationBuffers = new ConcurrentHashMap<>();
+    /** 按 zoneId 记录上次输出聚类事件的时间戳 */
+    private final Map<String, Long> lastClusterOutputTime = new ConcurrentHashMap<>();
 
     /** 按背景缓存 SpatialIndex，避免每帧每防区重建（防区开启时显著降低 CPU、提高点云吞吐） */
     private final Map<String, SpatialIndex> spatialIndexCache = new ConcurrentHashMap<>();
+
+    /** 带时间戳的点，用于滑动窗口淘汰 */
+    private static class TimestampedPoint {
+        final Point point;
+        final long timestampMs;
+        TimestampedPoint(Point point, long timestampMs) {
+            this.point = point;
+            this.timestampMs = timestampMs;
+        }
+    }
 
     public IntrusionDetectionService(Database database) {
         this.database = database;
@@ -39,12 +65,7 @@ public class IntrusionDetectionService {
     }
 
     /**
-     * 检测侵入
-     * 
-     * @param currentPoints 当前点云
-     * @param zone          防区配置
-     * @param background    背景模型
-     * @return 侵入事件列表
+     * 检测侵入（滑动窗口累积版）
      */
     public List<IntrusionEvent> detectIntrusion(List<Point> currentPoints, DefenseZone zone,
             BackgroundModel background) {
@@ -68,23 +89,65 @@ public class IntrusionDetectionService {
         // 2. 背景差分：从当前点云中移除背景点
         List<Point> intrusionPoints = subtractBackground(zonePoints, background);
 
-        if (intrusionPoints.isEmpty()) {
+        // 3. 将本帧侵入点加入滑动窗口缓冲区
+        long now = System.currentTimeMillis();
+        String zoneId = zone.getZoneId();
+        Deque<TimestampedPoint> buffer = accumulationBuffers
+                .computeIfAbsent(zoneId, k -> new ArrayDeque<>());
+
+        // ArrayDeque 不是线程安全的，多线程并发修改会导致内部数组损坏和死循环
+        List<Point> accumulated;
+        synchronized (buffer) {
+            for (Point p : intrusionPoints) {
+                buffer.addLast(new TimestampedPoint(p, now));
+            }
+
+            // 淘汰过期点
+            long cutoff = now - ACCUMULATION_WINDOW_MS;
+            while (!buffer.isEmpty() && buffer.peekFirst().timestampMs < cutoff) {
+                buffer.pollFirst();
+            }
+            // 硬上限
+            while (buffer.size() > MAX_ACCUMULATED_POINTS) {
+                buffer.pollFirst();
+            }
+
+            // 4. 节流
+            Long lastOutput = lastClusterOutputTime.get(zoneId);
+            if (lastOutput != null && (now - lastOutput) < CLUSTER_THROTTLE_MS) {
+                return null;
+            }
+
+            // 5. 提取快照用于聚类（在锁内完成复制，锁外做耗时的聚类运算）
+            accumulated = new ArrayList<>(buffer.size());
+            for (TimestampedPoint tp : buffer) {
+                accumulated.add(tp.point);
+            }
+        }
+
+        if (accumulated.size() < minPoints) {
             return new ArrayList<>();
         }
 
-        // 3. 聚类：对侵入点进行DBSCAN聚类
+        // 6. DBSCAN 聚类
         DBSCAN dbscan = new DBSCAN(eps, minPoints);
-        List<List<Point>> clusters = dbscan.cluster(intrusionPoints);
+        List<List<Point>> clusters = dbscan.cluster(accumulated);
 
-        // 4. 特征提取：为每个聚类提取特征
+        if (clusters.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        lastClusterOutputTime.put(zoneId, now);
+
+        // 7. 特征提取
         List<IntrusionEvent> events = new ArrayList<>();
         for (int i = 0; i < clusters.size(); i++) {
             List<Point> clusterPoints = clusters.get(i);
-            PointCluster cluster = new PointCluster("cluster_" + System.currentTimeMillis() + "_" + i, clusterPoints);
+            PointCluster cluster = new PointCluster("cluster_" + now + "_" + i, clusterPoints);
             cluster.calculateFeatures();
 
             IntrusionEvent event = new IntrusionEvent();
-            event.setRecordId("rec_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8));
+            event.setRecordId("rec_" + now + "_" + UUID.randomUUID().toString().substring(0, 8));
             event.setDeviceId(zone.getDeviceId());
             event.setZoneId(zone.getZoneId());
             event.setCluster(cluster);
@@ -93,11 +156,11 @@ public class IntrusionDetectionService {
             events.add(event);
         }
 
-        // 注意：侵入记录改由 RecordingManager 统一保存，避免重复
-        // 如果需要单独的事件记录，可以在此处添加额外逻辑
-        // for (IntrusionEvent event : events) {
-        // saveIntrusionRecord(event);
-        // }
+        if (!events.isEmpty()) {
+            logger.info("侵入聚类: zoneId={}, 累积点数={}, 聚类数={}, 最大聚类点数={}",
+                    zoneId, accumulated.size(), events.size(),
+                    events.stream().mapToInt(e -> e.getCluster().getPointCount()).max().orElse(0));
+        }
 
         return events;
     }

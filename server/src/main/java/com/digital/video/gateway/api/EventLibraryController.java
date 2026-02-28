@@ -102,7 +102,7 @@ public class EventLibraryController {
             }
 
             Map<String, Object> created = CanonicalEventTable.getCanonicalEventById(conn, newId);
-            ctx.status(201).json(Map.of("code", 201, "data", created != null ? created : Map.of("id", newId)));
+            ctx.json(Map.of("code", 200, "data", created != null ? created : Map.of("id", newId)));
         } catch (Exception e) {
             logger.error("创建事件失败", e);
             ctx.status(500).json(Map.of("code", 500, "message", e.getMessage()));
@@ -177,7 +177,7 @@ public class EventLibraryController {
             }
 
             int newId = CanonicalEventTable.insertMapping(conn, brand, sourceKind, sourceCode, eventKey, priority, note);
-            ctx.status(201).json(Map.of("code", 201, "data", Map.of("id", newId)));
+            ctx.json(Map.of("code", 200, "data", Map.of("id", newId)));
         } catch (Exception e) {
             logger.error("添加映射失败", e);
             ctx.status(500).json(Map.of("code", 500, "message", e.getMessage()));

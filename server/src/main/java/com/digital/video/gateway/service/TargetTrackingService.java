@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import com.digital.video.gateway.driver.livox.model.TargetType;
 
 /**
  * 目标跟踪服务
@@ -132,7 +133,7 @@ public class TargetTrackingService {
     }
 
     /**
-     * 跨帧跟踪目标：维护稳定ID、卡尔曼滤波器、分类类型
+     * 跨帧跟踪目标：维护稳定ID、卡尔曼滤波器、分类投票历史
      */
     public static class TrackedTarget {
         private final String trackingId;
@@ -142,14 +143,19 @@ public class TargetTrackingService {
         private long lastUpdateTime;
         private int missCount;
 
+        private static final int VOTE_WINDOW = 7;
+        private final Map<TargetType, Integer> typeVotes = new EnumMap<>(TargetType.class);
+        private final Deque<TargetType> typeHistory = new ArrayDeque<>();
+
         public TrackedTarget(String trackingId, PointCluster cluster, long timestampMs) {
             this.trackingId = trackingId;
             Point c = cluster.getCentroid();
             this.kalman = new SimpleKalmanFilter(c.x, c.y, c.z, timestampMs);
-            this.targetType = cluster.getTargetType();
+            this.targetType = cluster.getTargetType() != null ? cluster.getTargetType() : TargetType.OTHER;
             this.latestCluster = cluster;
             this.lastUpdateTime = timestampMs;
             this.missCount = 0;
+            addTypeVote(this.targetType);
         }
 
         public String getTrackingId() { return trackingId; }
@@ -167,11 +173,35 @@ public class TargetTrackingService {
             Point c = cluster.getCentroid();
             kalman.update(c.x, c.y, c.z, timestampMs);
             if (cluster.getTargetType() != null) {
-                this.targetType = cluster.getTargetType();
+                addTypeVote(cluster.getTargetType());
+                this.targetType = getMajorityType();
             }
             this.latestCluster = cluster;
             this.lastUpdateTime = timestampMs;
             this.missCount = 0;
+        }
+
+        private void addTypeVote(TargetType type) {
+            typeHistory.addLast(type);
+            typeVotes.merge(type, 1, Integer::sum);
+            while (typeHistory.size() > VOTE_WINDOW) {
+                TargetType old = typeHistory.pollFirst();
+                int cnt = typeVotes.getOrDefault(old, 1) - 1;
+                if (cnt <= 0) typeVotes.remove(old);
+                else typeVotes.put(old, cnt);
+            }
+        }
+
+        private TargetType getMajorityType() {
+            TargetType best = TargetType.OTHER;
+            int maxCount = 0;
+            for (Map.Entry<TargetType, Integer> e : typeVotes.entrySet()) {
+                if (e.getValue() > maxCount) {
+                    maxCount = e.getValue();
+                    best = e.getKey();
+                }
+            }
+            return best;
         }
 
         public void incrementMiss() {
@@ -197,8 +227,8 @@ public class TargetTrackingService {
     private final AtomicLong nextTrackingIdSeq = new AtomicLong(1);
     private final HungarianAlgorithm hungarian = new HungarianAlgorithm();
 
-    private static final float ASSOCIATION_MAX_DISTANCE = 2.0f;
-    private static final int MAX_MISS_COUNT = 5;
+    private static final float ASSOCIATION_MAX_DISTANCE = 4.0f;
+    private static final int MAX_MISS_COUNT = 15;
 
     private Timer cleanupTimer;
     private static final long CLEANUP_INTERVAL_MS = 2000;

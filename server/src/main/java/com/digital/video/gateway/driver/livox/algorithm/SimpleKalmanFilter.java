@@ -105,11 +105,6 @@ public class SimpleKalmanFilter {
             System.arraycopy(newP[i], 0, P[i], 0, 6);
         }
 
-        // 从观测反推速度
-        state[3] = innovation[0] / dt;
-        state[4] = innovation[1] / dt;
-        state[5] = innovation[2] / dt;
-
         sanitizeState();
         this.lastTimestampMs = timestampMs;
     }

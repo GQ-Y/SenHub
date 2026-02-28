@@ -85,6 +85,13 @@ public class PointCloudProcessCenter {
 
     private static final long FOLLOW_STATE_EXPIRE_MS = 60_000;
 
+    /** 目标脱离宽限期（毫秒）：连续无目标超过此时间才认为目标真正离开 */
+    private static final long TARGET_LOST_GRACE_MS = 3000;
+    /** 目标切换冷却期（毫秒）：防止在不同 trackingId 之间频繁切换触发工作流 */
+    private static final long TARGET_SWITCH_COOLDOWN_MS = 5000;
+    /** 工作流触发最小间隔（毫秒）：同一防区连续触发工作流的最小间隔 */
+    private static final long WORKFLOW_TRIGGER_MIN_INTERVAL_MS = 8000;
+
     /**
      * 防区级跟随状态
      */
@@ -95,6 +102,12 @@ public class PointCloudProcessCenter {
         long followStartTime;
         long lastCaptureTime;
         long lastAccessTime;
+        /** 最后一次检测到目标（任何目标）的时间 */
+        long lastTargetSeenTime;
+        /** 上次切换目标的时间（用于冷却） */
+        long lastSwitchTime;
+        /** 上次触发工作流的时间 */
+        long lastWorkflowTriggerTime;
     }
 
     public PointCloudProcessCenter(
@@ -120,7 +133,11 @@ public class PointCloudProcessCenter {
      * 流程：分类 → 跟踪 → PTZ 解算 → 跟随状态机 → 触发工作流
      */
     public void processEvents(String radarDeviceId, List<IntrusionEvent> eventsIn, DefenseZone zone) {
-        if (eventsIn == null || eventsIn.isEmpty()) {
+        // null = 节流中（检测服务未输出新结果），跳过本帧，保持当前跟随状态不变
+        if (eventsIn == null) {
+            return;
+        }
+        if (eventsIn.isEmpty()) {
             handleNoTargets(zone.getZoneId());
             return;
         }
@@ -194,14 +211,22 @@ public class PointCloudProcessCenter {
             return;
         }
 
-        // 选择主目标（距离最近的）
-        TrackedTarget primaryTarget = selectPrimaryTarget(trackedTargets);
+        int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
+        long now = System.currentTimeMillis();
+
+        FollowState state = followStates.computeIfAbsent(zoneId, k -> new FollowState());
+        state.lastAccessTime = now;
+        state.lastTargetSeenTime = now;
+        cleanStaleFollowStates(now);
+
+        // 选择跟随目标：优先续跟当前目标，而非每帧都切到最近目标
+        TrackedTarget primaryTarget = selectFollowTarget(trackedTargets, state);
         if (primaryTarget == null) {
             handleNoTargets(zone.getZoneId());
             return;
         }
 
-        // PTZ 解算（缓存 CoordinateTransform 实例，避免每帧创建）
+        // PTZ 解算
         CoordinateTransform coordTransform = coordTransformCache.computeIfAbsent(zoneId, k -> {
             DefenseZone.CoordinateTransform t = zone.getCoordinateTransform();
             return new CoordinateTransform(
@@ -231,20 +256,18 @@ public class PointCloudProcessCenter {
         }
 
         // 4. 跟随状态机
-        int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
-        long now = System.currentTimeMillis();
+        boolean isNewTarget = state.followingTargetId == null;
+        boolean isSameTarget = !isNewTarget && state.followingTargetId.equals(primaryTarget.getTrackingId());
 
-        FollowState state = followStates.computeIfAbsent(zoneId, k -> new FollowState());
-        state.lastAccessTime = now;
-        cleanStaleFollowStates(now);
-
-        if (state.followingTargetId == null) {
+        if (isNewTarget) {
             // 未跟随 → 首次锁定
             state.followingTargetId = primaryTarget.getTrackingId();
             state.lastFollowedPosition = centroid;
             state.lastPtzTime = now;
             state.followStartTime = now;
             state.lastCaptureTime = now;
+            state.lastSwitchTime = now;
+            state.lastWorkflowTriggerTime = now;
 
             logger.info("首次锁定目标: zoneId={}, trackingId={}, type={}, distance={}m",
                     zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType(), distance);
@@ -252,8 +275,8 @@ public class PointCloudProcessCenter {
             triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
                     pan, tilt, zoom, distance, cameraDeviceId, channel);
 
-        } else if (state.followingTargetId.equals(primaryTarget.getTrackingId())) {
-            // 跟随中 → 更新 PTZ（节拍）
+        } else if (isSameTarget) {
+            // 续跟当前目标 → 更新 PTZ（节拍）
             state.lastFollowedPosition = centroid;
 
             if (now - state.lastPtzTime >= PTZ_BEAT_INTERVAL_MS) {
@@ -269,17 +292,34 @@ public class PointCloudProcessCenter {
                         pan, tilt, zoom, distance, cameraDeviceId, channel);
             }
         } else {
-            // 跟随中但主目标变了（更近的目标出现），切换
-            state.followingTargetId = primaryTarget.getTrackingId();
+            // trackingId 变了 — 可能是 MOT 重分配了 ID，不一定是真正的新目标
+            // 仅当冷却期过后才正式切换并触发工作流
+            boolean cooldownPassed = (now - state.lastSwitchTime) >= TARGET_SWITCH_COOLDOWN_MS;
+            boolean workflowReady = (now - state.lastWorkflowTriggerTime) >= WORKFLOW_TRIGGER_MIN_INTERVAL_MS;
+
+            // 即使 ID 变了，PTZ 仍然追踪最近的位置（保持云台跟随不中断）
             state.lastFollowedPosition = centroid;
-            state.lastPtzTime = now;
-            state.lastCaptureTime = now;
+            if (now - state.lastPtzTime >= PTZ_BEAT_INTERVAL_MS) {
+                ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
+                state.lastPtzTime = now;
+            }
 
-            logger.info("切换跟随目标: zoneId={}, newTrackingId={}, type={}",
-                    zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType());
+            if (cooldownPassed) {
+                state.followingTargetId = primaryTarget.getTrackingId();
+                state.lastSwitchTime = now;
 
-            triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
-                    pan, tilt, zoom, distance, cameraDeviceId, channel);
+                if (workflowReady) {
+                    state.lastWorkflowTriggerTime = now;
+                    state.lastCaptureTime = now;
+                    logger.info("切换跟随目标: zoneId={}, newTrackingId={}, type={}",
+                            zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType());
+                    triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
+                            pan, tilt, zoom, distance, cameraDeviceId, channel);
+                } else {
+                    logger.debug("切换跟随目标（工作流冷却中）: zoneId={}, newTrackingId={}",
+                            zoneId, primaryTarget.getTrackingId());
+                }
+            }
         }
     }
 
@@ -294,21 +334,36 @@ public class PointCloudProcessCenter {
     }
 
     /**
-     * 本帧无目标时处理
+     * 本帧无目标时处理（带宽限期）
      */
     private void handleNoTargets(String zoneId) {
         FollowState state = followStates.get(zoneId);
         if (state != null && state.followingTargetId != null) {
-            logger.info("目标脱离防区，结束跟随: zoneId={}, trackingId={}", zoneId, state.followingTargetId);
+            long elapsed = System.currentTimeMillis() - state.lastTargetSeenTime;
+            if (elapsed < TARGET_LOST_GRACE_MS) {
+                return;
+            }
+            logger.info("目标脱离防区，结束跟随: zoneId={}, trackingId={}, 无目标持续={}ms",
+                    zoneId, state.followingTargetId, elapsed);
             state.followingTargetId = null;
             state.lastFollowedPosition = null;
         }
     }
 
     /**
-     * 选择主目标：距原点最近的目标
+     * 选择跟随目标：
+     * 1. 如果当前已有跟随目标且它仍在跟踪池中，继续跟随它
+     * 2. 否则选距离最近的目标
      */
-    private TrackedTarget selectPrimaryTarget(List<TrackedTarget> targets) {
+    private TrackedTarget selectFollowTarget(List<TrackedTarget> targets, FollowState state) {
+        if (state.followingTargetId != null) {
+            for (TrackedTarget t : targets) {
+                if (state.followingTargetId.equals(t.getTrackingId())) {
+                    return t;
+                }
+            }
+        }
+        // 当前目标已丢失，选最近的
         TrackedTarget nearest = null;
         float minDist = Float.MAX_VALUE;
         for (TrackedTarget t : targets) {

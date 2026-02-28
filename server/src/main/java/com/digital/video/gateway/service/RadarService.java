@@ -99,8 +99,8 @@ public class RadarService {
      * 避免在检测模式下阻塞回调导致 UDP 收包变慢、点云吞吐量骤降。
      * 为支撑 Mid-360 约 20 万点/秒，增大队列与线程；队列满时丢弃新帧，保证回调立即返回。
      */
-    private static final int POINT_CLOUD_WORKER_THREADS = 32;
-    private static final int POINT_CLOUD_QUEUE_CAPACITY = 256;
+    private static final int POINT_CLOUD_WORKER_THREADS = 2;
+    private static final int POINT_CLOUD_QUEUE_CAPACITY = 64;
     private final ThreadPoolExecutor pointCloudExecutor = new ThreadPoolExecutor(
             POINT_CLOUD_WORKER_THREADS, POINT_CLOUD_WORKER_THREADS, 60L, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(POINT_CLOUD_QUEUE_CAPACITY),
@@ -824,6 +824,15 @@ public class RadarService {
             }
 
             List<IntrusionEvent> events = intrusionDetectionService.detectIntrusion(currentPoints, zone, background);
+
+            // null = 节流中，跳过本帧处理（保持跟随状态不变）
+            if (events == null) {
+                if (pointCloudProcessCenter != null) {
+                    pointCloudProcessCenter.processEvents(deviceId, null, zone);
+                }
+                continue;
+            }
+
             allEvents.addAll(events);
 
             // 委托给点云处理中心（分类 → 跟踪 → PTZ解算 → 跟随状态机 → 触发工作流）
