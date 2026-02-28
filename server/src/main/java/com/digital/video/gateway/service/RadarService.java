@@ -48,8 +48,9 @@ public class RadarService {
     private final RecordingManager recordingManager; // 侵入录制管理器
     private final TargetTrackingService targetTrackingService; // 目标跟踪服务
     private final MotionPredictionService motionPredictionService; // 运动预测服务
-    private CaptureService captureService; // 抓拍服务（可选，通过setter注入）
-    private AssemblyService assemblyService; // 装置服务（用于读取装置 PTZ 联动开关，通过 setter 注入）
+    private CaptureService captureService;
+    private AssemblyService assemblyService;
+    private PointCloudProcessCenter pointCloudProcessCenter;
 
     // WebSocket处理器（用于实时推送）
     private RadarWebSocketHandler webSocketHandler;
@@ -147,6 +148,25 @@ public class RadarService {
      */
     public void setAssemblyService(AssemblyService assemblyService) {
         this.assemblyService = assemblyService;
+    }
+
+    /**
+     * 设置点云处理中心（用于目标分类、跟踪、PTZ联动工作流）
+     */
+    public void setPointCloudProcessCenter(PointCloudProcessCenter pointCloudProcessCenter) {
+        this.pointCloudProcessCenter = pointCloudProcessCenter;
+    }
+
+    public PointCloudProcessCenter getPointCloudProcessCenter() {
+        return pointCloudProcessCenter;
+    }
+
+    public TargetTrackingService getTargetTrackingService() {
+        return targetTrackingService;
+    }
+
+    public MotionPredictionService getMotionPredictionService() {
+        return motionPredictionService;
     }
 
     /**
@@ -806,18 +826,21 @@ public class RadarService {
             List<IntrusionEvent> events = intrusionDetectionService.detectIntrusion(currentPoints, zone, background);
             allEvents.addAll(events);
 
-            // 更新目标跟踪
-            for (IntrusionEvent event : events) {
-                PointCluster cluster = event.getCluster();
-                if (cluster != null && cluster.getCentroid() != null) {
-                    String targetId = event.getClusterId();
-                    targetTrackingService.updateTarget(targetId, cluster.getCentroid());
+            // 委托给点云处理中心（分类 → 跟踪 → PTZ解算 → 跟随状态机 → 触发工作流）
+            if (pointCloudProcessCenter != null) {
+                pointCloudProcessCenter.processEvents(deviceId, events, zone);
+            } else {
+                // 降级：无处理中心时走旧的直接处理逻辑
+                for (IntrusionEvent event : events) {
+                    PointCluster cluster = event.getCluster();
+                    if (cluster != null && cluster.getCentroid() != null) {
+                        String targetId = event.getClusterId();
+                        targetTrackingService.updateTarget(targetId, cluster.getCentroid());
+                    }
                 }
-            }
-
-            // 处理侵入事件：触发PTZ联动（仅当雷达关联装置且防区配置了球机时）
-            for (IntrusionEvent event : events) {
-                handleIntrusionEvent(deviceId, event, zone);
+                for (IntrusionEvent event : events) {
+                    handleIntrusionEvent(deviceId, event, zone);
+                }
             }
         }
 

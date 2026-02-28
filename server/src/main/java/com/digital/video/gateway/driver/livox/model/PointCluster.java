@@ -8,10 +8,11 @@ import java.util.List;
  */
 public class PointCluster {
     private String clusterId;
-    private List<Point> points; // 聚类中的点
-    private Point centroid; // 质心
-    private float volume; // 体积（立方米）
-    private BoundingBox bbox; // 边界框
+    private List<Point> points;
+    private Point centroid;
+    private float volume;
+    private BoundingBox bbox;
+    private TargetType targetType;
 
     public PointCluster() {
         this.points = new ArrayList<>();
@@ -93,6 +94,26 @@ public class PointCluster {
 
     public int getPointCount() {
         return points != null ? points.size() : 0;
+    }
+
+    public TargetType getTargetType() {
+        return targetType;
+    }
+
+    public void setTargetType(TargetType targetType) {
+        this.targetType = targetType;
+    }
+
+    public float getHeight() {
+        return bbox != null ? (bbox.maxZ - bbox.minZ) : 0;
+    }
+
+    public float getWidth() {
+        return bbox != null ? (bbox.maxX - bbox.minX) : 0;
+    }
+
+    public float getDepth() {
+        return bbox != null ? (bbox.maxY - bbox.minY) : 0;
     }
 
     /**

@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-// 使用 WebGPU 构建以优先走 WebGPU 渲染（Chrome 等支持），不支持时自动回退 WebGL2
-import * as THREE from 'three/webgpu';
+import * as THREE from 'three';
 
 interface Point {
   x: number;
@@ -112,8 +111,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    // 使用 WebGPURenderer（Chrome 等支持 WebGPU 时走 GPU 加速，否则自动回退 WebGL2）
-    const renderer = new THREE.WebGPURenderer({
+    const renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance'
     });
@@ -204,9 +202,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       console.warn('OrbitControls not available, using basic controls');
     });
 
-    // 渲染循环：接收与渲染解耦——在 rAF 内消费待显示帧，再 renderAsync（参考 PCL/RViz 单视觉器+互斥更新）
-    const animate = async () => {
-      animationFrameRef.current = requestAnimationFrame(() => animate());
+    const animate = () => {
+      animationFrameRef.current = requestAnimationFrame(animate);
 
       const pref = pendingFrameRefRef.current;
       if (pref?.current) {
@@ -216,7 +213,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         // count===0 时保留上一帧点云不更新，避免 Worker 空窗导致闪黑/消失
         if (buf.count === 0) {
           if (controlsRef.current) controlsRef.current.update();
-          await renderer.renderAsync(scene, camera);
+          renderer.render(scene, camera);
           return;
         }
         const n = Math.min(buf.count, POINTCLOUD_MAX_POINTS);
@@ -283,7 +280,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         controlsRef.current.update();
       }
 
-      await renderer.renderAsync(scene, camera);
+      renderer.render(scene, camera);
     };
     animate();
 

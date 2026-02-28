@@ -11,7 +11,9 @@ public class IntrusionEvent {
     private String assemblyId;
     private String zoneId;
     private String clusterId;
-    private PointCluster cluster; // 聚类信息
+    private String trackingId;
+    private TargetType targetType;
+    private PointCluster cluster;
     private Timestamp detectedAt;
 
     public IntrusionEvent() {
@@ -82,5 +84,21 @@ public class IntrusionEvent {
 
     public void setDetectedAt(Timestamp detectedAt) {
         this.detectedAt = detectedAt;
+    }
+
+    public String getTrackingId() {
+        return trackingId;
+    }
+
+    public void setTrackingId(String trackingId) {
+        this.trackingId = trackingId;
+    }
+
+    public TargetType getTargetType() {
+        return targetType;
+    }
+
+    public void setTargetType(TargetType targetType) {
+        this.targetType = targetType;
     }
 }

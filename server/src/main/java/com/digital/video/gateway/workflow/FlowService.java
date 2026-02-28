@@ -196,6 +196,44 @@ public class FlowService {
         }
     }
 
+    /**
+     * 确保默认雷达入侵流程存在（若不存在则创建）。
+     * 流程: radar_intrusion(PTZ+抓拍) → oss_upload → mqtt_publish → webhook
+     */
+    public void ensureDefaultRadarIntrusionFlow() {
+        try {
+            AlarmFlow existing = getFlow("default_radar_intrusion_flow");
+            if (existing != null) {
+                return;
+            }
+
+            List<Map<String, Object>> nodes = new ArrayList<>();
+            nodes.add(node("radar_capture", "radar_intrusion", Map.of()));
+            nodes.add(node("oss", "oss_upload", Map.of("path", "radar/{radarDeviceId}/{fileName}")));
+            nodes.add(node("mqtt", "mqtt_publish", Map.of("topic", "radar/intrusion/{deviceId}")));
+            nodes.add(node("webhook", "webhook", Map.of("url", "https://example.com/webhook")));
+
+            List<Map<String, Object>> conns = new ArrayList<>();
+            conns.add(conn("radar_capture", "oss", "success"));
+            conns.add(conn("oss", "mqtt", null));
+            conns.add(conn("mqtt", "webhook", null));
+
+            AlarmFlow flow = new AlarmFlow();
+            flow.setFlowId("default_radar_intrusion_flow");
+            flow.setName("默认雷达入侵流程");
+            flow.setDescription("雷达入侵(PTZ+抓拍)->OSS->MQTT->Webhook");
+            flow.setFlowType("radar");
+            flow.setDefault(false);
+            flow.setEnabled(true);
+            flow.setNodes(mapper.writeValueAsString(nodes));
+            flow.setConnections(mapper.writeValueAsString(conns));
+            saveFlow(flow);
+            logger.info("已创建默认雷达入侵流程: default_radar_intrusion_flow");
+        } catch (Exception e) {
+            logger.error("创建默认雷达入侵流程失败", e);
+        }
+    }
+
     private Map<String, Object> node(String id, String type, Map<String, Object> cfg) {
         Map<String, Object> m = new HashMap<>();
         m.put("nodeId", id);

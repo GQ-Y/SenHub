@@ -977,6 +977,171 @@ public class RadarController {
         }
     }
 
+    // ==================== 白名单（空间排除区）管理 ====================
+
+    /**
+     * 获取防区白名单
+     * GET /api/radar/:deviceId/zones/:zoneId/whitelist
+     */
+    public void getWhitelist(Context ctx) {
+        try {
+            String zoneId = ctx.pathParam("zoneId");
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+            List<com.digital.video.gateway.driver.livox.model.ExclusionZone> list = center.getWhitelist(zoneId);
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (com.digital.video.gateway.driver.livox.model.ExclusionZone ez : list) {
+                result.add(convertExclusionZoneToMap(ez));
+            }
+            ctx.result(createSuccessResponse(result));
+        } catch (Exception e) {
+            logger.error("获取白名单失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 添加白名单（通过跟踪目标 ID 或手动指定空间范围）
+     * POST /api/radar/:deviceId/zones/:zoneId/whitelist
+     *
+     * Body:
+     *   { "trackingId": "trk_1" }        — 自动从当前跟踪目标提取空间
+     *   { "label":"...", "minX":..., "maxX":..., ... }  — 手动指定
+     */
+    public void addWhitelist(Context ctx) {
+        try {
+            String zoneId = ctx.pathParam("zoneId");
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
+            com.digital.video.gateway.driver.livox.model.ExclusionZone ez;
+
+            if (body.containsKey("trackingId")) {
+                String trackingId = (String) body.get("trackingId");
+                ez = center.addWhitelistByTrackingId(zoneId, trackingId);
+                if (ez == null) {
+                    ctx.status(404);
+                    ctx.result(createErrorResponse(404, "未找到跟踪目标: " + trackingId));
+                    return;
+                }
+            } else {
+                String label = body.get("label") != null ? (String) body.get("label") : "手动排除区";
+                float minX = ((Number) body.get("minX")).floatValue();
+                float maxX = ((Number) body.get("maxX")).floatValue();
+                float minY = ((Number) body.get("minY")).floatValue();
+                float maxY = ((Number) body.get("maxY")).floatValue();
+                float minZ = ((Number) body.get("minZ")).floatValue();
+                float maxZ = ((Number) body.get("maxZ")).floatValue();
+                ez = center.addWhitelistManual(zoneId, label, minX, maxX, minY, maxY, minZ, maxZ);
+            }
+
+            ctx.result(createSuccessResponse(convertExclusionZoneToMap(ez)));
+        } catch (Exception e) {
+            logger.error("添加白名单失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 删除指定白名单条目
+     * DELETE /api/radar/:deviceId/zones/:zoneId/whitelist/:exclusionId
+     */
+    public void removeWhitelist(Context ctx) {
+        try {
+            String zoneId = ctx.pathParam("zoneId");
+            String exclusionId = ctx.pathParam("exclusionId");
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+            if (center.removeWhitelistEntry(zoneId, exclusionId)) {
+                ctx.result(createSuccessResponse("已移除"));
+            } else {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "白名单条目不存在"));
+            }
+        } catch (Exception e) {
+            logger.error("删除白名单失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 清空防区所有白名单
+     * DELETE /api/radar/:deviceId/zones/:zoneId/whitelist
+     */
+    public void clearWhitelist(Context ctx) {
+        try {
+            String zoneId = ctx.pathParam("zoneId");
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+            int count = center.clearWhitelist(zoneId);
+            Map<String, Object> data = new HashMap<>();
+            data.put("cleared", count);
+            ctx.result(createSuccessResponse(data));
+        } catch (Exception e) {
+            logger.error("清空白名单失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取当前活跃的跟踪目标列表（供前端选择加白名单）
+     * GET /api/radar/:deviceId/zones/:zoneId/targets
+     */
+    public void getActiveTargets(Context ctx) {
+        try {
+            String zoneId = ctx.pathParam("zoneId");
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+            List<Map<String, Object>> targets = center.getActiveTargets(zoneId);
+            ctx.result(createSuccessResponse(targets));
+        } catch (Exception e) {
+            logger.error("获取活跃目标失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    private Map<String, Object> convertExclusionZoneToMap(com.digital.video.gateway.driver.livox.model.ExclusionZone ez) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("exclusionId", ez.getExclusionId());
+        map.put("zoneId", ez.getZoneId());
+        map.put("sourceTrackingId", ez.getSourceTrackingId());
+        map.put("label", ez.getLabel());
+        map.put("minX", ez.getMinX());
+        map.put("maxX", ez.getMaxX());
+        map.put("minY", ez.getMinY());
+        map.put("maxY", ez.getMaxY());
+        map.put("minZ", ez.getMinZ());
+        map.put("maxZ", ez.getMaxZ());
+        map.put("createdAt", ez.getCreatedAt());
+        return map;
+    }
+
     // ==================== 辅助方法 ====================
 
     private Map<String, Object> convertZoneToMap(DefenseZone zone) {

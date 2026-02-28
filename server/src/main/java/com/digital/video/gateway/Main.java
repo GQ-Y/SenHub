@@ -233,6 +233,7 @@ public class Main {
             flowService = new com.digital.video.gateway.workflow.FlowService(database);
             // 确保默认报警流程存在
             flowService.ensureDefaultAlarmFlow();
+            flowService.ensureDefaultRadarIntrusionFlow();
 
             // 雷达服务初始化（必须在 ZLM start 之前，两个原生库的 epoll 初始化顺序敏感）
             try {
@@ -243,6 +244,8 @@ public class Main {
                 if (assemblyService != null) {
                     radarService.setAssemblyService(assemblyService);
                 }
+                // 注意：PointCloudProcessCenter 需要 flowExecutor，但此时 flowExecutor 尚未创建。
+                // 推迟到 flowExecutor 初始化之后再注入（见下方 initPointCloudProcessCenter 调用）。
                 if (config.getLog() != null) {
                     radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
                 }
@@ -317,6 +320,17 @@ public class Main {
             alarmService.setFlowService(flowService);
             alarmService.setFlowExecutor(flowExecutor);
             setupMqttTopicHandler();
+
+            // 7.4.1 初始化点云处理中心（必须在 flowExecutor 创建之后）
+            if (radarService != null && flowService != null && flowExecutor != null) {
+                PointCloudProcessCenter processCenter = new PointCloudProcessCenter(
+                        radarService.getTargetTrackingService(),
+                        radarService.getMotionPredictionService(),
+                        ptzService, flowService, flowExecutor,
+                        assemblyService, database.getConnection());
+                radarService.setPointCloudProcessCenter(processCenter);
+                logger.info("已初始化点云处理中心（雷达入侵工作流）");
+            }
 
             // 7.5. 设置DeviceManager的MQTT发布器（连接失败时自动降级）
             deviceManager.setMqttPublisher(mqttPublisher);
@@ -520,6 +534,8 @@ public class Main {
         executor.registerHandler("ai_alert_text", new com.digital.video.gateway.workflow.handlers.AiAlertTextHandler(aiClient, aiAnalysisService));
         executor.registerHandler("ai_tts", new com.digital.video.gateway.workflow.handlers.AiTtsHandler(configService, aiAnalysisService));
         executor.registerHandler("system_speaker", new com.digital.video.gateway.workflow.handlers.SystemSpeakerHandler());
+        executor.registerHandler("radar_intrusion",
+                new com.digital.video.gateway.workflow.handlers.RadarIntrusionHandler(ptzService, captureService));
         return executor;
     }
 
@@ -1078,6 +1094,13 @@ public class Main {
         app.get("/api/radar/{deviceId}/intrusions", radarController::getIntrusions);
         app.delete("/api/radar/{deviceId}/intrusions", radarController::clearIntrusions);
         app.get("/api/radar/intrusions/{id}/data", radarController::getIntrusionData);
+
+        // 白名单（空间排除区）API
+        app.get("/api/radar/{deviceId}/zones/{zoneId}/whitelist", radarController::getWhitelist);
+        app.post("/api/radar/{deviceId}/zones/{zoneId}/whitelist", radarController::addWhitelist);
+        app.delete("/api/radar/{deviceId}/zones/{zoneId}/whitelist/{exclusionId}", radarController::removeWhitelist);
+        app.delete("/api/radar/{deviceId}/zones/{zoneId}/whitelist", radarController::clearWhitelist);
+        app.get("/api/radar/{deviceId}/zones/{zoneId}/targets", radarController::getActiveTargets);
 
         EventTypeController eventTypeController = new EventTypeController(database);
         app.get("/api/event-types", eventTypeController::getAllEventTypes);

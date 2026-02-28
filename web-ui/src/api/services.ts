@@ -1105,6 +1105,34 @@ export const radarService = {
 
     return ws;
   },
+
+  // ==================== 白名单（空间排除区）====================
+
+  async getWhitelist(deviceId: string, zoneId: string) {
+    return get<any[]>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/whitelist`);
+  },
+
+  async addWhitelistByTarget(deviceId: string, zoneId: string, trackingId: string) {
+    return post<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/whitelist`, { trackingId });
+  },
+
+  async addWhitelistManual(deviceId: string, zoneId: string, data: {
+    label: string; minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number;
+  }) {
+    return post<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/whitelist`, data);
+  },
+
+  async removeWhitelist(deviceId: string, zoneId: string, exclusionId: string) {
+    return del<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/whitelist/${encodeURIComponent(exclusionId)}`);
+  },
+
+  async clearWhitelist(deviceId: string, zoneId: string) {
+    return del<any>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/whitelist`);
+  },
+
+  async getActiveTargets(deviceId: string, zoneId: string) {
+    return get<any[]>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/targets`);
+  },
 };
 
 // ==================== 扫描服务 ====================

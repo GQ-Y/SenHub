@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Search, Edit2, Trash2, X, Shield, Camera, MapPin, Power, PowerOff } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Edit2, Trash2, X, Shield, Camera, MapPin, Power, PowerOff, ListFilter, Target, Ban } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { radarService, deviceService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
@@ -66,6 +66,12 @@ export const RadarDefenseZone: React.FC = () => {
   });
   const [showCoordinateTransform, setShowCoordinateTransform] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // 白名单管理
+  const [whitelistZoneId, setWhitelistZoneId] = useState<string | null>(null);
+  const [whitelistEntries, setWhitelistEntries] = useState<any[]>([]);
+  const [activeTargets, setActiveTargets] = useState<any[]>([]);
+  const [isLoadingWhitelist, setIsLoadingWhitelist] = useState(false);
 
   // WebSocket 实时点云
   const wsRef = useRef<WebSocket | null>(null);
@@ -510,6 +516,87 @@ export const RadarDefenseZone: React.FC = () => {
     }
   };
 
+  // ==================== 白名单管理 ====================
+
+  const openWhitelistPanel = async (zoneId: string) => {
+    setWhitelistZoneId(zoneId);
+    setIsLoadingWhitelist(true);
+    try {
+      const [wlRes, targetsRes] = await Promise.all([
+        radarService.getWhitelist(deviceId!, zoneId),
+        radarService.getActiveTargets(deviceId!, zoneId),
+      ]);
+      setWhitelistEntries(wlRes.data || []);
+      setActiveTargets(targetsRes.data || []);
+    } catch (err: any) {
+      modal.showModal({ message: '加载白名单数据失败: ' + (err.message || ''), type: 'error' });
+    } finally {
+      setIsLoadingWhitelist(false);
+    }
+  };
+
+  const refreshWhitelistData = async () => {
+    if (!whitelistZoneId) return;
+    try {
+      const [wlRes, targetsRes] = await Promise.all([
+        radarService.getWhitelist(deviceId!, whitelistZoneId),
+        radarService.getActiveTargets(deviceId!, whitelistZoneId),
+      ]);
+      setWhitelistEntries(wlRes.data || []);
+      setActiveTargets(targetsRes.data || []);
+    } catch { /* silent */ }
+  };
+
+  const handleAddWhitelist = async (trackingId: string) => {
+    if (!whitelistZoneId) return;
+    try {
+      await radarService.addWhitelistByTarget(deviceId!, whitelistZoneId, trackingId);
+      modal.showModal({ message: '已加入白名单', type: 'success' });
+      await refreshWhitelistData();
+    } catch (err: any) {
+      modal.showModal({ message: '加白失败: ' + (err.message || ''), type: 'error' });
+    }
+  };
+
+  const handleRemoveWhitelist = async (exclusionId: string) => {
+    if (!whitelistZoneId) return;
+    try {
+      await radarService.removeWhitelist(deviceId!, whitelistZoneId, exclusionId);
+      modal.showModal({ message: '已移除', type: 'success' });
+      await refreshWhitelistData();
+    } catch (err: any) {
+      modal.showModal({ message: '移除失败: ' + (err.message || ''), type: 'error' });
+    }
+  };
+
+  const handleClearWhitelist = async () => {
+    if (!whitelistZoneId) return;
+    modal.showConfirm({
+      title: '清空白名单',
+      message: '确定要清空该防区的所有白名单条目吗？清空后，之前被排除的区域将恢复报警。',
+      onConfirm: async () => {
+        try {
+          await radarService.clearWhitelist(deviceId!, whitelistZoneId);
+          modal.showModal({ message: '已全部清除', type: 'success' });
+          await refreshWhitelistData();
+        } catch (err: any) {
+          modal.showModal({ message: '清空失败: ' + (err.message || ''), type: 'error' });
+        }
+      },
+    });
+  };
+
+  const closeWhitelistPanel = () => {
+    setWhitelistZoneId(null);
+    setWhitelistEntries([]);
+    setActiveTargets([]);
+  };
+
+  const getTargetTypeLabel = (code: string) => {
+    const map: Record<string, string> = { person: '人', animal: '动物', vehicle: '车辆', other: '其他' };
+    return map[code] || code;
+  };
+
   const filteredZones = zones.filter(zone =>
     !searchTerm ||
     zone.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -675,6 +762,13 @@ export const RadarDefenseZone: React.FC = () => {
                         启用
                       </>
                     )}
+                  </button>
+                  <button
+                    onClick={() => openWhitelistPanel(zone.zoneId)}
+                    className="px-3 py-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                    title="白名单管理"
+                  >
+                    <ListFilter size={16} />
                   </button>
                   <button
                     onClick={() => openEditModal(zone)}
@@ -975,6 +1069,167 @@ export const RadarDefenseZone: React.FC = () => {
             confirmText="删除"
             cancelText="取消"
           />
+        )}
+
+        {/* 白名单管理弹窗 */}
+        {whitelistZoneId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeWhitelistPanel}></div>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl z-10 overflow-hidden max-h-[85vh] flex flex-col">
+              {/* 头部 */}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-amber-50/50 shrink-0">
+                <div className="flex items-center space-x-2">
+                  <ListFilter size={20} className="text-amber-600" />
+                  <h3 className="text-lg font-bold text-gray-800">白名单管理</h3>
+                  <span className="text-sm text-gray-500">
+                    防区: {zones.find(z => z.zoneId === whitelistZoneId)?.name || whitelistZoneId}
+                  </span>
+                </div>
+                <button onClick={closeWhitelistPanel} className="p-1 rounded-full hover:bg-gray-200 transition-colors text-gray-500">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {isLoadingWhitelist ? (
+                  <div className="py-12 text-center">
+                    <div className="inline-block w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="mt-3 text-gray-500 text-sm">加载中...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* 当前活跃目标 */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Target size={16} className="mr-1.5 text-blue-500" />
+                          当前活跃目标
+                        </h4>
+                        <button
+                          onClick={refreshWhitelistData}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          刷新
+                        </button>
+                      </div>
+
+                      {activeTargets.length === 0 ? (
+                        <div className="text-center py-6 bg-gray-50 rounded-xl text-gray-400 text-sm">
+                          当前防区内无活跃目标
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {activeTargets.map((target: any) => (
+                            <div
+                              key={target.trackingId}
+                              className="flex items-center justify-between p-3 bg-blue-50/50 border border-blue-100 rounded-xl"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-mono text-gray-700">{target.trackingId}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                    target.targetType === 'person' ? 'bg-blue-100 text-blue-700' :
+                                    target.targetType === 'vehicle' ? 'bg-orange-100 text-orange-700' :
+                                    target.targetType === 'animal' ? 'bg-green-100 text-green-700' :
+                                    'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {target.targetTypeLabel || getTargetTypeLabel(target.targetType)}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-gray-500 mt-1">
+                                  距离: {typeof target.distance === 'number' ? target.distance.toFixed(1) : '-'}m
+                                  &nbsp;|&nbsp;点数: {target.pointCount || '-'}
+                                  &nbsp;|&nbsp;位置: ({target.centroidX?.toFixed(2)}, {target.centroidY?.toFixed(2)}, {target.centroidZ?.toFixed(2)})
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleAddWhitelist(target.trackingId)}
+                                className="ml-3 shrink-0 px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors shadow-sm"
+                              >
+                                加白
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 已加白名单列表 */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Ban size={16} className="mr-1.5 text-amber-500" />
+                          已排除区域
+                          {whitelistEntries.length > 0 && (
+                            <span className="ml-2 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                              {whitelistEntries.length}
+                            </span>
+                          )}
+                        </h4>
+                        {whitelistEntries.length > 0 && (
+                          <button
+                            onClick={handleClearWhitelist}
+                            className="text-xs text-red-500 hover:text-red-700 font-medium"
+                          >
+                            全部清除
+                          </button>
+                        )}
+                      </div>
+
+                      {whitelistEntries.length === 0 ? (
+                        <div className="text-center py-6 bg-gray-50 rounded-xl text-gray-400 text-sm">
+                          暂无白名单条目
+                          <p className="text-[11px] mt-1 text-gray-300">选择上方活跃目标点击「加白」可创建排除区</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {whitelistEntries.map((entry: any) => (
+                            <div
+                              key={entry.exclusionId}
+                              className="flex items-center justify-between p-3 bg-amber-50/50 border border-amber-100 rounded-xl"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <Ban size={14} className="text-amber-500 shrink-0" />
+                                  <span className="text-sm text-gray-700 truncate">{entry.label || entry.exclusionId}</span>
+                                </div>
+                                <div className="text-[11px] text-gray-500 mt-1 font-mono">
+                                  X:[{entry.minX?.toFixed(2)}, {entry.maxX?.toFixed(2)}]
+                                  &nbsp;Y:[{entry.minY?.toFixed(2)}, {entry.maxY?.toFixed(2)}]
+                                  &nbsp;Z:[{entry.minZ?.toFixed(2)}, {entry.maxZ?.toFixed(2)}]
+                                </div>
+                                {entry.sourceTrackingId && (
+                                  <div className="text-[10px] text-gray-400 mt-0.5">
+                                    来源: {entry.sourceTrackingId}
+                                    &nbsp;|&nbsp;创建: {new Date(entry.createdAt).toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleRemoveWhitelist(entry.exclusionId)}
+                                className="ml-3 shrink-0 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="移除"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* 底部说明 */}
+              <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 shrink-0">
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  将持久目标加入白名单后，该目标占据的空间区域将被排除，不再触发报警。
+                  系统会自动对其他入侵目标进行跟踪和抓拍。移除白名单后，该区域将恢复监测。
+                </p>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* 3D防区可视化区域（修改为 Grid 布局） */}
