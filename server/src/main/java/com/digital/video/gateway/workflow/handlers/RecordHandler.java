@@ -110,23 +110,37 @@ public class RecordHandler implements FlowNodeHandler {
 
         if (DeviceInfo.BRAND_HIKVISION.equals(brand) && recorderService != null) {
             // ========== 海康：从 ZLM 本地循环录像提取 ==========
-            long targetReadyTime = alarmTime + (afterSeconds + 2) * 1000;
-            long waitMs = targetReadyTime - System.currentTimeMillis();
-            if (waitMs > 0) {
-                logger.info("等待 {} 秒确保后段录像写入完成...", waitMs / 1000);
-                try { Thread.sleep(waitMs); } catch (InterruptedException e) {
+            // ZLM 按 30s 切分段，正在写入的文件（.前缀）moov 未写入，FFmpeg 无法读取。
+            // 策略：先等到 endMs 过去，然后每 3s 轮询一次，直到找到覆盖时间范围的已完成分段。
+            long minWaitUntil = endMs + 2000L;
+            long nowMs = System.currentTimeMillis();
+            if (nowMs < minWaitUntil) {
+                long w = minWaitUntil - nowMs;
+                logger.info("等待 {}s 确保后段录像时间到达...", w / 1000);
+                try { Thread.sleep(w); } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    logger.warn("录像等待被中断");
                     return false;
                 }
             }
 
-            logger.info("海康设备，从 ZLM 本地录像分段提取...");
-            localPath = recorderService.extractRecording(deviceId, startMs, endMs);
-            if (localPath != null) {
-                logger.info("ZLM 本地录像提取成功: {}", localPath);
-            } else {
-                logger.error("ZLM 本地录像提取失败: deviceId={}, 请确认 ZLM 录像服务是否正常运行", deviceId);
+            int maxAttempts = 20;
+            int pollIntervalMs = 3000;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                localPath = recorderService.extractRecording(deviceId, startMs, endMs);
+                if (localPath != null) {
+                    logger.info("ZLM 本地录像提取成功（第{}次尝试）: {}", attempt, localPath);
+                    break;
+                }
+                if (attempt < maxAttempts) {
+                    logger.debug("ZLM 分段尚未就绪，{}s 后重试（{}/{}）", pollIntervalMs / 1000, attempt, maxAttempts);
+                    try { Thread.sleep(pollIntervalMs); } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            }
+            if (localPath == null) {
+                logger.error("ZLM 本地录像提取失败（已重试{}次）: deviceId={}", maxAttempts, deviceId);
                 return false;
             }
         } else {

@@ -120,6 +120,8 @@ public class RecorderService {
             api.mk_ini_set_option_int(option, "enable_rtmp", 0);
             api.mk_ini_set_option_int(option, "auto_close", 0);
             api.mk_ini_set_option_int(option, "add_mute_audio", 0);
+            api.mk_ini_set_option(option, "mp4_save_path", ZlmMediaService.getRecordBasePathAbsolute());
+            api.mk_ini_set_option_int(option, "mp4_max_second", SEGMENT_SECONDS);
 
             MK_PROXY_PLAYER player = api.mk_proxy_player_create4(VHOST, APP, streamId, option, 0);
             if (player == null || player.getPointer() == null) {
@@ -219,7 +221,19 @@ public class RecorderService {
                     deviceId, fmtMs(startMs), fmtMs(endMs));
             return null;
         }
-        logger.info("找到 {} 个 ZLM 分段覆盖时间范围 [{} ~ {}]", segments.size(), fmtMs(startMs), fmtMs(endMs));
+
+        // 检查已完成的分段是否完全覆盖请求的时间范围
+        long latestEndMs = 0;
+        for (SegmentFile seg : segments) {
+            long segEnd = seg.startMs + SEGMENT_SECONDS * 1000L;
+            if (segEnd > latestEndMs) latestEndMs = segEnd;
+        }
+        if (latestEndMs < endMs) {
+            logger.debug("已完成分段仅覆盖到 {}，尚未覆盖到 endMs={}，等待更多分段", fmtMs(latestEndMs), fmtMs(endMs));
+            return null;
+        }
+
+        logger.info("找到 {} 个 ZLM 分段完全覆盖时间范围 [{} ~ {}]", segments.size(), fmtMs(startMs), fmtMs(endMs));
 
         File outDir = new File("./storage/recordings");
         if (!outDir.exists()) outDir.mkdirs();
@@ -274,17 +288,21 @@ public class RecorderService {
     // ======================== 内部方法 ========================
 
     /**
-     * ZLM 录像目录：{basePath}/{vhost}/{app}/{streamId}/{YYYY-MM-DD}/{HH-MM-SS}.mp4
+     * ZLM MP4 录像目录。
+     * protocol.mp4_save_path 模式下，ZLM 使用 record.appName（默认 "record"）替代 vhost，
+     * 目录结构为：{mp4_save_path}/record/{app}/{streamId}/{YYYY-MM-DD}/
+     * 文件命名为：{YYYY-MM-DD-HH-mm-ss-index}.mp4
      */
     private File getRecordingDir(String deviceId) {
         String streamId = "rec_" + sanitizeStreamId(deviceId);
-        return new File(ZlmMediaService.RECORD_BASE_PATH, VHOST + "/" + APP + "/" + streamId);
+        String base = ZlmMediaService.getRecordBasePathAbsolute();
+        return new File(base, "record/" + APP + "/" + streamId);
     }
 
     private List<SegmentFile> findOverlappingSegments(String deviceId, long startMs, long endMs) {
         File deviceDir = getRecordingDir(deviceId);
         if (!deviceDir.exists()) {
-            logger.debug("ZLM 录像目录不存在: {}", deviceDir.getAbsolutePath());
+            logger.warn("ZLM 录像目录不存在（请确认该设备 ZLM 循环录像已启动且已录满至少一段 180s）: {}", deviceDir.getAbsolutePath());
             return Collections.emptyList();
         }
 
@@ -292,22 +310,31 @@ public class RecorderService {
         File[] dateDirs = deviceDir.listFiles(File::isDirectory);
         if (dateDirs == null) return Collections.emptyList();
 
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd/HH-mm-ss");
+        // ZLM protocol.mp4_save_path 模式文件名: YYYY-MM-DD-HH-mm-ss-index.mp4
+        // 正在写入的文件以 . 开头（隐藏文件），moov 未写入，FFmpeg 无法读取，必须跳过
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
         for (File dateDir : dateDirs) {
-            String datePart = dateDir.getName();
-            File[] mp4Files = dateDir.listFiles((d, name) -> name.endsWith(".mp4"));
+            File[] mp4Files = dateDir.listFiles((d, name) -> name.endsWith(".mp4") && !name.startsWith("."));
             if (mp4Files == null) continue;
 
             for (File f : mp4Files) {
-                String timePart = f.getName().replace(".mp4", "");
+                String name = f.getName().replace(".mp4", "");
+                // 去掉末尾的 "-index" 部分（如 "2026-02-27-19-48-04-0" → "2026-02-27-19-48-04"）
+                int lastDash = name.lastIndexOf('-');
+                if (lastDash > 0) {
+                    String maybeIndex = name.substring(lastDash + 1);
+                    if (maybeIndex.chars().allMatch(Character::isDigit)) {
+                        name = name.substring(0, lastDash);
+                    }
+                }
                 try {
-                    long fileStartMs = sdf.parse(datePart + "/" + timePart).getTime();
+                    long fileStartMs = sdf.parse(name).getTime();
                     long fileEndMs = fileStartMs + SEGMENT_SECONDS * 1000L;
                     if (fileStartMs < endMs && fileEndMs > startMs) {
                         result.add(new SegmentFile(f, fileStartMs));
                     }
                 } catch (ParseException e) {
-                    logger.debug("无法解析 ZLM 录像时间戳: {}/{}", datePart, f.getName());
+                    logger.debug("无法解析 ZLM 录像时间戳: {}", f.getName());
                 }
             }
         }
@@ -346,7 +373,7 @@ public class RecorderService {
      * 清理超过保留期的 ZLM 录像文件。
      */
     public void cleanupOldRecords(long retentionMillis) {
-        File baseDir = new File(ZlmMediaService.RECORD_BASE_PATH);
+        File baseDir = new File(ZlmMediaService.getRecordBasePathAbsolute());
         if (!baseDir.exists()) return;
 
         long cutoff = System.currentTimeMillis() - retentionMillis;

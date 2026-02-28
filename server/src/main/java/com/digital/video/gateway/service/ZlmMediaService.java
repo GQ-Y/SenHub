@@ -8,6 +8,9 @@ import com.sun.jna.Native;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.nio.file.Paths;
+
 /**
  * ZLMediaKit 内嵌流媒体服务：直播拉流、回放转码等。
  * 根据 config.zlm.enabled 可选启动，失败时仅禁用 ZLM 能力，不影响现有 SDK 功能。
@@ -16,7 +19,10 @@ public class ZlmMediaService {
     private static final Logger logger = LoggerFactory.getLogger(ZlmMediaService.class);
 
     public static final String RECORD_BASE_PATH = "./storage/zlm_records";
-    public static final int RECORD_FILE_SECOND = 180;
+    public static final int RECORD_FILE_SECOND = 30;
+
+    /** 解析后的录像根目录（绝对路径），供 RecorderService 查找分段；在 start() 时设置 */
+    private static volatile String recordBasePathAbsolute;
 
     private final Config.ZlmConfig config;
     private ZLMApi api;
@@ -71,15 +77,28 @@ public class ZlmMediaService {
             api.mk_ini_set_option_int(mkIni, "protocol.enable_ts", 1);
             api.mk_ini_set_option_int(mkIni, "protocol.enable_fmp4", 1);
             api.mk_ini_set_option_int(mkIni, "protocol.enable_audio", 1);
-            api.mk_ini_set_option_int(mkIni, "protocol.enable_mp4", 0);
             api.mk_ini_set_option_int(mkIni, "protocol.auto_close", 0);
             api.mk_ini_set_option_int(mkIni, "general.streamNoneReaderDelayMS", 30000);
             api.mk_ini_set_option_int(mkIni, "general.maxStreamWaitMS", 5000);
 
-            api.mk_ini_set_option(mkIni, "record.filePath", RECORD_BASE_PATH);
-            api.mk_ini_set_option_int(mkIni, "record.fileSecond", RECORD_FILE_SECOND);
+            recordBasePathAbsolute = Paths.get(RECORD_BASE_PATH).toAbsolutePath().normalize().toString();
+            File recordDir = new File(recordBasePathAbsolute);
+            if (!recordDir.exists()) {
+                if (recordDir.mkdirs()) {
+                    logger.info("ZLM 录像目录已创建: {}", recordBasePathAbsolute);
+                } else {
+                    logger.warn("ZLM 录像目录创建失败: {}", recordBasePathAbsolute);
+                }
+            }
+            // protocol.mp4_save_path: ZLM 实际写 MP4 分段的目录（[protocol] 节配置）
+            // protocol.mp4_max_second: 每个 MP4 分段的最大时长（秒）
+            // 注意：record.filePath / record.fileSecond 是"点播"模块配置，不控制实时 MP4 录像
+            api.mk_ini_set_option(mkIni, "protocol.mp4_save_path", recordBasePathAbsolute);
+            api.mk_ini_set_option_int(mkIni, "protocol.mp4_max_second", RECORD_FILE_SECOND);
+            api.mk_ini_set_option_int(mkIni, "protocol.mp4_as_player", 0);
             api.mk_ini_set_option_int(mkIni, "record.fastStart", 1);
             api.mk_ini_set_option_int(mkIni, "record.fileBufSize", 65536);
+            logger.info("ZLM 录像配置: mp4_save_path={}, mp4_max_second={}", recordBasePathAbsolute, RECORD_FILE_SECOND);
 
             // 2. 再调用 mk_env_init1 初始化（使用已设置的 INI 配置）
             api.mk_env_init1(0, 2, 1, null, 1, 0, null, 0, null, null);
@@ -133,5 +152,16 @@ public class ZlmMediaService {
 
     public ZLMApi getApi() {
         return api;
+    }
+
+    /**
+     * 返回 ZLM 录像根目录的绝对路径，供 RecorderService 查找 MP4 分段。
+     * 若 ZLM 尚未启动则返回对 RECORD_BASE_PATH 做 getAbsolutePath 的结果。
+     */
+    public static String getRecordBasePathAbsolute() {
+        if (recordBasePathAbsolute != null && !recordBasePathAbsolute.isEmpty()) {
+            return recordBasePathAbsolute;
+        }
+        return Paths.get(RECORD_BASE_PATH).toAbsolutePath().normalize().toString();
     }
 }
