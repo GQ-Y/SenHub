@@ -352,6 +352,9 @@ public class Main {
             // 8. 初始化命令处理器（使用功能服务类）
             commandHandler = new CommandHandler(deviceManager, hikvisionSDK, recorder,
                     captureService, ptzService, playbackService);
+            commandHandler.setRecorderService(recorderService);
+            commandHandler.setOssService(ossService);
+            commandHandler.setRecordingTaskService(recordingTaskService);
             logger.info("命令处理器初始化成功");
 
             // 9. 启动设备扫描器（暂时使用海康SDK，后续可扩展为多品牌）

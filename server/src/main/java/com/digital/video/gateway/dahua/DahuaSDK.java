@@ -280,6 +280,32 @@ public class DahuaSDK implements DeviceSDK {
         return initialized;
     }
 
+    @Override
+    public boolean rebootDevice(int userId) {
+        if (!initialized || netsdk == null) {
+            logger.error("大华SDK未初始化，无法重启设备");
+            return false;
+        }
+        NetSDKLib.LLong loginHandle = loginHandles.get(userId);
+        if (loginHandle == null) {
+            logger.error("大华设备登录句柄不存在，无法重启: userId={}", userId);
+            return false;
+        }
+        try {
+            boolean result = netsdk.CLIENT_ControlDevice(loginHandle,
+                    NetSDKLib.CtrlType.CTRLTYPE_CTRL_REBOOT, null, 3000);
+            if (result) {
+                logger.info("大华设备重启命令已发送: userId={}", userId);
+            } else {
+                logger.error("大华设备重启失败: userId={}, 错误={}", userId, ToolKits.getErrorCodePrint());
+            }
+            return result;
+        } catch (Exception e) {
+            logger.error("大华设备重启异常: userId={}", userId, e);
+            return false;
+        }
+    }
+
     /**
      * 设置DeviceManager和MqttClient（用于状态回调）
      */
