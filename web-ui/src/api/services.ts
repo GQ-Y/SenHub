@@ -984,6 +984,14 @@ export const radarService = {
   },
 
   /**
+   * PTZ 跟随抑制（标定模式下禁止球机自动转动）
+   */
+  async setPtzSuppress(cameraDeviceId: string, suppress: boolean): Promise<any> {
+    const response = await put<any>('/radar/ptz/suppress', { cameraDeviceId, suppress });
+    return response as any;
+  },
+
+  /**
    * 获取背景模型列表
    */
   async getBackgrounds(deviceId: string) {

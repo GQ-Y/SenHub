@@ -1432,6 +1432,47 @@ public class RadarController {
         }
     }
 
+    /**
+     * PTZ 抑制（标定模式）
+     * PUT /api/radar/ptz/suppress
+     * Body: { "cameraDeviceId": "xxx", "suppress": true/false }
+     */
+    public void setPtzSuppress(Context ctx) {
+        try {
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), new TypeReference<Map<String, Object>>() {});
+            String cameraDeviceId = (String) body.get("cameraDeviceId");
+            Boolean suppress = body.get("suppress") != null && Boolean.TRUE.equals(body.get("suppress"));
+
+            if (cameraDeviceId == null || cameraDeviceId.trim().isEmpty()) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少 cameraDeviceId"));
+                return;
+            }
+
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+
+            if (suppress) {
+                center.suppressPtz(cameraDeviceId);
+            } else {
+                center.unsuppressPtz(cameraDeviceId);
+            }
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("cameraDeviceId", cameraDeviceId);
+            payload.put("suppressed", suppress);
+            ctx.result(createSuccessResponse(payload));
+        } catch (Exception e) {
+            logger.error("设置PTZ抑制失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
     private String createSuccessResponse(Object data) {
         try {
             Map<String, Object> result = new HashMap<>();

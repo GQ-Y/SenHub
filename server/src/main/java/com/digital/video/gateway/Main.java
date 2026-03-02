@@ -1090,6 +1090,7 @@ public class Main {
         app.put("/api/radar/{deviceId}/zones/{zoneId}/toggle", radarController::toggleZone);
         app.get("/api/radar/{deviceId}/detection", radarController::getDetectionEnabled);
         app.put("/api/radar/{deviceId}/detection", radarController::setDetectionEnabled);
+        app.put("/api/radar/ptz/suppress", radarController::setPtzSuppress);
         app.get("/api/radar/{deviceId}/backgrounds", radarController::getBackgrounds);
         app.delete("/api/radar/{deviceId}/backgrounds/{backgroundId}", radarController::deleteBackground);
         app.get("/api/radar/{deviceId}/intrusions", radarController::getIntrusions);

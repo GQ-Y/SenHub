@@ -97,10 +97,11 @@ public class RadarService {
     /**
      * 点云处理线程池：将 routePointCloud（降噪/侵入检测/推送）从 Livox 回调线程中剥离，
      * 避免在检测模式下阻塞回调导致 UDP 收包变慢、点云吞吐量骤降。
-     * 为支撑 Mid-360 约 20 万点/秒，增大队列与线程；队列满时丢弃新帧，保证回调立即返回。
+     * Mid-360 约 2,000+ 帧/秒，需 4 线程 + 256 深度队列才能保证检测模式下 < 5% 丢帧。
      */
-    private static final int POINT_CLOUD_WORKER_THREADS = 2;
-    private static final int POINT_CLOUD_QUEUE_CAPACITY = 64;
+    private static final int POINT_CLOUD_WORKER_THREADS = 4;
+    private static final int POINT_CLOUD_QUEUE_CAPACITY = 256;
+    private final AtomicLong lastQueueFullLogTime = new AtomicLong(0);
     private final ThreadPoolExecutor pointCloudExecutor = new ThreadPoolExecutor(
             POINT_CLOUD_WORKER_THREADS, POINT_CLOUD_WORKER_THREADS, 60L, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(POINT_CLOUD_QUEUE_CAPACITY),
@@ -111,7 +112,11 @@ public class RadarService {
             },
             (r, e) -> {
                 rejectedPointCloudFrames.incrementAndGet();
-                logger.warn("点云处理队列已满，丢弃本帧（防区开启时勿阻塞回调）");
+                long now = System.currentTimeMillis();
+                long last = lastQueueFullLogTime.get();
+                if (now - last >= 5000 && lastQueueFullLogTime.compareAndSet(last, now)) {
+                    logger.warn("点云处理队列已满，丢弃帧（最近5秒丢弃: {}）", rejectedPointCloudFrames.get());
+                }
             }
     );
 
@@ -1270,14 +1275,18 @@ public class RadarService {
 
     /**
      * 重新加载设备的检测上下文（背景模型和防区配置）。
-     * 仅加载防区和背景到内存，不自动开启检测，避免未显式「开启检测」时每帧跑侵入检测导致队列满、丢帧。
-     * 需显式调用 setDeviceState(deviceId, "detecting") 或 PUT /api/radar/:deviceId/detection 开启检测。
+     * 如果之前已处于检测模式且重新加载后条件仍满足，自动保持检测状态。
      */
     public void reloadDeviceDetectionContext(String deviceId) {
-        // 1. 重新加载防区配置
+        String previousState = deviceStates.getOrDefault(deviceId, "");
+
+        // 1. 清除侵入检测服务的空间索引缓存，强制下次重建
+        intrusionDetectionService.clearSpatialIndexCache();
+
+        // 2. 重新加载防区配置
         loadZonesForDevice(deviceId);
 
-        // 2. 查找防区中使用的背景，并加载（不自动设为 detecting）
+        // 3. 查找防区中使用的背景并加载
         List<DefenseZone> zones = deviceZones.get(deviceId);
         if (zones != null && !zones.isEmpty()) {
             DefenseZone shrinkZone = zones.stream()
@@ -1296,19 +1305,26 @@ public class RadarService {
                     background.buildBoundaryGrid(shrinkDistanceCm);
 
                     loadedBackgrounds.put(deviceId, background);
-                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}",
-                            deviceId, backgroundId, background.getPoints().size(),
-                            background.getBoundaryGrid() != null ? background.getBoundaryGrid().getValidDirections()
-                                    : 0);
+                    // 条件满足，自动恢复/保持检测状态
+                    if ("detecting".equals(previousState)) {
+                        deviceStates.put(deviceId, "detecting");
+                        logger.info("重新加载并恢复检测模式: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}",
+                                deviceId, backgroundId, background.getPoints().size(),
+                                background.getBoundaryGrid() != null ? background.getBoundaryGrid().getValidDirections() : 0);
+                    } else {
+                        logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}",
+                                deviceId, backgroundId, background.getPoints().size(),
+                                background.getBoundaryGrid() != null ? background.getBoundaryGrid().getValidDirections() : 0);
+                    }
                 } else {
                     logger.warn("背景模型加载失败: deviceId={}, backgroundId={}", deviceId, backgroundId);
                 }
             } else {
                 logger.debug("没有启用的防区或背景ID为空: deviceId={}", deviceId);
-                deviceStates.put(deviceId, ""); // 无启用防区时确保不处于检测状态
+                deviceStates.put(deviceId, "");
             }
         } else {
-            deviceStates.put(deviceId, ""); // 无防区时确保不处于检测状态
+            deviceStates.put(deviceId, "");
         }
     }
 

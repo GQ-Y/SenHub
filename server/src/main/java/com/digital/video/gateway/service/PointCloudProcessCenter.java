@@ -75,6 +75,27 @@ public class PointCloudProcessCenter {
     // CoordinateTransform 缓存：zoneId → transform（防区标定参数变更频率极低）
     private final Map<String, CoordinateTransform> coordTransformCache = new ConcurrentHashMap<>();
 
+    // ---- PTZ 抑制（标定模式） ----
+    // 被抑制的摄像头设备 ID 集合：标定期间禁止 PTZ 跟随
+    private final java.util.Set<String> ptzSuppressedDevices = ConcurrentHashMap.newKeySet();
+
+    /** 抑制指定摄像头的 PTZ 跟随（标定期间调用） */
+    public void suppressPtz(String cameraDeviceId) {
+        ptzSuppressedDevices.add(cameraDeviceId);
+        logger.info("PTZ 跟随已抑制（标定模式）: cameraDeviceId={}", cameraDeviceId);
+    }
+
+    /** 恢复指定摄像头的 PTZ 跟随（标定结束调用） */
+    public void unsuppressPtz(String cameraDeviceId) {
+        ptzSuppressedDevices.remove(cameraDeviceId);
+        logger.info("PTZ 跟随已恢复: cameraDeviceId={}", cameraDeviceId);
+    }
+
+    /** 检查摄像头是否被抑制 */
+    public boolean isPtzSuppressed(String cameraDeviceId) {
+        return ptzSuppressedDevices.contains(cameraDeviceId);
+    }
+
     // ---- 空间白名单（排除区） ----
     // zoneId → 排除区列表（CopyOnWriteArrayList 保证读多写少场景的线程安全）
     private final Map<String, CopyOnWriteArrayList<ExclusionZone>> exclusionZones = new ConcurrentHashMap<>();
@@ -195,6 +216,9 @@ public class PointCloudProcessCenter {
         // 0. 前置条件检查
         String cameraDeviceId = zone.getCameraDeviceId();
         if (cameraDeviceId == null || cameraDeviceId.trim().isEmpty()) {
+            return;
+        }
+        if (isPtzSuppressed(cameraDeviceId)) {
             return;
         }
         if (!isPtzLinkageEnabled(radarDeviceId)) {

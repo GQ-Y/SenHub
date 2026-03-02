@@ -143,12 +143,26 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
     }).catch(() => {});
   }, [selectedZone, context?.radarDeviceId]);
 
+  // 标定模式 PTZ 抑制：进入 step 2 时禁止球机跟随，退出时恢复
+  const cameraIdForSuppress = selectedZone?.cameraDeviceId || context?.cameraDeviceId;
+  useEffect(() => {
+    if (step !== 2 || !cameraIdForSuppress) return;
+    radarService.setPtzSuppress(cameraIdForSuppress, true).catch(() => {});
+    return () => {
+      radarService.setPtzSuppress(cameraIdForSuppress, false).catch(() => {});
+    };
+  }, [step, cameraIdForSuppress]);
+
   // WebSocket 点云连接 — 侵入检测由服务端完成，前端只渲染服务端标记的侵入点
   useEffect(() => {
     if (step !== 2 || !context?.radarDeviceId) return;
     const deviceId = context.radarDeviceId;
     const curZoneId = selectedZone?.zoneId;
     let isCleaningUp = false;
+
+    // 确保服务端处于检测模式
+    radarService.setDetectionEnabled(deviceId, true).catch(() => {});
+
     const ws = radarService.connectWebSocket(
       deviceId,
       (data: any) => {

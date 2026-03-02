@@ -187,6 +187,11 @@ public class IntrusionDetectionService {
         return newPoints;
     }
 
+    /** 清除空间索引缓存，在防区/背景变更后调用以强制下次重建 */
+    public void clearSpatialIndexCache() {
+        spatialIndexCache.clear();
+    }
+
     private SpatialIndex getOrBuildSpatialIndex(BackgroundModel background) {
         String key = background.getBackgroundId();
         if (key == null || key.isEmpty()) {
@@ -265,6 +270,12 @@ public class IntrusionDetectionService {
      * @param zones         防区列表
      * @param background    背景模型
      */
+    /** 背景减除搜索半径（米），取收缩距离的 3/4 以覆盖边界噪声 */
+    private static final float BG_SUBTRACT_RADIUS = 0.15f;
+    /** 单帧孤立点过滤：标记后的侵入点需在此半径内有至少 MIN_NEIGHBORS 个同帧侵入点才保留 */
+    private static final float ISOLATION_RADIUS = 0.5f;
+    private static final int MIN_NEIGHBORS = 1;
+
     public void markIntruderPoints(List<Point> currentPoints, List<DefenseZone> zones, BackgroundModel background) {
         if (currentPoints == null || currentPoints.isEmpty() || zones == null || zones.isEmpty()) {
             return;
@@ -277,6 +288,7 @@ public class IntrusionDetectionService {
 
         SpatialIndex spatialIndex = (background != null) ? getOrBuildSpatialIndex(background) : null;
 
+        // 第一遍：初步标记
         for (Point point : currentPoints) {
             for (DefenseZone zone : zones) {
                 if (!zone.getEnabled())
@@ -293,7 +305,7 @@ public class IntrusionDetectionService {
                 }
 
                 if (isIntruder && spatialIndex != null) {
-                    if (spatialIndex.isPointInBackground(point, 0.1f)) {
+                    if (spatialIndex.isPointInBackground(point, BG_SUBTRACT_RADIUS)) {
                         isIntruder = false;
                     }
                 }
@@ -301,6 +313,29 @@ public class IntrusionDetectionService {
                 if (isIntruder) {
                     point.zoneId = zone.getZoneId();
                     break;
+                }
+            }
+        }
+
+        // 第二遍：孤立点过滤 — 移除没有近邻的噪声标记
+        List<Point> marked = new ArrayList<>();
+        for (Point p : currentPoints) {
+            if (p.zoneId != null) marked.add(p);
+        }
+        if (marked.size() > 0 && marked.size() <= 500) {
+            float r2 = ISOLATION_RADIUS * ISOLATION_RADIUS;
+            for (Point p : marked) {
+                int neighbors = 0;
+                for (Point q : marked) {
+                    if (q == p) continue;
+                    float dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+                    if (dx * dx + dy * dy + dz * dz <= r2) {
+                        neighbors++;
+                        if (neighbors >= MIN_NEIGHBORS) break;
+                    }
+                }
+                if (neighbors < MIN_NEIGHBORS) {
+                    p.zoneId = null;
                 }
             }
         }
