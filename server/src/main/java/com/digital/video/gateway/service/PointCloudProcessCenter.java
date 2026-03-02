@@ -22,8 +22,11 @@ import org.slf4j.LoggerFactory;
 import com.digital.video.gateway.driver.livox.model.ExclusionZone;
 
 import java.sql.Connection;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -62,6 +65,9 @@ public class PointCloudProcessCenter {
     // ---- 跟随状态机（防区级） ----
     private final Map<String, FollowState> followStates = new ConcurrentHashMap<>();
 
+    // 防区级互斥锁：确保同一防区不会被两个 PointCloudWorker 线程并发处理
+    private final ConcurrentHashMap<String, Object> zoneLocks = new ConcurrentHashMap<>();
+
     // PTZ 联动开关缓存：radarDeviceId → (是否启用, 缓存过期时间戳)
     private final Map<String, long[]> ptzLinkageCache = new ConcurrentHashMap<>();
     private static final long PTZ_LINKAGE_CACHE_TTL_MS = 10_000;
@@ -92,6 +98,9 @@ public class PointCloudProcessCenter {
     /** 工作流触发最小间隔（毫秒）：同一防区连续触发工作流的最小间隔 */
     private static final long WORKFLOW_TRIGGER_MIN_INTERVAL_MS = 8000;
 
+    /** 防区级分类投票窗口大小（跨跟踪 ID 累积，比单目标窗口更大以获得稳定性） */
+    private static final int ZONE_TYPE_VOTE_WINDOW = 15;
+
     /**
      * 防区级跟随状态
      */
@@ -108,6 +117,37 @@ public class PointCloudProcessCenter {
         long lastSwitchTime;
         /** 上次触发工作流的时间 */
         long lastWorkflowTriggerTime;
+
+        /** 防区级分类投票历史（跨跟踪 ID 保持连续性） */
+        final Deque<TargetType> zoneTypeHistory = new ArrayDeque<>();
+        final Map<TargetType, Integer> zoneTypeVotes = new EnumMap<>(TargetType.class);
+        /** 当前防区平滑后的目标类型 */
+        TargetType smoothedType = null;
+
+        void addTypeVote(TargetType type) {
+            if (type == null) type = TargetType.OTHER;
+            zoneTypeHistory.addLast(type);
+            zoneTypeVotes.merge(type, 1, Integer::sum);
+            while (zoneTypeHistory.size() > ZONE_TYPE_VOTE_WINDOW) {
+                TargetType old = zoneTypeHistory.pollFirst();
+                int cnt = zoneTypeVotes.getOrDefault(old, 1) - 1;
+                if (cnt <= 0) zoneTypeVotes.remove(old);
+                else zoneTypeVotes.put(old, cnt);
+            }
+            smoothedType = getMajorityType();
+        }
+
+        private TargetType getMajorityType() {
+            TargetType best = TargetType.OTHER;
+            int maxCount = 0;
+            for (Map.Entry<TargetType, Integer> e : zoneTypeVotes.entrySet()) {
+                if (e.getValue() > maxCount) {
+                    maxCount = e.getValue();
+                    best = e.getKey();
+                }
+            }
+            return best;
+        }
     }
 
     public PointCloudProcessCenter(
@@ -141,6 +181,15 @@ public class PointCloudProcessCenter {
             handleNoTargets(zone.getZoneId());
             return;
         }
+
+        // 防区级互斥：同一防区同一时刻只允许一个线程处理，防止重复触发工作流
+        Object lock = zoneLocks.computeIfAbsent(zone.getZoneId(), k -> new Object());
+        synchronized (lock) {
+            processEventsLocked(radarDeviceId, eventsIn, zone);
+        }
+    }
+
+    private void processEventsLocked(String radarDeviceId, List<IntrusionEvent> eventsIn, DefenseZone zone) {
         List<IntrusionEvent> events = new ArrayList<>(eventsIn);
 
         // 0. 前置条件检查
@@ -255,7 +304,10 @@ public class PointCloudProcessCenter {
             return;
         }
 
-        // 4. 跟随状态机
+        // 4. 防区级分类平滑：每帧将当前目标的分类喂入 FollowState 的投票器
+        state.addTypeVote(primaryTarget.getTargetType());
+
+        // 5. 跟随状态机
         boolean isNewTarget = state.followingTargetId == null;
         boolean isSameTarget = !isNewTarget && state.followingTargetId.equals(primaryTarget.getTrackingId());
 
@@ -269,11 +321,12 @@ public class PointCloudProcessCenter {
             state.lastSwitchTime = now;
             state.lastWorkflowTriggerTime = now;
 
-            logger.info("首次锁定目标: zoneId={}, trackingId={}, type={}, distance={}m",
-                    zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType(), distance);
+            logger.info("首次锁定目标: zoneId={}, trackingId={}, rawType={}, smoothedType={}, distance={}m",
+                    zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType(),
+                    state.smoothedType, distance);
 
             triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
-                    pan, tilt, zoom, distance, cameraDeviceId, channel);
+                    pan, tilt, zoom, distance, cameraDeviceId, channel, state);
 
         } else if (isSameTarget) {
             // 续跟当前目标 → 更新 PTZ（节拍）
@@ -287,9 +340,10 @@ public class PointCloudProcessCenter {
             // 定时抓拍
             if (now - state.lastCaptureTime >= CAPTURE_INTERVAL_MS) {
                 state.lastCaptureTime = now;
-                logger.info("定时抓拍: zoneId={}, trackingId={}", zoneId, primaryTarget.getTrackingId());
+                logger.info("定时抓拍: zoneId={}, trackingId={}, smoothedType={}",
+                        zoneId, primaryTarget.getTrackingId(), state.smoothedType);
                 triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
-                        pan, tilt, zoom, distance, cameraDeviceId, channel);
+                        pan, tilt, zoom, distance, cameraDeviceId, channel, state);
             }
         } else {
             // trackingId 变了 — 可能是 MOT 重分配了 ID，不一定是真正的新目标
@@ -311,10 +365,11 @@ public class PointCloudProcessCenter {
                 if (workflowReady) {
                     state.lastWorkflowTriggerTime = now;
                     state.lastCaptureTime = now;
-                    logger.info("切换跟随目标: zoneId={}, newTrackingId={}, type={}",
-                            zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType());
+                    logger.info("切换跟随目标: zoneId={}, newTrackingId={}, rawType={}, smoothedType={}",
+                            zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType(),
+                            state.smoothedType);
                     triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
-                            pan, tilt, zoom, distance, cameraDeviceId, channel);
+                            pan, tilt, zoom, distance, cameraDeviceId, channel, state);
                 } else {
                     logger.debug("切换跟随目标（工作流冷却中）: zoneId={}, newTrackingId={}",
                             zoneId, primaryTarget.getTrackingId());
@@ -343,10 +398,13 @@ public class PointCloudProcessCenter {
             if (elapsed < TARGET_LOST_GRACE_MS) {
                 return;
             }
-            logger.info("目标脱离防区，结束跟随: zoneId={}, trackingId={}, 无目标持续={}ms",
-                    zoneId, state.followingTargetId, elapsed);
+            logger.info("目标脱离防区，结束跟随: zoneId={}, trackingId={}, smoothedType={}, 无目标持续={}ms",
+                    zoneId, state.followingTargetId, state.smoothedType, elapsed);
             state.followingTargetId = null;
             state.lastFollowedPosition = null;
+            state.zoneTypeHistory.clear();
+            state.zoneTypeVotes.clear();
+            state.smoothedType = null;
         }
     }
 
@@ -477,7 +535,8 @@ public class PointCloudProcessCenter {
             TrackedTarget target,
             MotionPredictionService.PredictionResult prediction,
             float pan, float tilt, float zoom, float distance,
-            String cameraDeviceId, int channel) {
+            String cameraDeviceId, int channel,
+            FollowState followState) {
 
         try {
             // 查找雷达入侵专用流程（优先使用 radar 类型流程，否则使用默认流程）
@@ -500,8 +559,12 @@ public class PointCloudProcessCenter {
             context.putVariable("zoneId", zone.getZoneId());
             context.putVariable("zoneName", zone.getName());
 
+            TargetType effectiveType = followState != null && followState.smoothedType != null
+                    ? followState.smoothedType
+                    : (target.getTargetType() != null ? target.getTargetType() : TargetType.OTHER);
+
             context.putVariable("targetId", target.getTrackingId());
-            context.putVariable("targetType", target.getTargetType() != null ? target.getTargetType().getCode() : "other");
+            context.putVariable("targetType", effectiveType.getCode());
 
             Point centroid = target.getPosition();
             context.putVariable("centroidX", centroid.x);
@@ -533,13 +596,13 @@ public class PointCloudProcessCenter {
             context.getPayload().put("eventName", "雷达入侵");
             context.getPayload().put("deviceId", cameraDeviceId);
             context.getPayload().put("radarDeviceId", radarDeviceId);
-            context.getPayload().put("targetType", target.getTargetType() != null ? target.getTargetType().getLabel() : "其他");
+            context.getPayload().put("targetType", effectiveType.getLabel());
             context.getPayload().put("distance", String.format("%.1f", distance));
 
-            logger.info("触发雷达入侵工作流: radarId={}, zoneId={}, trackingId={}, type={}, " +
-                            "pan={}, tilt={}, zoom={}, distance={}m, motionState={}",
+            logger.info("触发雷达入侵工作流: radarId={}, zoneId={}, trackingId={}, " +
+                            "rawType={}, smoothedType={}, pan={}, tilt={}, zoom={}, distance={}m, motionState={}",
                     radarDeviceId, zone.getZoneId(), target.getTrackingId(),
-                    target.getTargetType(), pan, tilt, zoom, distance, prediction.motionState);
+                    target.getTargetType(), effectiveType, pan, tilt, zoom, distance, prediction.motionState);
 
             // 异步触发工作流（使用线程池，避免无限创建线程）
             workflowExecutor.submit(() -> {

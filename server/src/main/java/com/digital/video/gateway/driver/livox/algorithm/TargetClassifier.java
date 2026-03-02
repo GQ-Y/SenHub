@@ -7,30 +7,31 @@ import org.slf4j.LoggerFactory;
 
 /**
  * 基于点云聚类几何特征的目标分类器。
- * 使用 bbox 高度(Z跨度)、宽度、深度、体积、点数等特征
- * 将目标分类为：人、动物、车辆、其他。
+ *
+ * 分类优先级（从高到低）：ANIMAL → PERSON → VEHICLE → OTHER
+ *
+ * 关键设计考量（Livox Mid-360 稀疏点云 + 800ms 累积窗口）：
+ * - 每帧仅 1-3 个前景点，累积后 3-15 点
+ * - 人移动时累积点在水平面扩散，bbox 宽度/深度可达 3-5m
+ * - 累积聚类的体积和水平跨度对于人/车都可能很大，无法作为可靠区分
+ * - 高度（Z 跨度）是最可靠的特征：有一定 Z 跨度的大概率是人（站立状态）
+ * - 安防场景默认假设：除非有强烈的反面证据，否则入侵目标视为人
  */
 public class TargetClassifier {
 
     private static final Logger log = LoggerFactory.getLogger(TargetClassifier.class);
 
-    // ---- 人 ----
-    private static final float PERSON_HEIGHT_MIN = 0.3f;
-    private static final float PERSON_HEIGHT_MAX = 2.2f;
-    private static final float PERSON_WIDTH_MAX = 1.5f;
-    private static final float PERSON_DEPTH_MAX = 1.5f;
-    private static final float PERSON_VOLUME_MAX = 3.0f;
-    private static final int PERSON_POINT_COUNT_MIN = 5;
+    // ---- 动物（贴地、矮小、优先排除）----
+    private static final float ANIMAL_HEIGHT_MAX = 0.4f;
 
-    // ---- 车辆 ----
-    private static final float VEHICLE_VOLUME_MIN = 2.0f;
-    private static final float VEHICLE_LENGTH_MIN = 2.0f;
-    private static final float VEHICLE_HEIGHT_MAX = 3.5f;
+    // ---- 人（核心判据：有一定 Z 跨度即可）----
+    private static final float PERSON_HEIGHT_MIN = 0.15f;
+    private static final float PERSON_HEIGHT_MAX = 3.0f;
 
-    // ---- 动物 ----
-    private static final float ANIMAL_HEIGHT_MAX = 0.8f;
-    private static final float ANIMAL_VOLUME_MAX = 1.5f;
-    private static final int ANIMAL_POINT_COUNT_MAX = 100;
+    // ---- 车辆（极端大型目标，几乎不可能被人触发）----
+    private static final float VEHICLE_VOLUME_MIN = 30.0f;
+    private static final float VEHICLE_LENGTH_MIN = 4.0f;
+    private static final int VEHICLE_POINT_COUNT_MIN = 20;
 
     public TargetType classify(PointCluster cluster) {
         if (cluster == null || cluster.getBbox() == null || cluster.getPointCount() == 0) {
@@ -44,46 +45,32 @@ public class TargetClassifier {
         int pointCount = cluster.getPointCount();
         float horizontalSpan = Math.max(width, depth);
 
-        if (isVehicle(height, width, depth, volume, horizontalSpan)) {
-            log.debug("分类为车辆: height={}, width={}, depth={}, volume={}, points={}",
-                    height, width, depth, volume, pointCount);
-            return TargetType.VEHICLE;
-        }
+        log.debug("分类输入: height={}, width={}, depth={}, volume={}, span={}, points={}",
+                height, width, depth, volume, horizontalSpan, pointCount);
 
-        if (isPerson(height, width, depth, volume, pointCount)) {
-            log.debug("分类为人: height={}, width={}, depth={}, volume={}, points={}",
-                    height, width, depth, volume, pointCount);
-            return TargetType.PERSON;
-        }
-
-        if (isAnimal(height, volume, pointCount)) {
-            log.debug("分类为动物: height={}, volume={}, points={}", height, volume, pointCount);
+        // 1. 动物：非常矮小的贴地目标
+        if (height > 0 && height <= ANIMAL_HEIGHT_MAX && horizontalSpan < 2.0f) {
+            log.debug("分类为动物: height={}, span={}, points={}", height, horizontalSpan, pointCount);
             return TargetType.ANIMAL;
         }
 
-        log.debug("分类为其他: height={}, width={}, depth={}, volume={}, points={}",
-                height, width, depth, volume, pointCount);
+        // 2. 人：有一定高度即为人（安防场景的核心假设）
+        if (height >= PERSON_HEIGHT_MIN && height <= PERSON_HEIGHT_MAX) {
+            log.debug("分类为人: height={}, points={}", height, pointCount);
+            return TargetType.PERSON;
+        }
+
+        // 3. 车辆：极大型目标（体积、跨度、点数同时满足极高门槛）
+        if (volume >= VEHICLE_VOLUME_MIN
+                && horizontalSpan >= VEHICLE_LENGTH_MIN
+                && pointCount >= VEHICLE_POINT_COUNT_MIN) {
+            log.debug("分类为车辆: height={}, volume={}, span={}, points={}",
+                    height, volume, horizontalSpan, pointCount);
+            return TargetType.VEHICLE;
+        }
+
+        log.debug("分类为其他: height={}, volume={}, span={}, points={}",
+                height, volume, horizontalSpan, pointCount);
         return TargetType.OTHER;
-    }
-
-    private boolean isPerson(float height, float width, float depth, float volume, int pointCount) {
-        return height >= PERSON_HEIGHT_MIN
-                && height <= PERSON_HEIGHT_MAX
-                && width <= PERSON_WIDTH_MAX
-                && depth <= PERSON_DEPTH_MAX
-                && volume <= PERSON_VOLUME_MAX
-                && pointCount >= PERSON_POINT_COUNT_MIN;
-    }
-
-    private boolean isVehicle(float height, float width, float depth, float volume, float horizontalSpan) {
-        return (volume >= VEHICLE_VOLUME_MIN || horizontalSpan >= VEHICLE_LENGTH_MIN)
-                && height <= VEHICLE_HEIGHT_MAX;
-    }
-
-    private boolean isAnimal(float height, float volume, int pointCount) {
-        return height > 0
-                && height <= ANIMAL_HEIGHT_MAX
-                && volume <= ANIMAL_VOLUME_MAX
-                && pointCount <= ANIMAL_POINT_COUNT_MAX;
     }
 }

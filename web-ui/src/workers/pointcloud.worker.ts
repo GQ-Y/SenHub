@@ -123,12 +123,13 @@ function flushWindow() {
 
 /** 只解析并入队，不触发 flush（避免每帧 2000+ 次重建 20 万点数组） */
 function processPending() {
+  const receiveTime = Date.now();
   while (pendingFrames.length > 0) {
     const ab = pendingFrames.shift()!;
     const parsed = parseBinary(ab);
     if (parsed) {
       frames.push({
-        timestamp: parsed.timestamp,
+        timestamp: receiveTime, // 使用客户端接收时间，避免服务器/客户端时钟偏差导致帧立即过期
         positions: parsed.positions,
         reflectivity: parsed.reflectivity,
         count: parsed.count
