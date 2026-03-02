@@ -91,227 +91,277 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
     colorModeRef.current = colorMode;
   }, [colorMode]);
 
+  // Three.js 初始化：自带维度等待，无需额外状态
   useEffect(() => {
-    if (!containerRef.current) {
-      return;
-    }
-
+    if (!containerRef.current) return;
     const container = containerRef.current;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
 
-    // 创建场景
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(backgroundColor);
-    sceneRef.current = scene;
+    let destroyed = false;
+    let initObserver: ResizeObserver | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let scene: THREE.Scene | null = null;
+    let camera: THREE.PerspectiveCamera | null = null;
+    let renderer: THREE.WebGLRenderer | null = null;
 
-    // 创建相机（PerspectiveCamera确保三维透视效果）
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
-    camera.position.set(5, 5, 5);
-    camera.lookAt(0, 0, 0);
-    cameraRef.current = camera;
+    const doInit = () => {
+      if (destroyed) return;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (width === 0 || height === 0) return;
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance'
-    });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    container.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
+      if (initObserver) { initObserver.disconnect(); initObserver = null; }
 
-    // 添加网格
-    if (showGrid) {
-      const gridSize = 50;
-      const gridDivisions = 50;
-      const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x222222);
-      gridHelper.position.y = 0;
-      scene.add(gridHelper);
-      gridHelperRef.current = gridHelper;
-    }
+      // 清除容器中可能残留的旧 canvas（防御性）
+      const oldCanvases = container.querySelectorAll('canvas[data-engine]');
+      oldCanvases.forEach(c => c.remove());
 
-    // 添加坐标轴及 X/Y/Z 轴标签（与距离环同风格：Canvas 纹理 + Sprite）
-    if (showAxes) {
-      const axesSize = 10;
-      const axesHelper = new THREE.AxesHelper(axesSize);
-      scene.add(axesHelper);
-      axesHelperRef.current = axesHelper;
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(backgroundColor);
+      sceneRef.current = scene;
 
-      const labelOffset = 1.2;
-      const axisLabels = [
-        { letter: 'X', position: new THREE.Vector3(axesSize + labelOffset, 0, 0), color: 'rgba(255, 80, 80, 0.9)' },
-        { letter: 'Y', position: new THREE.Vector3(0, axesSize + labelOffset, 0), color: 'rgba(80, 255, 80, 0.9)' },
-        { letter: 'Z', position: new THREE.Vector3(0, 0, axesSize + labelOffset), color: 'rgba(80, 144, 255, 0.9)' }
-      ];
-      axisLabels.forEach(({ letter, position, color }) => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          canvas.width = 64;
-          canvas.height = 64;
-          ctx.fillStyle = color;
-          ctx.font = 'bold 36px Arial';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(letter, 32, 32);
-          const texture = new THREE.CanvasTexture(canvas);
-          const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-          const sprite = new THREE.Sprite(mat);
-          sprite.position.copy(position);
-          sprite.scale.set(1.5, 1.5, 1);
-          scene.add(sprite);
-        }
+      camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
+      camera.position.set(5, 5, 5);
+      camera.lookAt(0, 0, 0);
+      cameraRef.current = camera;
+
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: 'high-performance'
       });
-    }
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+      rendererRef.current = renderer;
 
-    // 添加范围环
-    if (showRangeRings) {
-      const rangeRingsGroup = createRangeRings();
-      scene.add(rangeRingsGroup);
-      rangeRingsGroupRef.current = rangeRingsGroup;
-    }
+      if (showGrid) {
+        const gridSize = 200;
+        const gridDivisions = 40;
+        const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x222222);
+        gridHelper.position.y = 0;
+        scene.add(gridHelper);
+        gridHelperRef.current = gridHelper;
+      }
 
-    // 添加光源
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    directionalLight.position.set(5, 5, 5);
-    scene.add(directionalLight);
+      if (showAxes) {
+        const axesSize = 20;
+        const axesHelper = new THREE.AxesHelper(axesSize);
+        scene.add(axesHelper);
+        axesHelperRef.current = axesHelper;
 
-    // 动态导入OrbitControls
-    let OrbitControls: any = null;
-    import('three/examples/jsm/controls/OrbitControls').then((module) => {
-      OrbitControls = module.OrbitControls;
-      if (OrbitControls && renderer) {
-        const controls = new OrbitControls(camera, renderer.domElement);
+        const labelOffset = 1.2;
+        const axisLabels = [
+          { letter: 'X', position: new THREE.Vector3(axesSize + labelOffset, 0, 0), color: 'rgba(255, 80, 80, 0.9)' },
+          { letter: 'Y', position: new THREE.Vector3(0, axesSize + labelOffset, 0), color: 'rgba(80, 255, 80, 0.9)' },
+          { letter: 'Z', position: new THREE.Vector3(0, 0, axesSize + labelOffset), color: 'rgba(80, 144, 255, 0.9)' }
+        ];
+        axisLabels.forEach(({ letter, position, color: c }) => {
+          const cvs = document.createElement('canvas');
+          const ctx = cvs.getContext('2d');
+          if (ctx) {
+            cvs.width = 64;
+            cvs.height = 64;
+            ctx.fillStyle = c;
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(letter, 32, 32);
+            const texture = new THREE.CanvasTexture(cvs);
+            const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(mat);
+            sprite.position.copy(position);
+            sprite.scale.set(1.5, 1.5, 1);
+            scene!.add(sprite);
+          }
+        });
+      }
+
+      if (showRangeRings) {
+        const rangeRingsGroup = createRangeRings();
+        scene.add(rangeRingsGroup);
+        rangeRingsGroupRef.current = rangeRingsGroup;
+      }
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+      directionalLight.position.set(5, 5, 5);
+      scene.add(directionalLight);
+
+      const localRenderer = renderer;
+      const localScene = scene;
+      const localCamera = camera;
+
+      import('three/examples/jsm/controls/OrbitControls').then((module) => {
+        if (destroyed || !localRenderer) return;
+        const controls = new module.OrbitControls(localCamera, localRenderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
         controls.enablePan = true;
         controls.enableZoom = true;
         controls.enableRotate = true;
         controls.minDistance = 0.1;
-        controls.maxDistance = 1000;
+        controls.maxDistance = 300;
         controls.minPolarAngle = 0;
         controls.maxPolarAngle = Math.PI;
         controls.panSpeed = 1.0;
         controls.zoomSpeed = 1.0;
         controls.rotateSpeed = 1.0;
         controlsRef.current = controls;
-      }
-    }).catch(() => {
-      console.warn('OrbitControls not available, using basic controls');
-    });
+      }).catch(() => {});
 
-    const animate = () => {
-      animationFrameRef.current = requestAnimationFrame(animate);
+      const animate = () => {
+        if (destroyed) return;
+        animationFrameRef.current = requestAnimationFrame(animate);
 
-      const pref = pendingFrameRefRef.current;
-      if (pref?.current) {
-        const buf = pref.current;
-        pref.current = null;
-        onFrameConsumedRef.current?.(buf.count);
-        // count===0 时保留上一帧点云不更新，避免 Worker 空窗导致闪黑/消失
-        if (buf.count === 0) {
-          if (controlsRef.current) controlsRef.current.update();
-          renderer.render(scene, camera);
-          return;
-        }
-        const n = Math.min(buf.count, POINTCLOUD_MAX_POINTS);
-        const copyLen = n * 3;
-        if (!pointsRef.current && sceneRef.current) {
-          const posArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
-          const colArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
-          posArr.set(buf.positions.subarray(0, copyLen));
-          for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2]; // Z 轴取反，与实际空间一致
-          colArr.set(buf.colors.subarray(0, copyLen));
-          const posAttr = new THREE.Float32BufferAttribute(posArr, 3);
-          const colAttr = new THREE.Float32BufferAttribute(colArr, 3);
-          posAttr.setUsage(THREE.DynamicDrawUsage);
-          colAttr.setUsage(THREE.DynamicDrawUsage);
-          const geometry = new THREE.BufferGeometry();
-          geometry.setAttribute('position', posAttr);
-          geometry.setAttribute('color', colAttr);
-          geometry.setDrawRange(0, n);
-          geometry.computeBoundingSphere();
-          const material = new THREE.PointsMaterial({
-            size: pointSize,
-            vertexColors: true,
-            sizeAttenuation: true
-          });
-          const mesh = new THREE.Points(geometry, material);
-          mesh.frustumCulled = false;
-          pointsRef.current = mesh;
-          sceneRef.current!.add(mesh);
-        } else if (pointsRef.current) {
-          const geom = pointsRef.current.geometry;
-          const posArr = geom.attributes.position.array as Float32Array;
-          const colArr = geom.attributes.color.array as Float32Array;
-          posArr.set(buf.positions.subarray(0, copyLen));
-          for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2]; // Z 轴取反
-          colArr.set(buf.colors.subarray(0, copyLen));
-          geom.attributes.position.needsUpdate = true;
-          geom.attributes.color.needsUpdate = true;
-          geom.setDrawRange(0, n);
-          geom.computeBoundingSphere();
-        }
-        if (!cameraInitializedRef.current && cameraRef.current && n > 0) {
-          const pos = buf.positions;
-          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
-          for (let i = 0; i < n; i++) {
-            const x = pos[i * 3], y = pos[i * 3 + 1], z = -pos[i * 3 + 2]; // Z 取反以匹配显示
-            if (x < minX) minX = x; if (x > maxX) maxX = x;
-            if (y < minY) minY = y; if (y > maxY) maxY = y;
-            if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        const pref = pendingFrameRefRef.current;
+        if (pref?.current) {
+          const buf = pref.current;
+          pref.current = null;
+          onFrameConsumedRef.current?.(buf.count);
+          if (buf.count === 0) {
+            if (controlsRef.current) controlsRef.current.update();
+            localRenderer.render(localScene, localCamera);
+            return;
           }
-          const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
-          const size = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
-          const distance = Math.max(size * 1.5, 8);
-          cameraRef.current.position.set(cx + distance, cy + distance, cz + distance);
-          cameraRef.current.lookAt(cx, cy, cz);
-          if (controlsRef.current) {
-            controlsRef.current.target.set(cx, cy, cz);
-            controlsRef.current.update();
+          const n = Math.min(buf.count, POINTCLOUD_MAX_POINTS);
+          const copyLen = n * 3;
+          if (!pointsRef.current && sceneRef.current) {
+            const posArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
+            const colArr = new Float32Array(POINTCLOUD_MAX_POINTS * 3);
+            posArr.set(buf.positions.subarray(0, copyLen));
+            for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2];
+            colArr.set(buf.colors.subarray(0, copyLen));
+            const posAttr = new THREE.Float32BufferAttribute(posArr, 3);
+            const colAttr = new THREE.Float32BufferAttribute(colArr, 3);
+            posAttr.setUsage(THREE.DynamicDrawUsage);
+            colAttr.setUsage(THREE.DynamicDrawUsage);
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', posAttr);
+            geometry.setAttribute('color', colAttr);
+            geometry.setDrawRange(0, n);
+            geometry.computeBoundingSphere();
+            const material = new THREE.PointsMaterial({
+              size: pointSize,
+              vertexColors: true,
+              sizeAttenuation: true
+            });
+            const mesh = new THREE.Points(geometry, material);
+            mesh.frustumCulled = false;
+            pointsRef.current = mesh;
+            sceneRef.current!.add(mesh);
+          } else if (pointsRef.current) {
+            const geom = pointsRef.current.geometry;
+            const posArr = geom.attributes.position.array as Float32Array;
+            const colArr = geom.attributes.color.array as Float32Array;
+            posArr.set(buf.positions.subarray(0, copyLen));
+            for (let i = 0; i < n; i++) posArr[i * 3 + 2] = -posArr[i * 3 + 2];
+            colArr.set(buf.colors.subarray(0, copyLen));
+            geom.attributes.position.needsUpdate = true;
+            geom.attributes.color.needsUpdate = true;
+            geom.setDrawRange(0, n);
+            geom.computeBoundingSphere();
           }
-          cameraInitializedRef.current = true;
+          if (!cameraInitializedRef.current && cameraRef.current && n > 0) {
+            const pos = buf.positions;
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+            for (let i = 0; i < n; i++) {
+              const x = pos[i * 3], y = pos[i * 3 + 1], z = -pos[i * 3 + 2];
+              if (x < minX) minX = x; if (x > maxX) maxX = x;
+              if (y < minY) minY = y; if (y > maxY) maxY = y;
+              if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+            }
+            const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+            const sz = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+            const dist = Math.max(sz * 1.5, 8);
+            cameraRef.current.position.set(cx + dist, cy + dist, cz + dist);
+            cameraRef.current.lookAt(cx, cy, cz);
+            if (controlsRef.current) {
+              controlsRef.current.target.set(cx, cy, cz);
+              controlsRef.current.update();
+            }
+            cameraInitializedRef.current = true;
+          }
         }
-      }
 
-      if (controlsRef.current) {
-        controlsRef.current.update();
-      }
+        if (controlsRef.current) {
+          controlsRef.current.update();
+        }
 
-      renderer.render(scene, camera);
+        localRenderer.render(localScene, localCamera);
+      };
+      animate();
+
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width: nw, height: nh } = entry.contentRect;
+          if (nw > 0 && nh > 0 && localCamera && localRenderer) {
+            localCamera.aspect = nw / nh;
+            localCamera.updateProjectionMatrix();
+            localRenderer.setSize(nw, nh);
+          }
+        }
+      });
+      resizeObserver.observe(container);
     };
-    animate();
 
-    // 处理窗口大小变化
-    const handleResize = () => {
-      if (!containerRef.current || !camera || !renderer) return;
-      const newWidth = containerRef.current.clientWidth;
-      const newHeight = containerRef.current.clientHeight;
-      camera.aspect = newWidth / newHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(newWidth, newHeight);
-    };
-    window.addEventListener('resize', handleResize);
+    // 立即尝试初始化；若容器尚无尺寸则通过 ResizeObserver 等待
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      doInit();
+    } else {
+      initObserver = new ResizeObserver(() => {
+        if (container.clientWidth > 0 && container.clientHeight > 0) {
+          doInit();
+        }
+      });
+      initObserver.observe(container);
+    }
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      destroyed = true;
+      if (initObserver) initObserver.disconnect();
+      if (resizeObserver) resizeObserver.disconnect();
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
+
+      // 释放场景内所有 GPU 资源
+      if (scene) {
+        scene.traverse((obj: any) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+            materials.forEach((m: any) => {
+              if (m.map) m.map.dispose();
+              m.dispose();
+            });
+          }
+        });
+        scene.clear();
+      }
+
+      pointsRef.current = null;
+      backgroundPointsRef.current = null;
+      intrusionPointsRef.current = null;
+      modelingRef.current = null;
+      rangeRingsGroupRef.current = null;
+      gridHelperRef.current = null;
+      axesHelperRef.current = null;
+      controlsRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+
       if (renderer) {
-        if (renderer.domElement && container.contains(renderer.domElement)) {
-          container.removeChild(renderer.domElement);
+        if (renderer.domElement?.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
         }
         try {
-          if (typeof renderer.dispose === 'function') {
-            renderer.dispose();
-          }
+          renderer.dispose();
         } catch (e) {
           console.warn('PointCloudRenderer cleanup:', e);
         }
       }
+      rendererRef.current = null;
       cameraInitializedRef.current = false;
     };
   }, [backgroundColor, showGrid, showAxes, showRangeRings]);
@@ -322,7 +372,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
    */
   const createRangeRings = () => {
     const group = new THREE.Group();
-    const distances = [5, 10, 15, 20, 25, 30]; // 距离值（米）
+    const distances = [10, 20, 50, 100, 150, 200]; // 距离值（米）
 
     distances.forEach((distance) => {
       // 创建圆环几何体

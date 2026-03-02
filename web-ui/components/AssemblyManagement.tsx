@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, X, Package, MapPin, ChevronRight, Wifi, WifiOff, Zap } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Package, MapPin, ChevronRight, Wifi, WifiOff, Zap, Crosshair } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { assemblyService } from '../src/api/services';
 import { Assembly, AssemblyDevice } from '../types';
@@ -360,6 +360,25 @@ export const AssemblyManagement: React.FC = () => {
                         {t('view_details')}
                         <ChevronRight size={16} />
                       </button>
+                      {assembly.ptzLinkageEnabled &&
+                        assembly.devices?.some((d) => String(d.role || '').toLowerCase() === 'radar') &&
+                        assembly.devices?.some((d) => {
+                          const r = String(d.role || '').toLowerCase();
+                          return r.includes('camera') || r === 'left_camera' || r === 'right_camera' || r === 'top_camera';
+                        }) && (
+                          <button
+                            onClick={() =>
+                              navigate(`/assemblies/${assembly.assemblyId || assembly.id}`, {
+                                state: { openCalibration: true },
+                              })
+                            }
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+                            title="坐标系标定"
+                          >
+                            <Crosshair size={16} />
+                            坐标系标定
+                          </button>
+                        )}
                       <button
                         onClick={() => openEditModal(assembly)}
                         className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100/50 rounded-lg transition-colors"

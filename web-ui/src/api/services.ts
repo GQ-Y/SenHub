@@ -709,6 +709,19 @@ export const assemblyService = {
     const response = await get<AssemblyDevice[]>(`/assemblies/${encodeURIComponent(assemblyId)}/devices`);
     return response;
   },
+
+  /**
+   * 获取装置下的雷达-球机标定上下文（用于标定向导）
+   */
+  async getCalibrationContext(assemblyId: string) {
+    return get<{
+      radarDeviceId: string;
+      radarDeviceName: string;
+      cameraDeviceId: string;
+      cameraDeviceName: string;
+      zones: { zoneId: string; zoneName: string; cameraDeviceId: string; cameraChannel: number }[];
+    }>(`/assemblies/${encodeURIComponent(assemblyId)}/calibration/context`);
+  },
 };
 
 // ==================== 事件类型服务 ====================
@@ -1012,26 +1025,38 @@ export const radarService = {
 
   /**
    * 解析点云二进制帧（支撑 20 万点/秒高吞吐）
-   * 格式（小端序）：1B type(0) + 8B timestamp + 4B pointCount + 每点 13B (x,y,z float + r byte)
+   * 自动兼容两种格式：
+   *   v1: 每点 13B (x,y,z float + r byte)
+   *   v2: 每点 14B (x,y,z float + r byte + intrusion flag byte)
    */
-  parsePointCloudBinary(ab: ArrayBuffer): { type: 'pointcloud'; points: Array<{ x: number; y: number; z: number; r?: number }>; timestamp: number; pointCount: number } | null {
-    if (ab.byteLength < 1 + 8 + 4) return null;
+  parsePointCloudBinary(ab: ArrayBuffer): { type: 'pointcloud'; points: Array<{ x: number; y: number; z: number; r?: number; isIntrusion?: boolean }>; timestamp: number; pointCount: number } | null {
+    const HEADER = 1 + 8 + 4;
+    if (ab.byteLength < HEADER) return null;
     const dv = new DataView(ab);
     let offset = 0;
     const type = dv.getUint8(offset); offset += 1;
     if (type !== 0) return null;
     const timestamp = Number(dv.getBigUint64(offset, true)); offset += 8;
     const pointCount = dv.getUint32(offset, true); offset += 4;
-    const expectedLen = 1 + 8 + 4 + pointCount * 13;
-    if (ab.byteLength < expectedLen) return null;
-    const points: Array<{ x: number; y: number; z: number; r?: number }> = [];
+    const payloadLen = ab.byteLength - HEADER;
+    let pointBytes: number;
+    if (payloadLen >= pointCount * 14) {
+      pointBytes = 14;
+    } else if (payloadLen >= pointCount * 13) {
+      pointBytes = 13;
+    } else {
+      return null;
+    }
+    const hasIntrusion = pointBytes >= 14;
+    const points: Array<{ x: number; y: number; z: number; r?: number; isIntrusion?: boolean }> = [];
     for (let i = 0; i < pointCount; i++) {
       const x = dv.getFloat32(offset, true);
       const y = dv.getFloat32(offset + 4, true);
       const z = dv.getFloat32(offset + 8, true);
       const r = dv.getUint8(offset + 12);
-      offset += 13;
-      points.push({ x, y, z, r });
+      const isIntrusion = hasIntrusion ? dv.getUint8(offset + 13) !== 0 : false;
+      offset += pointBytes;
+      points.push({ x, y, z, r, isIntrusion });
     }
     return { type: 'pointcloud', points, timestamp, pointCount };
   },
@@ -1132,6 +1157,35 @@ export const radarService = {
 
   async getActiveTargets(deviceId: string, zoneId: string) {
     return get<any[]>(`/radar/${encodeURIComponent(deviceId)}/zones/${encodeURIComponent(zoneId)}/targets`);
+  },
+
+  /** 获取当前防区内最显著目标坐标（标定采集用） */
+  async getCalibrationTarget(deviceId: string, zoneId: string) {
+    return get<{ radarX: number; radarY: number; radarZ: number } | null>(
+      `/radar/${encodeURIComponent(deviceId)}/calibration/target`,
+      { zoneId }
+    );
+  },
+
+  /** 提交标定点并计算变换参数 */
+  async calibrationCompute(deviceId: string, body: { zoneId: string; points: { radarX: number; radarY: number; radarZ: number; cameraPan: number; cameraTilt: number }[] }) {
+    return post<{ transform: any; error: { avgDegrees: number; maxDegrees: number; perPointPan?: number[]; perPointTilt?: number[] } }>(
+      `/radar/${encodeURIComponent(deviceId)}/calibration/compute`,
+      body
+    );
+  },
+
+  /** 使用给定变换驱动球机瞄准指定雷达坐标（验证） */
+  async calibrationVerify(deviceId: string, body: { zoneId: string; transform: any; radarX: number; radarY: number; radarZ: number }) {
+    return post<{ pan: number; tilt: number; zoom: number; success: boolean }>(
+      `/radar/${encodeURIComponent(deviceId)}/calibration/verify`,
+      body
+    );
+  },
+
+  /** 将标定结果写入防区配置 */
+  async calibrationApply(deviceId: string, body: { zoneId: string; transform: any }) {
+    return post<any>(`/radar/${encodeURIComponent(deviceId)}/calibration/apply`, body);
   },
 };
 

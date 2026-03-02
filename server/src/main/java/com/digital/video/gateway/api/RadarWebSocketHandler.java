@@ -40,9 +40,9 @@ public class RadarWebSocketHandler {
 
     /** 按帧发送：单帧超过此点数时拆成多条消息，避免单条过大；Mid-360 单帧通常几百～几千点 */
     private static final int MAX_POINTS_PER_MESSAGE = 25000;
-    /** 点云二进制格式：1 type + 8 timestamp + 4 count + 每点13字节(x,y,z float + r byte)，小端序 */
+    /** 点云二进制格式：1 type + 8 timestamp + 4 count + 每点14字节(x,y,z float + r byte + intrusion flag byte)，小端序 */
     private static final int BINARY_HEADER_BYTES = 1 + 8 + 4;
-    private static final int BINARY_POINT_BYTES = 13;
+    private static final int BINARY_POINT_BYTES = 14;
     /** 点云发送：多线程编码+发送以跟上 20 万点/秒、约 2000+ 帧/秒（平均每帧约 90 点）；队列满时丢帧 */
     private static final int SEND_QUEUE_CAPACITY = 512;
     private static final int SEND_POOL_SIZE = 8;
@@ -173,7 +173,7 @@ public class RadarWebSocketHandler {
         buf.putLong(timestamp);
         buf.putInt(n);
         for (Point p : points) {
-            buf.putFloat(p.x).putFloat(p.y).putFloat(p.z).put(p.reflectivity);
+            buf.putFloat(p.x).putFloat(p.y).putFloat(p.z).put(p.reflectivity).put((byte) (p.zoneId != null ? 1 : 0));
         }
         buf.flip();
 

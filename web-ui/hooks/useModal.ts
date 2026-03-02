@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 export type ModalType = 'info' | 'success' | 'warning' | 'error';
 
@@ -25,14 +25,23 @@ export const useModal = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [modalOptions, setModalOptions] = useState<ModalOptions | null>(null);
   const [isConfirm, setIsConfirm] = useState(false);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showModal = useCallback((options: ModalOptions) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
     setModalOptions(options);
     setIsConfirm(false);
     setIsOpen(true);
   }, []);
 
   const showConfirm = useCallback((options: ConfirmOptions) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
     setModalOptions({
       ...options,
       type: 'warning',
@@ -44,9 +53,10 @@ export const useModal = () => {
 
   const closeModal = useCallback(() => {
     setIsOpen(false);
-    // 延迟清除选项，等待动画完成
-    setTimeout(() => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
       setModalOptions(null);
+      closeTimeoutRef.current = null;
     }, 300);
   }, []);
 

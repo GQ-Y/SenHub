@@ -259,7 +259,8 @@ public class IntrusionDetectionService {
 
     /**
      * 标记侵入点（直接修改 Point 对象的 zoneId）
-     * 
+     * 双重过滤：RadialBoundaryGrid O(1) 空间判定 + SpatialIndex 背景差分，消除噪声/抖动导致的假阳性。
+     *
      * @param currentPoints 当前点云
      * @param zones         防区列表
      * @param background    背景模型
@@ -269,15 +270,14 @@ public class IntrusionDetectionService {
             return;
         }
 
-        // 记录调试信息
         long enabledZones = zones.stream().filter(DefenseZone::getEnabled).count();
         if (enabledZones > 0) {
             logger.debug("标记侵入点: 总点数={}, 启用防区数={}", currentPoints.size(), enabledZones);
         }
 
-        // 遍历所有点
+        SpatialIndex spatialIndex = (background != null) ? getOrBuildSpatialIndex(background) : null;
+
         for (Point point : currentPoints) {
-            // 对每个点，检查是否在任意已启用的防区内
             for (DefenseZone zone : zones) {
                 if (!zone.getEnabled())
                     continue;
@@ -285,21 +285,22 @@ public class IntrusionDetectionService {
                 boolean isIntruder = false;
 
                 if (DefenseZone.ZONE_TYPE_BOUNDING_BOX.equals(zone.getZoneType())) {
-                    // 边界框检测
                     isIntruder = zone.isPointInZone(point);
                 } else if (DefenseZone.ZONE_TYPE_SHRINK.equals(zone.getZoneType())) {
-                    // 缩小距离检测 - 使用预计算的径向边界网格 O(1) 查找
                     if (background != null && background.getBoundaryGrid() != null) {
                         isIntruder = background.getBoundaryGrid().isIntrusion(point);
                     }
                 }
 
+                if (isIntruder && spatialIndex != null) {
+                    if (spatialIndex.isPointInBackground(point, 0.1f)) {
+                        isIntruder = false;
+                    }
+                }
+
                 if (isIntruder) {
                     point.zoneId = zone.getZoneId();
-                    logger.debug("标记侵入点: zoneId={}, point=({}, {}, {})",
-                            zone.getZoneId(), String.format("%.2f", point.x), String.format("%.2f", point.y),
-                            String.format("%.2f", point.z));
-                    break; // 一个点只归属一个防区（优先归属第一个匹配的）
+                    break;
                 }
             }
         }

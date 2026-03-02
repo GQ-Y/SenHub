@@ -17,7 +17,9 @@ import {
   Radar,
   Wifi,
   Server,
-  Brain
+  Brain,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { ViewState } from '../types';
 import { useAppContext } from '../contexts/AppContext';
@@ -28,27 +30,38 @@ interface LayoutProps {
   currentView: string;
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'senhub_sidebar_collapsed';
+const DEVELOPER_MODE_KEY = 'senhub_developer_mode';
+
 const SidebarItem = ({ 
   icon: Icon, 
   label, 
   isActive, 
-  onClick 
+  onClick,
+  collapsed 
 }: { 
   icon: any; 
   label: string; 
   isActive: boolean; 
-  onClick: () => void; 
+  onClick: () => void;
+  collapsed?: boolean;
 }) => (
   <button
+    type="button"
     onClick={onClick}
-    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
+    title={collapsed ? label : undefined}
+    className={`w-full flex items-center rounded-lg transition-all duration-200 group ${
+      collapsed ? 'justify-center px-2 py-2.5' : 'space-x-3 px-3 py-2.5'
+    } ${
       isActive 
         ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
         : 'text-gray-400 hover:bg-gray-800 hover:text-white'
     }`}
   >
     <Icon size={20} className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`} />
-    <span className="font-medium text-sm tracking-wide whitespace-nowrap truncate min-w-0">{label}</span>
+    {!collapsed && (
+      <span className="font-medium text-sm tracking-wide whitespace-nowrap truncate min-w-0">{label}</span>
+    )}
   </button>
 );
 
@@ -118,6 +131,45 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [developerMode, setDeveloperMode] = useState(() => {
+    try {
+      return localStorage.getItem(DEVELOPER_MODE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    } catch {}
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DEVELOPER_MODE_KEY, String(developerMode));
+    } catch {}
+  }, [developerMode]);
+
+  // Command+K (Mac) / Alt+K (Windows) 切换开发者模式
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey && e.key === 'k') || (e.altKey && e.key === 'k')) {
+        e.preventDefault();
+        setDeveloperMode(prev => !prev);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // 加载通知列表
   const loadNotifications = async () => {
     setIsLoadingNotifications(true);
@@ -186,99 +238,121 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
   return (
     <div className="flex h-screen bg-[#f3f4f6] overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-[#1e293b] flex-shrink-0 flex flex-col justify-between transition-all duration-300 z-20 shadow-xl">
-        <div className="p-6">
-          <div className="flex items-center space-x-3 mb-10">
-            <img src="/logo.svg" alt="SenHub" className="w-8 h-8 flex-shrink-0 object-contain" />
-            <h1 className="text-xl font-bold text-white tracking-tight">SenHub</h1>
+      <aside className={`${sidebarCollapsed ? 'w-[72px]' : 'w-64'} bg-[#1e293b] flex-shrink-0 flex flex-col transition-all duration-300 z-20 shadow-xl overflow-hidden`}>
+        <div className="p-4 flex flex-col flex-1 min-h-0">
+          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center mb-4' : 'space-x-3 mb-6'}`}>
+            <img src="/logo.svg" alt="SenHub" className={`flex-shrink-0 object-contain ${sidebarCollapsed ? 'w-8 h-8' : 'w-8 h-8'}`} />
+            {!sidebarCollapsed && (
+              <h1 className="text-xl font-bold text-white tracking-tight">SenHub</h1>
+            )}
           </div>
 
-          <nav className="space-y-2">
+          <nav className="space-y-1 flex-1 overflow-y-auto">
             <SidebarItem 
               icon={LayoutDashboard} 
               label={t('dashboard')} 
               isActive={currentView === 'DASHBOARD'} 
               onClick={() => handleNavigate('DASHBOARD')}
+              collapsed={sidebarCollapsed}
             />
-            <div className="pt-4 pb-2">
-              <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('device_mgmt')}</p>
-            </div>
+            {!sidebarCollapsed && (
+              <div className="pt-2 pb-1">
+                <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('device_mgmt')}</p>
+              </div>
+            )}
             <SidebarItem 
               icon={Camera} 
               label={t('cameras')} 
               isActive={currentView === 'DEVICE_LIST' || currentView === 'DEVICE_DETAIL'} 
               onClick={() => handleNavigate('DEVICE_LIST')}
+              collapsed={sidebarCollapsed}
             />
             <SidebarItem 
               icon={Package} 
               label={t('assembly_management')} 
               isActive={currentView === 'ASSEMBLY_MANAGEMENT' || currentView === 'ASSEMBLY_DETAIL'} 
               onClick={() => handleNavigate('ASSEMBLY_MANAGEMENT')}
+              collapsed={sidebarCollapsed}
             />
             <SidebarItem 
               icon={Radar} 
               label={t('radar_mgmt')} 
               isActive={currentView === 'RADAR'} 
               onClick={() => handleNavigate('RADAR')}
+              collapsed={sidebarCollapsed}
             />
-             <div className="pt-4 pb-2">
-              <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('integration')}</p>
-            </div>
-            <SidebarItem 
-              icon={Cpu} 
-              label={t('drivers')} 
-              isActive={currentView === 'DRIVER_CONFIG'} 
-              onClick={() => handleNavigate('DRIVER_CONFIG')}
-            />
-            <SidebarItem 
-              icon={Network} 
-              label={t('mqtt_broker')} 
-              isActive={currentView === 'MQTT_CONFIG'} 
-              onClick={() => handleNavigate('MQTT_CONFIG')}
-            />
-             <div className="pt-4 pb-2">
-              <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('settings')}</p>
-            </div>
+            {developerMode && (
+              <>
+                {!sidebarCollapsed && (
+                  <div className="pt-2 pb-1">
+                    <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('integration')}</p>
+                  </div>
+                )}
+                <SidebarItem 
+                  icon={Cpu} 
+                  label={t('drivers')} 
+                  isActive={currentView === 'DRIVER_CONFIG'} 
+                  onClick={() => handleNavigate('DRIVER_CONFIG')}
+                  collapsed={sidebarCollapsed}
+                />
+                <SidebarItem 
+                  icon={Network} 
+                  label={t('mqtt_broker')} 
+                  isActive={currentView === 'MQTT_CONFIG'} 
+                  onClick={() => handleNavigate('MQTT_CONFIG')}
+                  collapsed={sidebarCollapsed}
+                />
+              </>
+            )}
+            {!sidebarCollapsed && (
+              <div className="pt-2 pb-1">
+                <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('settings')}</p>
+              </div>
+            )}
             <SidebarItem 
               icon={Shield} 
               label={t('alarm_rules')} 
               isActive={currentView === 'ALARM_RULES'} 
               onClick={() => handleNavigate('ALARM_RULES')}
+              collapsed={sidebarCollapsed}
             />
             <SidebarItem 
               icon={Package} 
               label={t('workflow_mgmt')} 
               isActive={currentView === 'WORKFLOW'} 
               onClick={() => handleNavigate('WORKFLOW')}
+              collapsed={sidebarCollapsed}
             />
             <SidebarItem 
               icon={Brain} 
               label={t('ai_analysis_records')} 
               isActive={currentView === 'AI_ANALYSIS'} 
               onClick={() => handleNavigate('AI_ANALYSIS')}
+              collapsed={sidebarCollapsed}
             />
             <SidebarItem 
               icon={Server} 
               label={t('ai_algorithm_lib')} 
               isActive={currentView === 'AI_ALGORITHM_LIB'} 
               onClick={() => handleNavigate('AI_ALGORITHM_LIB')}
+              collapsed={sidebarCollapsed}
             />
             <SidebarItem 
               icon={Settings} 
               label={t('system_config')} 
               isActive={currentView === 'SYSTEM_CONFIG'} 
               onClick={() => handleNavigate('SYSTEM_CONFIG')}
+              collapsed={sidebarCollapsed}
             />
           </nav>
-        </div>
 
-        <div className="p-4 border-t border-gray-700">
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-colors"
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(prev => !prev)}
+            className="mt-2 flex items-center justify-center w-full py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+            title={sidebarCollapsed ? t('expand') || '展开' : t('collapse') || '收起'}
           >
-            <LogOut size={20} />
-            <span className="font-medium text-sm">{t('sign_out')}</span>
+            {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
           </button>
         </div>
       </aside>
@@ -325,6 +399,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               </span>
             </div>
 
+            {developerMode && (
+              <span className="text-xs font-medium px-2 py-1 rounded bg-amber-100 text-amber-800 border border-amber-200" title="⌘K / Alt+K 切换">
+                开发者模式
+              </span>
+            )}
             <div className="h-6 w-px bg-gray-200 mx-2"></div>
             
             <button 
@@ -334,6 +413,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
             >
                 <Languages size={20} />
                 <span className="text-xs font-bold uppercase">{language}</span>
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="p-2 text-gray-500 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50 flex items-center space-x-1"
+              title={t('sign_out')}
+            >
+              <LogOut size={20} />
+              <span className="text-xs font-medium hidden sm:inline">{t('sign_out')}</span>
             </button>
 
             <div className="relative" ref={notificationRef}>

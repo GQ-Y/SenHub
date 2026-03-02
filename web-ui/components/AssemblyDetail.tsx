@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, Bell, History, Plus, X, Trash2, Edit2, Camera } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { ArrowLeft, Package, Bell, History, Plus, X, Trash2, Edit2, Camera, Crosshair } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
-import { assemblyService, alarmRuleService, deviceService } from '../src/api/services';
-import { Assembly, AssemblyDevice, AlarmRule, DeviceRole, Device } from '../types';
+import { assemblyService, alarmRuleService, deviceService, radarService } from '../src/api/services';
+import { Assembly, AssemblyDevice, AlarmRule, DeviceRole, Device, DeviceStatus } from '../types';
 import { Modal, ConfirmModal } from './Modal';
 import { useModal } from '../hooks/useModal';
 import { DeviceSelector } from './DeviceSelector';
 import { RuleForm } from './RuleForm';
 import { AlarmHistory } from './AlarmHistory';
+import { RadarCalibrationWizard } from './RadarCalibrationWizard';
 
 export const AssemblyDetail: React.FC = () => {
   const { assemblyId } = useParams<{ assemblyId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useAppContext();
   const [assembly, setAssembly] = useState<Assembly | null>(null);
   const [devices, setDevices] = useState<AssemblyDevice[]>([]);
@@ -26,6 +28,7 @@ export const AssemblyDetail: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<DeviceRole | ''>('');
   const [selectedRule, setSelectedRule] = useState<AlarmRule | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showCalibrationWizard, setShowCalibrationWizard] = useState(false);
   const modal = useModal();
 
   useEffect(() => {
@@ -34,20 +37,45 @@ export const AssemblyDetail: React.FC = () => {
     }
   }, [assemblyId]);
 
+  // 从装置列表点击「坐标系标定」进入时自动打开标定向导
+  useEffect(() => {
+    const state = location.state as { openCalibration?: boolean } | null;
+    if (state?.openCalibration && assemblyId) {
+      setShowCalibrationWizard(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [assemblyId, location.state, location.pathname, navigate]);
+
   const loadAssembly = async () => {
     if (!assemblyId) return;
     setIsLoading(true);
     try {
-      const [assemblyRes, devicesRes, rulesRes, allDevicesRes] = await Promise.all([
+      const [assemblyRes, devicesRes, rulesRes, allDevicesRes, radarDevicesRes] = await Promise.all([
         assemblyService.getAssembly(assemblyId),
         assemblyService.getAssemblyDevices(assemblyId),
         alarmRuleService.getAssemblyRules(assemblyId),
         deviceService.getDevices(),
+        radarService.getRadarDevices().catch(() => ({ data: [] })),
       ]);
+      const mainDevices: Device[] = allDevicesRes.data || [];
+      const radarList = Array.isArray(radarDevicesRes?.data) ? radarDevicesRes.data : [];
+      const existingIds = new Set(mainDevices.map((d) => d.id));
+      const radarAsDevices: Device[] = radarList
+        .filter((r: any) => r.deviceId && !existingIds.has(r.deviceId))
+        .map((r: any) => ({
+          id: r.deviceId,
+          name: r.radarName || r.deviceId,
+          ip: r.radarIp || '',
+          port: 0,
+          brand: 'radar',
+          model: '',
+          status: r.status === 1 ? DeviceStatus.ONLINE : DeviceStatus.OFFLINE,
+          lastSeen: '',
+        }));
       setAssembly(assemblyRes.data);
       setDevices(devicesRes.data || []);
       setRules(rulesRes.data || []);
-      setAllDevices(allDevicesRes.data || []);
+      setAllDevices([...mainDevices, ...radarAsDevices]);
     } catch (err: any) {
       console.error('加载装置详情失败:', err);
       modal.showModal({
@@ -263,9 +291,25 @@ export const AssemblyDetail: React.FC = () => {
               {assembly.location && (
                 <div className="text-sm text-gray-500 mt-1">{assembly.location}</div>
               )}
-              <div className="text-sm text-gray-500 mt-1 flex items-center">
-                <Camera size={14} className="mr-1 text-gray-400" />
-                PTZ 联动：{assembly.ptzLinkageEnabled ? '已开启' : '未开启'}
+              <div className="text-sm text-gray-500 mt-1 flex items-center gap-4">
+                <span className="flex items-center">
+                  <Camera size={14} className="mr-1 text-gray-400" />
+                  PTZ 联动：{assembly.ptzLinkageEnabled ? '已开启' : '未开启'}
+                </span>
+                {assembly.ptzLinkageEnabled &&
+                  devices.some((d) => String((d as any).deviceRole || d.role || '').toLowerCase() === 'radar') &&
+                  devices.some((d) => {
+                    const r = String((d as any).deviceRole || d.role || '').toLowerCase();
+                    return r.includes('camera') || r === 'left_camera' || r === 'right_camera' || r === 'top_camera';
+                  }) && (
+                    <button
+                      onClick={() => setShowCalibrationWizard(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <Crosshair size={14} />
+                      坐标系标定
+                    </button>
+                  )}
               </div>
             </div>
           </div>
@@ -551,6 +595,13 @@ export const AssemblyDetail: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {showCalibrationWizard && assemblyId && (
+        <RadarCalibrationWizard
+          assemblyId={assemblyId}
+          onClose={() => setShowCalibrationWizard(false)}
+        />
       )}
     </>
   );

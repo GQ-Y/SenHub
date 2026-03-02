@@ -74,6 +74,28 @@ public class RadialBoundaryGrid {
             }
         }
 
+        // 角度平滑：对每个方向，用周围 3×3 邻域的最小值填充，消除角分辨率间隙导致的泄漏
+        float[][] smoothed = new float[THETA_RESOLUTION][PHI_RESOLUTION];
+        for (int t = 0; t < THETA_RESOLUTION; t++) {
+            for (int p = 0; p < PHI_RESOLUTION; p++) {
+                float minVal = boundaryGrid[t][p];
+                for (int dt = -1; dt <= 1; dt++) {
+                    int nt = (t + dt + THETA_RESOLUTION) % THETA_RESOLUTION;
+                    for (int dp = -1; dp <= 1; dp++) {
+                        int np = p + dp;
+                        if (np < 0 || np >= PHI_RESOLUTION) continue;
+                        if (boundaryGrid[nt][np] < minVal) {
+                            minVal = boundaryGrid[nt][np];
+                        }
+                    }
+                }
+                smoothed[t][p] = minVal;
+            }
+        }
+        for (int t = 0; t < THETA_RESOLUTION; t++) {
+            System.arraycopy(smoothed[t], 0, boundaryGrid[t], 0, PHI_RESOLUTION);
+        }
+
         // 统计有效方向数和平均边界距离
         float totalDist = 0;
         validDirections = 0;

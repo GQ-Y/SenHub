@@ -971,21 +971,21 @@ public class Main {
         DashboardController dashboardController = new DashboardController(deviceManager, database, config);
         NotificationController notificationController = new NotificationController(database);
 
+        // 初始化雷达相关服务（DefenseZoneService 需在 AssemblyController、RadarController 之前）
+        BackgroundModelService backgroundModelService = new BackgroundModelService(database);
+        DefenseZoneService defenseZoneService = new DefenseZoneService(database);
+        IntrusionDetectionService intrusionDetectionService = new IntrusionDetectionService(database);
+
         // 初始化新增控制器（使用已初始化的服务实例）
-        AssemblyController assemblyController = new AssemblyController(assemblyService);
+        AssemblyController assemblyController = new AssemblyController(assemblyService, defenseZoneService);
         AlarmRuleController alarmRuleController = new AlarmRuleController(alarmRuleService);
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService, deviceManager, assemblyService);
         SpeakerController speakerController = new SpeakerController(speakerService);
         RecordingTaskController recordingTaskController = new RecordingTaskController(recordingTaskService);
         flowController = new FlowController(flowService, flowExecutor);
-
-        // 初始化雷达相关服务
-        BackgroundModelService backgroundModelService = new BackgroundModelService(database);
-        DefenseZoneService defenseZoneService = new DefenseZoneService(database);
-        IntrusionDetectionService intrusionDetectionService = new IntrusionDetectionService(database);
         // radarService可能为null（如果没有雷达设备），需要处理
         radarController = new RadarController(radarTestService, database,
-                backgroundModelService, defenseZoneService, intrusionDetectionService, radarService, assemblyService);
+                backgroundModelService, defenseZoneService, intrusionDetectionService, radarService, assemblyService, ptzService);
 
         // 初始化扫描控制器
         ScannerController scannerController = new ScannerController(scanner, deviceManager, database);
@@ -1070,6 +1070,7 @@ public class Main {
         app.delete("/api/assemblies/{id}/devices/{deviceId}", assemblyController::removeDeviceFromAssembly);
         app.get("/api/assemblies/{id}/devices", assemblyController::getAssemblyDevices);
         app.get("/api/devices/{deviceId}/assemblies", assemblyController::getAssembliesByDevice);
+        app.get("/api/assemblies/{id}/calibration/context", assemblyController::getCalibrationContext);
 
         app.get("/api/radar/test", radarController::testConnection);
         app.post("/api/radar/test", radarController::testConnection);
@@ -1101,6 +1102,10 @@ public class Main {
         app.delete("/api/radar/{deviceId}/zones/{zoneId}/whitelist/{exclusionId}", radarController::removeWhitelist);
         app.delete("/api/radar/{deviceId}/zones/{zoneId}/whitelist", radarController::clearWhitelist);
         app.get("/api/radar/{deviceId}/zones/{zoneId}/targets", radarController::getActiveTargets);
+        app.get("/api/radar/{deviceId}/calibration/target", radarController::getCalibrationTarget);
+        app.post("/api/radar/{deviceId}/calibration/compute", radarController::postCalibrationCompute);
+        app.post("/api/radar/{deviceId}/calibration/verify", radarController::postCalibrationVerify);
+        app.post("/api/radar/{deviceId}/calibration/apply", radarController::postCalibrationApply);
 
         EventTypeController eventTypeController = new EventTypeController(database);
         app.get("/api/event-types", eventTypeController::getAllEventTypes);

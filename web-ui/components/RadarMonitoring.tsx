@@ -337,7 +337,13 @@ export const RadarMonitoring: React.FC = () => {
         cancelAnimationFrame(renderFrameRef.current);
         renderFrameRef.current = null;
       }
+      // 清理所有缓存数据，确保二次进入时从干净状态开始
+      workerLatestRef.current = null;
+      pendingUpdateRef.current = false;
       pointCloudBufferRef.current = [];
+      setPointCloudData([]);
+      setIntrusionPoints([]);
+      setPointCloudBufferState(null);
     };
   }, [deviceId]);
 

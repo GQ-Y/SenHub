@@ -116,10 +116,8 @@
       ws.onmessage = function (event) {
         const raw = event.data;
         if (raw instanceof ArrayBuffer) {
-          // 解析二进制点云帧
-          // 格式：1B type + 8B timestamp + 4B count + 每点 13B (x,y,z float + r byte)，小端序
+          // 解析二进制点云帧（自动兼容 13B/点 和 14B/点）
           const HEADER_SIZE = 1 + 8 + 4;
-          const POINT_SIZE = 13;
           
           if (raw.byteLength < HEADER_SIZE) {
             log('收到二进制 ' + raw.byteLength + ' 字节 (数据太短，无法解析)', 'in');
@@ -131,9 +129,12 @@
           const timestamp = Number(dv.getBigUint64(1, true));
           const pointCount = dv.getUint32(9, true);
           
-          const expectedSize = HEADER_SIZE + pointCount * POINT_SIZE;
-          if (raw.byteLength < expectedSize) {
-            log('收到二进制 ' + raw.byteLength + ' 字节 (期望 ' + expectedSize + ' 字节)', 'in');
+          const payloadLen = raw.byteLength - HEADER_SIZE;
+          let POINT_SIZE;
+          if (payloadLen >= pointCount * 14) { POINT_SIZE = 14; }
+          else if (payloadLen >= pointCount * 13) { POINT_SIZE = 13; }
+          else {
+            log('收到二进制 ' + raw.byteLength + ' 字节 (无法匹配13或14字节格式)', 'in');
             return;
           }
           

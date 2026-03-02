@@ -1,17 +1,16 @@
 /**
  * 点云 Web Worker：子线程解析二进制帧、维护滑动窗口，按 30fps 节流输出，确保 20 万点丰富度稳定显示。
  * 关键：收帧只做解析+入队，不每帧 flush；仅定时器每 33ms 做一次 flush（一边销毁过期帧一边输出当前窗口）。
- * 二进制格式（小端序）：1B type + 8B timestamp + 4B pointCount + 每点 13B (x,y,z float + r byte)
+ * 自动兼容 v1(13B/点) 和 v2(14B/点，含侵入标记) 两种二进制格式。
  */
 
 const BINARY_HEADER = 1 + 8 + 4;
-const BINARY_POINT_BYTES = 13;
-const MAX_POINTS = 250000; // 滑动窗口最大点数（略大于 20 万/秒 × 1 秒）
-const THROTTLE_MS = 33;    // 向主线程推送间隔 = 30fps，只在此节奏做一次「销毁过期 + 合并 + post」
+const MAX_POINTS = 250000;
+const THROTTLE_MS = 33;
 
 interface Frame {
   timestamp: number;
-  positions: Float32Array; // 已做坐标变换：tx,ty,tz = x,z,y
+  positions: Float32Array;
   reflectivity: Uint8Array;
   count: number;
 }
@@ -32,8 +31,15 @@ function parseBinary(ab: ArrayBuffer): { timestamp: number; count: number; posit
   offset += 8;
   const count = dv.getUint32(offset, true);
   offset += 4;
-  const expectedLen = BINARY_HEADER + count * BINARY_POINT_BYTES;
-  if (ab.byteLength < expectedLen) return null;
+  const payloadLen = ab.byteLength - BINARY_HEADER;
+  let pointBytes: number;
+  if (payloadLen >= count * 14) {
+    pointBytes = 14;
+  } else if (payloadLen >= count * 13) {
+    pointBytes = 13;
+  } else {
+    return null;
+  }
 
   const positions = new Float32Array(count * 3);
   const reflectivity = new Uint8Array(count);
@@ -42,8 +48,7 @@ function parseBinary(ab: ArrayBuffer): { timestamp: number; count: number; posit
     const y = dv.getFloat32(offset + 4, true);
     const z = dv.getFloat32(offset + 8, true);
     const r = dv.getUint8(offset + 12);
-    offset += BINARY_POINT_BYTES;
-    // 坐标变换与 PointCloudRenderer 一致：tx=x, ty=z(高度), tz=y
+    offset += pointBytes;
     positions[i * 3] = x;
     positions[i * 3 + 1] = z;
     positions[i * 3 + 2] = y;

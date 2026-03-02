@@ -1234,17 +1234,26 @@ public class RadarService {
 
             logger.info("服务启动: 开始加载 {} 个雷达设备的检测上下文", devices.size());
 
+            int enabledCount = 0;
             for (com.digital.video.gateway.database.RadarDevice device : devices) {
                 String deviceId = device.getDeviceId();
                 try {
                     logger.info("服务启动: 加载设备检测上下文 deviceId={}", deviceId);
                     reloadDeviceDetectionContext(deviceId);
+                    // 启动时自动恢复检测模式：背景模型和防区都已就绪则直接进入检测状态
+                    BackgroundModel bg = loadedBackgrounds.get(deviceId);
+                    List<DefenseZone> zones = deviceZones.get(deviceId);
+                    if (bg != null && bg.getBoundaryGrid() != null && zones != null && !zones.isEmpty()) {
+                        deviceStates.put(deviceId, "detecting");
+                        enabledCount++;
+                        logger.info("服务启动: 自动开启检测 deviceId={}", deviceId);
+                    }
                 } catch (Exception e) {
                     logger.error("服务启动: 加载设备检测上下文失败 deviceId={}", deviceId, e);
                 }
             }
 
-            logger.info("服务启动: 检测上下文加载完成，已加载 {} 个设备", devices.size());
+            logger.info("服务启动: 检测上下文加载完成，已加载 {} 个设备，自动开启检测 {} 个", devices.size(), enabledCount);
         } catch (Exception e) {
             logger.error("服务启动: 加载检测上下文失败", e);
         }
@@ -1287,8 +1296,7 @@ public class RadarService {
                     background.buildBoundaryGrid(shrinkDistanceCm);
 
                     loadedBackgrounds.put(deviceId, background);
-                    // 不再自动 deviceStates.put(deviceId, "detecting")，由显式「开启检测」控制
-                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}（未自动开启检测，请调用开启检测接口）",
+                    logger.info("加载背景模型: deviceId={}, backgroundId={}, 点数={}, 边界网格有效方向={}",
                             deviceId, backgroundId, background.getPoints().size(),
                             background.getBoundaryGrid() != null ? background.getBoundaryGrid().getValidDirections()
                                     : 0);

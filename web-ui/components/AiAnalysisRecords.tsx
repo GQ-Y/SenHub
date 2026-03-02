@@ -6,7 +6,8 @@ import { fetchWithAuthAsBlobUrl, appendTokenToStaticUrl } from '../src/api/clien
 import {
   Brain, Image as ImageIcon, Volume2, VolumeX, RefreshCw,
   Clock, ShieldCheck, ShieldX, Shield, AlertTriangle,
-  Megaphone, X, ZoomIn, ChevronLeft, ChevronRight, Trash2, Search
+  Megaphone, X, ZoomIn, ChevronLeft, ChevronRight, Trash2, Search,
+  ChevronDown, Check, Calendar, CheckSquare, Square
 } from 'lucide-react';
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
@@ -18,6 +19,240 @@ const EVENT_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'CROSS_LINE_DETECTION', label: '越线检测' },
   { value: 'OTHER', label: '其他' },
 ];
+
+/** 自定义事件类型下拉（非原生 select） */
+const CustomEventTypeSelect: React.FC<{
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+  label: string;
+}> = ({ value, options, onChange, label }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const currentLabel = options.find((o) => o.value === value)?.label ?? options[0]?.label ?? '';
+  useEffect(() => {
+    const onOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full min-w-[140px] flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-left text-gray-800 hover:border-gray-300 hover:bg-gray-50/80 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+      >
+        <span className="truncate">{currentLabel}</span>
+        <ChevronDown size={16} className={`text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 py-1 rounded-xl border border-gray-200 bg-white shadow-lg z-50 max-h-56 overflow-y-auto">
+          {options.map((o) => (
+            <button
+              key={o.value || 'all'}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors ${
+                o.value === value ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {o.label}
+              {o.value === value && <Check size={14} className="text-blue-600" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** 格式化 datetime 为显示用 */
+function formatDateTimeLocal(s: string): string {
+  if (!s || !s.trim()) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${h}:${min}`;
+}
+
+/** 自定义日期时间选择器（非原生 input[datetime-local]） */
+const CustomDateTimeField: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  placeholder?: string;
+}> = ({ value, onChange, label, placeholder = '选择日期时间' }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const display = value ? formatDateTimeLocal(value) : '';
+  const now = new Date();
+  const [y, m, d, h, min] = (() => {
+    if (!value) {
+      return [
+        String(now.getFullYear()),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+        String(now.getHours()).padStart(2, '0'),
+        String(now.getMinutes()).padStart(2, '0'),
+      ];
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return ['', '', '', '', ''];
+    return [
+      String(date.getFullYear()),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+      String(date.getHours()).padStart(2, '0'),
+      String(date.getMinutes()).padStart(2, '0'),
+    ];
+  })();
+  const iy = y === '' ? now.getFullYear() : parseInt(y, 10);
+  const im = m === '' ? now.getMonth() + 1 : parseInt(m, 10);
+  const id = d === '' ? now.getDate() : parseInt(d, 10);
+  const ih = h === '' ? 0 : parseInt(h, 10);
+  const imin = min === '' ? 0 : parseInt(min, 10);
+  const setNow = () => {
+    const n = new Date();
+    const v = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}T${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+    onChange(v);
+    setOpen(false);
+  };
+  const setParts = (ny?: number, nm?: number, nd?: number, nh?: number, nmin?: number) => {
+    const yy = ny ?? iy; const mm = nm ?? im; const dd = nd ?? id;
+    const hh = nh ?? ih; const mmin = nmin ?? imin;
+    const date = new Date(yy, mm - 1, dd, hh, mmin);
+    if (Number.isNaN(date.getTime())) return;
+    const v = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    onChange(v);
+  };
+  useEffect(() => {
+    const onOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [open]);
+  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const daysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+  const days = im && iy ? Array.from({ length: daysInMonth(iy, im) }, (_, i) => i + 1) : Array.from({ length: 31 }, (_, i) => i + 1);
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const minutes = Array.from({ length: 60 }, (_, i) => i);
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full min-w-[180px] flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-left text-gray-800 hover:border-gray-300 hover:bg-gray-50/80 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+      >
+        <span className={`truncate flex items-center gap-1.5 ${!display ? 'text-gray-400' : ''}`}>
+          <Calendar size={14} className="text-gray-400 flex-shrink-0" />
+          {display || placeholder}
+        </span>
+        <ChevronDown size={16} className={`text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-[320px] p-3 rounded-xl border border-gray-200 bg-white shadow-xl z-50 space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase">年</span>
+              <select
+                value={y}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParts(v ? parseInt(v, 10) : undefined, im || undefined, id || undefined, ih || undefined, imin || undefined);
+                }}
+                className="w-full mt-0.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                {years.map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase">月</span>
+              <select
+                value={m}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParts(iy || undefined, v ? parseInt(v, 10) : undefined, id || undefined, ih || undefined, imin || undefined);
+                }}
+                className="w-full mt-0.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                {months.map((mo) => (
+                  <option key={mo} value={mo}>{mo}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase">日</span>
+              <select
+                value={d}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParts(iy || undefined, im || undefined, v ? parseInt(v, 10) : undefined, ih || undefined, imin || undefined);
+                }}
+                className="w-full mt-0.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                {days.map((da) => (
+                  <option key={da} value={da}>{da}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase">时</span>
+              <select
+                value={h}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParts(iy || undefined, im || undefined, id || undefined, v ? parseInt(v, 10) : undefined, imin || undefined);
+                }}
+                className="w-full mt-0.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                {hours.map((hr) => (
+                  <option key={hr} value={hr}>{String(hr).padStart(2, '0')}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase">分</span>
+              <select
+                value={min}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setParts(iy || undefined, im || undefined, id || undefined, ih || undefined, v ? parseInt(v, 10) : undefined);
+                }}
+                className="w-full mt-0.5 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                {minutes.map((mn) => (
+                  <option key={mn} value={mn}>{String(mn).padStart(2, '0')}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+            <button type="button" onClick={setNow} className="flex-1 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-medium hover:bg-blue-100">
+              此刻
+            </button>
+            <button type="button" onClick={() => { onChange(''); setOpen(false); }} className="flex-1 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-xs font-medium hover:bg-gray-200">
+              清空
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /** 带鉴权的图片：/api/static/ 用 query token 直链，其它 /api 用 fetch+blob */
 const AuthImage: React.FC<{ url: string; alt: string; className?: string; loading?: 'lazy' | 'eager' }> = ({ url, alt, className, loading }) => {
@@ -231,72 +466,70 @@ export const AiAnalysisRecords: React.FC = () => {
         </button>
       </div>
 
-      {/* 筛选 */}
-      <div className="mb-4 p-4 rounded-xl border border-gray-100 bg-white flex flex-wrap items-end gap-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">事件类型</label>
-          <select
-            value={eventType}
-            onChange={(e) => setEventType(e.target.value)}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm min-w-[140px]"
+      {/* 筛选：自定义事件类型下拉 + 自定义日期时间选择器 */}
+      <div className="mb-4 p-4 rounded-xl border border-gray-100 bg-white flex flex-wrap items-end gap-4">
+        <CustomEventTypeSelect
+          label="事件类型"
+          value={eventType}
+          options={EVENT_TYPE_OPTIONS}
+          onChange={setEventType}
+        />
+        <CustomDateTimeField
+          label="开始时间"
+          value={startTime}
+          onChange={setStartTime}
+          placeholder="选择开始时间"
+        />
+        <CustomDateTimeField
+          label="结束时间"
+          value={endTime}
+          onChange={setEndTime}
+          placeholder="选择结束时间"
+        />
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={handleQuery}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 shadow-sm hover:shadow transition-all active:scale-[0.98]"
           >
-            {EVENT_TYPE_OPTIONS.map((o) => (
-              <option key={o.value || 'all'} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+            <Search size={16} />
+            查询
+          </button>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">开始时间</label>
-          <input
-            type="datetime-local"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">结束时间</label>
-          <input
-            type="datetime-local"
-            value={endTime}
-            onChange={(e) => setEndTime(e.target.value)}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-          />
-        </div>
-        <button
-          onClick={handleQuery}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Search size={14} />
-          查询
-        </button>
       </div>
 
-      {/* 批量删除栏 */}
+      {/* 批量操作栏：已选数量 + 全选/取消/批量删除 */}
       {selectedIds.size > 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
-          <span className="text-sm text-amber-800">已选 {selectedIds.size} 条</span>
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-orange-50/80 px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-200/60 text-amber-900 text-sm font-medium">
+              <CheckSquare size={14} />
+              已选 {selectedIds.size} 条
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={toggleSelectAll}
-              className="text-sm text-amber-700 hover:underline"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-amber-800 bg-white/80 border border-amber-200/80 hover:bg-amber-100/80 hover:border-amber-300 transition-colors"
             >
+              {selectedIds.size === records.length ? <Square size={14} /> : <CheckSquare size={14} />}
               {selectedIds.size === records.length ? '取消全选' : '全选当页'}
             </button>
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              className="text-sm text-amber-700 hover:underline"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-amber-800 bg-white/80 border border-amber-200/80 hover:bg-amber-100/80 hover:border-amber-300 transition-colors"
             >
+              <X size={14} />
               取消选择
             </button>
             <button
               type="button"
               onClick={handleBatchDelete}
               disabled={deleting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50 shadow-sm hover:shadow transition-all active:scale-[0.98]"
             >
               <Trash2 size={14} />
               批量删除
@@ -337,25 +570,30 @@ export const AiAnalysisRecords: React.FC = () => {
             >
               {/* 图片为主 */}
               <div className="aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
-                {/* 左上角复选框 */}
-                <div className="absolute top-2 left-2 z-10" onClick={(e) => toggleSelect(r.id, e)}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(r.id)}
-                    onChange={() => {}}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 bg-white/90"
-                  />
-                </div>
-                {/* 右上角删除（在核验角标左侧） */}
+                {/* 左上角自定义复选框 */}
+                <button
+                  type="button"
+                  onClick={(e) => toggleSelect(r.id, e)}
+                  className="absolute top-2 left-2 z-10 w-8 h-8 rounded-lg flex items-center justify-center shadow-md border border-white/80 transition-all hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
+                  style={{ backgroundColor: selectedIds.has(r.id) ? 'rgb(59 130 246)' : 'rgba(255,255,255,0.92)' }}
+                  title={selectedIds.has(r.id) ? '取消选择' : '选择'}
+                >
+                  {selectedIds.has(r.id) ? (
+                    <Check size={16} className="text-white" strokeWidth={3} />
+                  ) : (
+                    <Square size={16} className="text-gray-400" strokeWidth={2} />
+                  )}
+                </button>
+                {/* 右上角删除按钮 */}
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
                   <button
                     type="button"
                     onClick={(e) => handleDeleteOne(r.id, e)}
                     disabled={deleting}
-                    className="p-1.5 rounded-lg bg-black/40 hover:bg-red-500/90 text-white transition-colors disabled:opacity-50"
+                    className="p-2 rounded-lg bg-black/35 hover:bg-red-500 text-white backdrop-blur-sm transition-all disabled:opacity-50 shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-400/80"
                     title="删除"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={14} strokeWidth={2.5} />
                   </button>
                 </div>
                 {r.imageUrl ? (

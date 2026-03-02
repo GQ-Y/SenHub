@@ -3,14 +3,18 @@ package com.digital.video.gateway.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.Assembly;
 import com.digital.video.gateway.database.AssemblyDevice;
+import com.digital.video.gateway.driver.livox.model.DefenseZone;
 import com.digital.video.gateway.service.AssemblyService;
+import com.digital.video.gateway.service.DefenseZoneService;
 import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 装置管理控制器
@@ -18,10 +22,12 @@ import java.util.Map;
 public class AssemblyController {
     private static final Logger logger = LoggerFactory.getLogger(AssemblyController.class);
     private final AssemblyService assemblyService;
+    private final DefenseZoneService defenseZoneService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AssemblyController(AssemblyService assemblyService) {
+    public AssemblyController(AssemblyService assemblyService, DefenseZoneService defenseZoneService) {
         this.assemblyService = assemblyService;
+        this.defenseZoneService = defenseZoneService;
     }
 
     /**
@@ -273,7 +279,7 @@ public class AssemblyController {
             List<Assembly> assemblies = assemblyService.getAssembliesByDevice(deviceId);
             List<Map<String, Object>> result = assemblies.stream()
                     .map(Assembly::toMap)
-                    .collect(java.util.stream.Collectors.toList());
+                    .collect(Collectors.toList());
 
             ctx.status(200);
             ctx.result(createSuccessResponse(result));
@@ -281,6 +287,71 @@ public class AssemblyController {
             logger.error("获取设备所属装置列表失败", e);
             ctx.status(500);
             ctx.result(createErrorResponse(500, "获取设备所属装置列表失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取装置下的雷达-球机标定上下文（仅当装置开启 PTZ 联动且同时包含雷达与球机时可用）
+     * GET /api/assemblies/:id/calibration/context
+     */
+    public void getCalibrationContext(Context ctx) {
+        try {
+            String assemblyId = ctx.pathParam("id");
+            Assembly assembly = assemblyService.getAssembly(assemblyId);
+            if (assembly == null) {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "装置不存在"));
+                return;
+            }
+            if (!assembly.isPtzLinkageEnabled()) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "请先开启装置的 PTZ 联动"));
+                return;
+            }
+            List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assemblyId);
+            List<AssemblyDevice> radarDevices = devices.stream()
+                    .filter(d -> "radar".equalsIgnoreCase(d.getDeviceRole()))
+                    .collect(Collectors.toList());
+            List<AssemblyDevice> cameraDevices = devices.stream()
+                    .filter(d -> {
+                        String r = d.getDeviceRole();
+                        return r != null && (r.contains("camera") || "left_camera".equalsIgnoreCase(r)
+                                || "right_camera".equalsIgnoreCase(r) || "top_camera".equalsIgnoreCase(r));
+                    })
+                    .collect(Collectors.toList());
+            if (radarDevices.isEmpty() || cameraDevices.isEmpty()) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "装置需同时包含雷达与球机才能进行坐标系标定"));
+                return;
+            }
+            String radarDeviceId = radarDevices.get(0).getDeviceId();
+            List<DefenseZone> zones = defenseZoneService.getZonesByDeviceId(radarDeviceId);
+            List<Map<String, Object>> zonesWithCamera = new ArrayList<>();
+            String cameraDeviceId = null;
+            for (DefenseZone zone : zones) {
+                String camId = zone.getCameraDeviceId();
+                if (camId != null && !camId.trim().isEmpty()) {
+                    if (cameraDeviceId == null) cameraDeviceId = camId;
+                    Map<String, Object> zm = new HashMap<>();
+                    zm.put("zoneId", zone.getZoneId());
+                    zm.put("zoneName", zone.getName() != null ? zone.getName() : zone.getZoneId());
+                    zm.put("cameraDeviceId", camId);
+                    zm.put("cameraChannel", zone.getCameraChannel() != null ? zone.getCameraChannel() : 1);
+                    zonesWithCamera.add(zm);
+                }
+            }
+            Map<String, Object> data = new HashMap<>();
+            data.put("radarDeviceId", radarDeviceId);
+            data.put("radarDeviceName", radarDeviceId);
+            data.put("cameraDeviceId", cameraDeviceId);
+            data.put("cameraDeviceName", cameraDeviceId);
+            data.put("zones", zonesWithCamera);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(data));
+        } catch (Exception e) {
+            logger.error("获取标定上下文失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, "获取标定上下文失败: " + e.getMessage()));
         }
     }
 

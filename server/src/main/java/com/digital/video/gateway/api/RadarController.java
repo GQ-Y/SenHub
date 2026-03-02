@@ -12,6 +12,9 @@ import com.digital.video.gateway.database.RadarIntrusionRecordDAO;
 import com.digital.video.gateway.driver.livox.model.DefenseZone;
 import com.digital.video.gateway.service.*;
 import com.digital.video.gateway.service.RadarTestService;
+import com.digital.video.gateway.driver.livox.algorithm.CalibrationSolver;
+import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
+import com.digital.video.gateway.driver.livox.model.Point;
 import com.digital.video.gateway.database.Assembly;
 import io.javalin.http.Context;
 import org.slf4j.Logger;
@@ -39,6 +42,7 @@ public class RadarController {
     private final IntrusionDetectionService intrusionDetectionService;
     private final RadarService radarService;
     private final AssemblyService assemblyService;
+    private final PTZService ptzService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public RadarController(RadarTestService radarTestService, Database database,
@@ -46,7 +50,8 @@ public class RadarController {
             DefenseZoneService defenseZoneService,
             IntrusionDetectionService intrusionDetectionService,
             RadarService radarService,
-            AssemblyService assemblyService) {
+            AssemblyService assemblyService,
+            PTZService ptzService) {
         this.radarTestService = radarTestService;
         this.database = database;
         this.connection = database.getConnection();
@@ -57,6 +62,7 @@ public class RadarController {
         this.intrusionDetectionService = intrusionDetectionService;
         this.radarService = radarService;
         this.assemblyService = assemblyService;
+        this.ptzService = ptzService;
     }
 
     /**
@@ -239,7 +245,14 @@ public class RadarController {
                 logger.info("雷达设备已{}: deviceId={}, radarIp={}, radarName={}, {}",
                         isUpdate ? "更新" : "添加",
                         deviceId, radarIp, radarName, snStatus);
-                
+                // 若指定了所属装置，同步加入 assembly_devices，便于装置详情页显示并启用坐标系标定
+                if (assemblyService != null && device.getAssemblyId() != null && !device.getAssemblyId().trim().isEmpty()) {
+                    try {
+                        assemblyService.addDeviceToAssembly(device.getAssemblyId().trim(), deviceId, "radar", null);
+                    } catch (Exception e) {
+                        logger.warn("雷达关联装置时同步 assembly_devices 失败: assemblyId={}, deviceId={}", device.getAssemblyId(), deviceId, e);
+                    }
+                }
                 Map<String, Object> result = device.toMap();
                 if (radarSerial == null) {
                     result.put("snPending", true);
@@ -298,6 +311,7 @@ public class RadarController {
                 existingDevice.setRadarName(radarName.trim());
             }
             
+            String previousAssemblyId = existingDevice.getAssemblyId();
             if (body.containsKey("assemblyId")) {
                 existingDevice.setAssemblyId(assemblyId);
                 // 若指定了装置ID，需校验装置存在，避免外键约束失败
@@ -312,6 +326,20 @@ public class RadarController {
             }
 
             if (radarDeviceDAO.saveOrUpdate(existingDevice)) {
+                // 同步 assembly_devices：从原装置移除、加入新装置（若有）
+                if (assemblyService != null) {
+                    if (previousAssemblyId != null && !previousAssemblyId.trim().isEmpty()) {
+                        assemblyService.removeDeviceFromAssembly(previousAssemblyId.trim(), deviceId);
+                    }
+                    String newAssemblyId = existingDevice.getAssemblyId();
+                    if (newAssemblyId != null && !newAssemblyId.trim().isEmpty()) {
+                        try {
+                            assemblyService.addDeviceToAssembly(newAssemblyId.trim(), deviceId, "radar", null);
+                        } catch (Exception e) {
+                            logger.warn("雷达关联装置时同步 assembly_devices 失败: assemblyId={}, deviceId={}", newAssemblyId, deviceId, e);
+                        }
+                    }
+                }
                 logger.info("雷达设备已更新: deviceId={}", deviceId);
                 ctx.result(createSuccessResponse(existingDevice.toMap()));
             } else {
@@ -1124,6 +1152,233 @@ public class RadarController {
             ctx.status(500);
             ctx.result(createErrorResponse(500, e.getMessage()));
         }
+    }
+
+    /**
+     * 获取当前防区内最显著目标坐标（用于标定采集）
+     * GET /api/radar/:deviceId/calibration/target?zoneId=xxx
+     */
+    public void getCalibrationTarget(Context ctx) {
+        try {
+            String deviceId = ctx.pathParam("deviceId");
+            String zoneId = ctx.queryParam("zoneId");
+            if (zoneId == null || zoneId.trim().isEmpty()) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少 zoneId 参数"));
+                return;
+            }
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "点云处理中心未初始化"));
+                return;
+            }
+            List<Map<String, Object>> targets = center.getActiveTargets(zoneId);
+            if (targets == null || targets.isEmpty()) {
+                ctx.status(200);
+                ctx.result(createSuccessResponse(null));
+                return;
+            }
+            Map<String, Object> nearest = targets.stream()
+                    .min(Comparator.comparingDouble(t -> ((Number) t.getOrDefault("distance", Double.MAX_VALUE)).doubleValue()))
+                    .orElse(null);
+            if (nearest == null) {
+                ctx.result(createSuccessResponse(null));
+                return;
+            }
+            Map<String, Object> pos = new HashMap<>();
+            pos.put("radarX", nearest.get("centroidX"));
+            pos.put("radarY", nearest.get("centroidY"));
+            pos.put("radarZ", nearest.get("centroidZ"));
+            ctx.result(createSuccessResponse(pos));
+        } catch (Exception e) {
+            logger.error("获取标定目标失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 根据标定点计算坐标变换参数
+     * POST /api/radar/:deviceId/calibration/compute
+     * Body: { "zoneId": "...", "points": [ { "radarX", "radarY", "radarZ", "cameraPan", "cameraTilt" }, ... ] }
+     */
+    @SuppressWarnings("unchecked")
+    public void postCalibrationCompute(Context ctx) {
+        try {
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
+            String zoneId = (String) body.get("zoneId");
+            List<Map<String, Object>> pointsList = (List<Map<String, Object>>) body.get("points");
+            if (zoneId == null || pointsList == null || pointsList.isEmpty()) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少 zoneId 或 points"));
+                return;
+            }
+            List<CalibrationSolver.CalibrationPoint> points = new ArrayList<>();
+            for (Map<String, Object> p : pointsList) {
+                float rx = numberToFloat(p.get("radarX"));
+                float ry = numberToFloat(p.get("radarY"));
+                float rz = numberToFloat(p.get("radarZ"));
+                float pan = numberToFloat(p.get("cameraPan"));
+                float tilt = numberToFloat(p.get("cameraTilt"));
+                points.add(new CalibrationSolver.CalibrationPoint(rx, ry, rz, pan, tilt));
+            }
+            CalibrationSolver.CalibrationResult result = CalibrationSolver.solve(points);
+            if (result == null) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "标定求解失败"));
+                return;
+            }
+            Map<String, Object> transform = new HashMap<>();
+            Map<String, Object> trans = new HashMap<>();
+            trans.put("x", result.translationX);
+            trans.put("y", result.translationY);
+            trans.put("z", result.translationZ);
+            transform.put("translation", trans);
+            Map<String, Object> rot = new HashMap<>();
+            rot.put("x", result.rotationX);
+            rot.put("y", result.rotationY);
+            rot.put("z", result.rotationZ);
+            transform.put("rotation", rot);
+            transform.put("scale", result.scale);
+            Map<String, Object> error = new HashMap<>();
+            error.put("avgDegrees", result.avgErrorDegrees);
+            error.put("maxDegrees", result.maxErrorDegrees);
+            error.put("perPointPan", result.perPointPanErrorDegrees);
+            error.put("perPointTilt", result.perPointTiltErrorDegrees);
+            Map<String, Object> data = new HashMap<>();
+            data.put("transform", transform);
+            data.put("error", error);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(data));
+        } catch (Exception e) {
+            logger.error("标定计算失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 使用给定变换参数驱动球机瞄准指定雷达坐标（验证标定）
+     * POST /api/radar/:deviceId/calibration/verify
+     * Body: { "zoneId": "...", "transform": { translation, rotation, scale }, "radarX", "radarY", "radarZ" }
+     */
+    @SuppressWarnings("unchecked")
+    public void postCalibrationVerify(Context ctx) {
+        try {
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
+            String zoneId = (String) body.get("zoneId");
+            Map<String, Object> transformMap = (Map<String, Object>) body.get("transform");
+            float rx = numberToFloat(body.get("radarX"));
+            float ry = numberToFloat(body.get("radarY"));
+            float rz = numberToFloat(body.get("radarZ"));
+            if (zoneId == null || transformMap == null) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少 zoneId 或 transform"));
+                return;
+            }
+            DefenseZone zone = defenseZoneService.getZone(zoneId);
+            if (zone == null) {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "防区不存在"));
+                return;
+            }
+            String cameraDeviceId = zone.getCameraDeviceId();
+            if (cameraDeviceId == null || cameraDeviceId.trim().isEmpty()) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "防区未关联球机"));
+                return;
+            }
+            int channel = zone.getCameraChannel() != null ? zone.getCameraChannel() : 1;
+            CoordinateTransform t = mapToCoordinateTransform(transformMap);
+            Point radarPoint = new Point(rx, ry, rz);
+            Point cameraPoint = t.transformRadarToCamera(radarPoint);
+            float[] angles = t.calculatePTZAngles(cameraPoint);
+            float pan = angles[0];
+            float tilt = angles[1];
+            float zoom = 1.0f;
+            boolean ok = ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
+            Map<String, Object> data = new HashMap<>();
+            data.put("pan", pan);
+            data.put("tilt", tilt);
+            data.put("zoom", zoom);
+            data.put("success", ok);
+            ctx.status(200);
+            ctx.result(createSuccessResponse(data));
+        } catch (Exception e) {
+            logger.error("标定验证失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 将标定结果写入防区配置
+     * POST /api/radar/:deviceId/calibration/apply
+     * Body: { "zoneId": "...", "transform": { translation, rotation, scale } }
+     */
+    @SuppressWarnings("unchecked")
+    public void postCalibrationApply(Context ctx) {
+        try {
+            String deviceId = ctx.pathParam("deviceId");
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
+            String zoneId = (String) body.get("zoneId");
+            Map<String, Object> transformMap = (Map<String, Object>) body.get("transform");
+            if (zoneId == null || transformMap == null) {
+                ctx.status(400);
+                ctx.result(createErrorResponse(400, "缺少 zoneId 或 transform"));
+                return;
+            }
+            DefenseZone zone = defenseZoneService.getZone(zoneId);
+            if (zone == null) {
+                ctx.status(404);
+                ctx.result(createErrorResponse(404, "防区不存在"));
+                return;
+            }
+            String coordinateTransformJson = objectMapper.writeValueAsString(transformMap);
+            zone.setCoordinateTransformJson(coordinateTransformJson);
+            boolean updated = defenseZoneService.updateZone(zoneId, zone);
+            if (!updated) {
+                ctx.status(500);
+                ctx.result(createErrorResponse(500, "保存防区失败"));
+                return;
+            }
+            ctx.status(200);
+            ctx.result(createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId))));
+        } catch (Exception e) {
+            logger.error("标定应用失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    private static float numberToFloat(Object o) {
+        if (o == null) return 0f;
+        if (o instanceof Number) return ((Number) o).floatValue();
+        if (o instanceof String) return Float.parseFloat((String) o);
+        return 0f;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static CoordinateTransform mapToCoordinateTransform(Map<String, Object> transformMap) {
+        float tx = 0, ty = 0, tz = 0, rx = 0, ry = 0, rz = 0, scale = 1f;
+        if (transformMap.get("translation") instanceof Map) {
+            Map<String, Object> trans = (Map<String, Object>) transformMap.get("translation");
+            tx = numberToFloat(trans.get("x"));
+            ty = numberToFloat(trans.get("y"));
+            tz = numberToFloat(trans.get("z"));
+        }
+        if (transformMap.get("rotation") instanceof Map) {
+            Map<String, Object> rot = (Map<String, Object>) transformMap.get("rotation");
+            rx = numberToFloat(rot.get("x"));
+            ry = numberToFloat(rot.get("y"));
+            rz = numberToFloat(rot.get("z"));
+        }
+        scale = numberToFloat(transformMap.get("scale"));
+        if (scale <= 0) scale = 1f;
+        return new CoordinateTransform(tx, ty, tz, rx, ry, rz, scale);
     }
 
     private Map<String, Object> convertExclusionZoneToMap(com.digital.video.gateway.driver.livox.model.ExclusionZone ez) {
