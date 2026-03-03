@@ -74,6 +74,17 @@ public class CalibrationSolver {
         }
     }
 
+    /**
+     * 将 PTZ tilt 角度归一化到 -180~180 范围。
+     * 很多球机 tilt 用 0~360 表示，如 356.7° 实际为 -3.3°。
+     */
+    private static float normalizeTilt(float tilt) {
+        float t = tilt % 360f;
+        if (t > 180f) t -= 360f;
+        if (t < -180f) t += 360f;
+        return t;
+    }
+
     public static CalibrationResult solve(List<CalibrationPoint> points) {
         if (points == null || points.isEmpty()) {
             return null;
@@ -81,8 +92,12 @@ public class CalibrationSolver {
 
         for (int i = 0; i < points.size(); i++) {
             CalibrationPoint p = points.get(i);
-            logger.info("标定输入点[{}]: radar=({}, {}, {}), camera pan={}°, tilt={}°",
-                    i, p.radarX, p.radarY, p.radarZ, p.cameraPan, p.cameraTilt);
+            float normalizedTilt = normalizeTilt(p.cameraTilt);
+            logger.info("标定输入点[{}]: radar=({}, {}, {}), camera pan={}°, tilt={}° (归一化={}°)",
+                    i, p.radarX, p.radarY, p.radarZ, p.cameraPan, p.cameraTilt, normalizedTilt);
+            if (Math.abs(normalizedTilt - p.cameraTilt) > 0.01f) {
+                points.set(i, new CalibrationPoint(p.radarX, p.radarY, p.radarZ, p.cameraPan, normalizedTilt));
+            }
         }
 
         CalibrationResult result;
@@ -147,7 +162,7 @@ public class CalibrationSolver {
         Point cam = t.transformRadarToCamera(new Point(rx, ry, rz));
         float[] angles = t.calculatePTZAngles(cam);
         float panErr = normalizeAngleDeg(angles[0] - normalizePan(p.cameraPan));
-        float tiltErr = angles[1] - p.cameraTilt;
+        float tiltErr = normalizeAngleDeg(angles[1] - p.cameraTilt);
         float maxErr = Math.max(Math.abs(panErr), Math.abs(tiltErr));
 
         return new CalibrationResult(tx, ty, tz, rotationX, ROTATION_Y_FIXED, rotationZ, SCALE_FIXED,
@@ -213,7 +228,7 @@ public class CalibrationSolver {
                 float panObs = normalizePan(p.cameraPan);
                 float tiltObs = p.cameraTilt;
                 residual[i * 2] = normalizeAngleDeg((float) (angles[0] - panObs));
-                residual[i * 2 + 1] = angles[1] - tiltObs;
+                residual[i * 2 + 1] = normalizeAngleDeg((float) (angles[1] - tiltObs));
 
                 // d/d(rotZ)
                 double[] anglesPlus = forward(p.radarX, p.radarY, p.radarZ, rotZ + delta, rotX, 0, 0, 0);
@@ -273,7 +288,7 @@ public class CalibrationSolver {
             Point cam = t.transformRadarToCamera(new Point(p.radarX, p.radarY, p.radarZ));
             float[] angles = t.calculatePTZAngles(cam);
             float panErr = normalizeAngleDeg(angles[0] - normalizePan(p.cameraPan));
-            float tiltErr = angles[1] - p.cameraTilt;
+            float tiltErr = normalizeAngleDeg(angles[1] - p.cameraTilt);
             perPan[i] = panErr;
             perTilt[i] = tiltErr;
             float e = (float) Math.sqrt(panErr * panErr + tiltErr * tiltErr);

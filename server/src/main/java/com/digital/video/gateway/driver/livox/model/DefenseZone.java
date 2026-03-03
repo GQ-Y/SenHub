@@ -94,6 +94,18 @@ public class DefenseZone {
                 transform.rotationZ = rot.has("z") ? (float) rot.get("z").asDouble() : 0;
             }
             transform.scale = node.has("scale") ? (float) node.get("scale").asDouble() : 1.0f;
+
+            if (node.has("zoomCalibration") && node.get("zoomCalibration").isArray()) {
+                var arr = node.get("zoomCalibration");
+                for (var item : arr) {
+                    if (item.has("distance") && item.has("zoom")) {
+                        transform.addZoomCalibPoint(
+                                (float) item.get("distance").asDouble(),
+                                (float) item.get("zoom").asDouble());
+                    }
+                }
+            }
+
             return transform;
         } catch (Exception e) {
             return new CoordinateTransform(); // 解析失败，返回默认值
@@ -252,9 +264,15 @@ public class DefenseZone {
         public float translationX = 0;
         public float translationY = 0;
         public float translationZ = 0;
-        public float rotationX = 0; // 欧拉角（度）
+        public float rotationX = 0;
         public float rotationY = 0;
         public float rotationZ = 0;
         public float scale = 1.0f;
+        public java.util.List<float[]> zoomCalibPoints;
+
+        public void addZoomCalibPoint(float distance, float zoom) {
+            if (zoomCalibPoints == null) zoomCalibPoints = new java.util.ArrayList<>();
+            zoomCalibPoints.add(new float[]{distance, zoom});
+        }
     }
 }

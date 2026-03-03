@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Edit2, Trash2, X, Radar, MapPin, Settings, Activity } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Radar, MapPin, Settings, Activity, Bell, BellOff } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { radarService, assemblyService } from '../src/api/services';
 import { useModal } from '../hooks/useModal';
@@ -30,13 +30,26 @@ export const RadarManagement: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState<{ reachable?: boolean; radarSerial?: string; message?: string } | null>(null);
+  const [detectionStates, setDetectionStates] = useState<Record<string, boolean>>({});
+  const [detectionTogglingId, setDetectionTogglingId] = useState<string | null>(null);
 
   // 加载雷达设备列表
   const loadDevices = async () => {
     setIsLoading(true);
     try {
       const response = await radarService.getRadarDevices();
-      setDevices(response.data || []);
+      const deviceList = response.data || [];
+      setDevices(deviceList);
+      const states: Record<string, boolean> = {};
+      await Promise.allSettled(
+        deviceList.map(async (d: any) => {
+          try {
+            const res = await radarService.getDetectionEnabled(d.deviceId);
+            states[d.deviceId] = !!res.data?.detectionEnabled;
+          } catch { /* ignore */ }
+        })
+      );
+      setDetectionStates(states);
     } catch (err: any) {
       console.error('加载雷达设备列表失败:', err);
       modal.showModal({
@@ -45,6 +58,20 @@ export const RadarManagement: React.FC = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggleDetection = async (deviceId: string) => {
+    if (detectionTogglingId) return;
+    const next = !detectionStates[deviceId];
+    setDetectionTogglingId(deviceId);
+    try {
+      await radarService.setDetectionEnabled(deviceId, next);
+      setDetectionStates((prev) => ({ ...prev, [deviceId]: next }));
+    } catch (e: any) {
+      modal.showModal({ message: e?.message || '操作失败', type: 'error' });
+    } finally {
+      setDetectionTogglingId(null);
     }
   };
 
@@ -384,17 +411,38 @@ export const RadarManagement: React.FC = () => {
                   </span>
                 </div>
 
+                {/* 报警开关 */}
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 border border-gray-100 mb-3">
+                  <div className="flex items-center gap-2">
+                    {detectionStates[device.deviceId] ? (
+                      <Bell size={14} className="text-amber-500" />
+                    ) : (
+                      <BellOff size={14} className="text-gray-400" />
+                    )}
+                    <span className="text-xs font-medium text-gray-600">侵入报警</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleDetection(device.deviceId)}
+                    disabled={detectionTogglingId === device.deviceId}
+                    className={`relative w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+                      detectionStates[device.deviceId] ? 'bg-amber-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
+                      detectionStates[device.deviceId] ? 'translate-x-4' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+
                 {/* 设备信息预览 */}
                 <div className="space-y-2 mb-4">
-                  {/* SN 状态 */}
-                  <div className="text-sm text-gray-600">
-                    <span className="font-medium">序列号：</span>
-                    {device.radarSerial ? (
+                  {device.radarSerial && (
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">序列号：</span>
                       <span className="text-xs font-mono">{device.radarSerial}</span>
-                    ) : (
-                      <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">待自动填充</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {device.currentBackgroundId && (
                     <div className="text-sm text-gray-600">
                       <span className="font-medium">背景模型：</span>

@@ -1184,7 +1184,7 @@ export const radarService = {
   },
 
   /** 使用给定变换驱动球机瞄准指定雷达坐标（验证） */
-  async calibrationVerify(deviceId: string, body: { zoneId: string; transform: any; radarX: number; radarY: number; radarZ: number }) {
+  async calibrationVerify(deviceId: string, body: { zoneId: string; transform: any; radarX: number; radarY: number; radarZ: number; zoom?: number }) {
     return post<{ pan: number; tilt: number; zoom: number; success: boolean }>(
       `/radar/${encodeURIComponent(deviceId)}/calibration/verify`,
       body

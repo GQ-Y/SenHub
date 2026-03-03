@@ -304,10 +304,17 @@ public class PointCloudProcessCenter {
         // PTZ 解算
         CoordinateTransform coordTransform = coordTransformCache.computeIfAbsent(zoneId, k -> {
             DefenseZone.CoordinateTransform t = zone.getCoordinateTransform();
-            return new CoordinateTransform(
+            CoordinateTransform ct = new CoordinateTransform(
                     t.translationX, t.translationY, t.translationZ,
                     t.rotationX, t.rotationY, t.rotationZ,
                     t.scale);
+            // 复制变倍标定数据
+            if (t.zoomCalibPoints != null) {
+                for (float[] p : t.zoomCalibPoints) {
+                    ct.addZoomCalibPoint(p[0], p[1]);
+                }
+            }
+            return ct;
         });
 
         Point centroid = primaryTarget.getPosition();
@@ -320,7 +327,9 @@ public class PointCloudProcessCenter {
         float[] angles = coordTransform.calculatePTZAngles(predictedCameraPoint);
         float pan = angles[0];
         float tilt = angles[1];
-        float zoom = calculateZoom(prediction, predictedCameraPoint);
+        float zoom = coordTransform.hasZoomCalibration()
+                ? coordTransform.estimateZoom(predictedCameraPoint.distance())
+                : calculateZoom(prediction, predictedCameraPoint);
         float distance = predictedCameraPoint.distance();
 
         if (Float.isNaN(pan) || Float.isNaN(tilt) || Float.isNaN(zoom)

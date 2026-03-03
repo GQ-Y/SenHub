@@ -42,6 +42,8 @@ interface PointCloudRendererProps {
   // 防区模式相关
   defenseBackgroundPoints?: Point[];
   shrinkDistance?: number; // 默认 0.2m (20cm)
+  // 标定固化点标记
+  frozenMarker?: { x: number; y: number; z: number; label: string } | null;
 }
 
 /**
@@ -63,7 +65,8 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   modelingDistance = 0.2,
   modelingMaxConnections = 3,
   defenseBackgroundPoints = [],
-  shrinkDistance = 0.2
+  shrinkDistance = 0.2,
+  frozenMarker = null
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -75,6 +78,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   const backgroundPointsRef = useRef<THREE.Points | null>(null); // 背景参考点云
   const defenseZoneMeshRef = useRef<THREE.Group | null>(null);   // 3D 防区可视化
   const intrusionPointsRef = useRef<THREE.Points | null>(null);  // Worker 模式下侵入点（红）
+  const frozenMarkerGroupRef = useRef<THREE.Group | null>(null); // 标定固化点标记
   const animationFrameRef = useRef<number | null>(null);
   const cameraInitializedRef = useRef<boolean>(false);
 
@@ -587,6 +591,61 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       return;
     }
 
+    // 标定固化点标记渲染（在 points 检查之前，确保 frozen 阶段 points=[] 时仍能渲染）
+    if (frozenMarkerGroupRef.current) {
+      scene.remove(frozenMarkerGroupRef.current);
+      frozenMarkerGroupRef.current.traverse((obj: any) => { if (obj.geometry) obj.geometry.dispose(); if (obj.material) { if (obj.material.map) obj.material.map.dispose(); obj.material.dispose(); } });
+      frozenMarkerGroupRef.current = null;
+    }
+    if (frozenMarker) {
+      const fmGroup = new THREE.Group();
+      const tx = frozenMarker.x, ty = frozenMarker.z, tz = -frozenMarker.y;
+
+      const sphereGeo = new THREE.SphereGeometry(0.15, 24, 24);
+      const sphereMat = new THREE.MeshBasicMaterial({ color: 0x3399ff, transparent: true, opacity: 0.9 });
+      const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+      sphereMesh.position.set(tx, ty, tz);
+      fmGroup.add(sphereMesh);
+
+      const ringGeo = new THREE.RingGeometry(0.2, 0.26, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x3399ff, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.position.set(tx, ty, tz);
+      ringMesh.rotation.x = -Math.PI / 2;
+      fmGroup.add(ringMesh);
+
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(tx, ty, tz),
+      ]);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x3399ff, transparent: true, opacity: 0.45 });
+      fmGroup.add(new THREE.Line(lineGeo, lineMat));
+
+      const canvas = document.createElement('canvas');
+      const ctx2d = canvas.getContext('2d')!;
+      canvas.width = 512; canvas.height = 128;
+      ctx2d.clearRect(0, 0, 512, 128);
+      ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx2d.roundRect(0, 0, 512, 128, 10);
+      ctx2d.fill();
+      ctx2d.fillStyle = '#66bbff';
+      ctx2d.font = 'bold 28px monospace';
+      ctx2d.textAlign = 'center';
+      const lines = frozenMarker.label.split('\n');
+      for (let li = 0; li < lines.length; li++) {
+        ctx2d.fillText(lines[li], 256, 40 + li * 40);
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(1.4, 0.35, 1);
+      sprite.position.set(tx, ty + 0.35, tz);
+      fmGroup.add(sprite);
+
+      frozenMarkerGroupRef.current = fmGroup;
+      scene.add(fmGroup);
+    }
+
     // 传统 points 数组路径
     if (points.length === 0) {
       if (pointsRef.current) {
@@ -1017,7 +1076,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
         cameraInitializedRef.current = true;
       }
     }
-  }, [points, pointCloudBuffer, color, pointSize, colorMode, showModeling, modelingDistance, defenseBackgroundPoints, shrinkDistance]);
+  }, [points, pointCloudBuffer, color, pointSize, colorMode, showModeling, modelingDistance, defenseBackgroundPoints, shrinkDistance, frozenMarker]);
 
   // 计算统计信息
   const statsInfo = useMemo(() => {

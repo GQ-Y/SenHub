@@ -143,14 +143,15 @@ export const AssemblyManagement: React.FC = () => {
 
     setIsSaving(true);
     try {
+      const payload = { ...formData, status: formData.status || 'active' };
       if (activeModal === 'CREATE') {
-        await assemblyService.createAssembly(formData);
+        await assemblyService.createAssembly(payload);
         modal.showModal({
           message: '创建成功',
           type: 'success',
         });
       } else if (activeModal === 'EDIT' && selectedAssembly) {
-        await assemblyService.updateAssembly(selectedAssembly.assemblyId || selectedAssembly.id, formData);
+        await assemblyService.updateAssembly(selectedAssembly.assemblyId || selectedAssembly.id, payload);
         modal.showModal({
           message: '更新成功',
           type: 'success',
@@ -413,143 +414,152 @@ export const AssemblyManagement: React.FC = () => {
             </button>
           </div>
         )}
+      </div>
 
-        {/* 创建/编辑弹窗 */}
-        {(activeModal === 'CREATE' || activeModal === 'EDIT') && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-              onClick={handleCloseModal}
-            ></div>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+      {/* 创建/编辑弹窗 — 渲染在顶层以避免被 overflow-hidden 裁切 */}
+      {(activeModal === 'CREATE' || activeModal === 'EDIT') && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+            onClick={handleCloseModal}
+          ></div>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
                 <h3 className="text-lg font-bold text-gray-800">
                   {activeModal === 'CREATE' ? t('create_assembly') : t('edit_assembly')}
                 </h3>
-                <button
-                  onClick={handleCloseModal}
-                  className="p-1 rounded-full hover:bg-gray-200 transition-colors text-gray-500"
-                >
-                  <X size={20} />
-                </button>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {activeModal === 'CREATE' ? '创建一个新的设备装置组合' : '修改装置的基本信息'}
+                </p>
               </div>
-              <div className="p-6 space-y-4">
+              <button
+                onClick={handleCloseModal}
+                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('assembly_name')} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors"
+                  value={formData.name || ''}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="请输入装置名称"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <MapPin size={13} className="inline mr-1 text-gray-400" />
+                  {t('assembly_location')}
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors"
+                  value={formData.location || ''}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="如：成都市高新区天府大道"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('assembly_name')} <span className="text-red-500">*</span>
-                  </label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5">经度（WGS84）</label>
                   <input
-                    type="text"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.name || ''}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="请输入装置名称"
+                    type="number"
+                    step="any"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors text-sm"
+                    value={formData.longitude ?? ''}
+                    onChange={(e) => setFormData({ ...formData, longitude: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    placeholder="如 104.065"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('assembly_location')}</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5">纬度（WGS84）</label>
                   <input
-                    type="text"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.location || ''}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    placeholder="请输入位置信息"
+                    type="number"
+                    step="any"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors text-sm"
+                    value={formData.latitude ?? ''}
+                    onChange={(e) => setFormData({ ...formData, latitude: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    placeholder="如 30.572"
                   />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">经度（WGS84）</label>
-                    <input
-                      type="number"
-                      step="any"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                      value={formData.longitude ?? ''}
-                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value === '' ? undefined : Number(e.target.value) })}
-                      placeholder="如 116.397"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">纬度（WGS84）</label>
-                    <input
-                      type="number"
-                      step="any"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                      value={formData.latitude ?? ''}
-                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value === '' ? undefined : Number(e.target.value) })}
-                      placeholder="如 39.916"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('assembly_description')}</label>
-                  <textarea
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={3}
-                    value={formData.description || ''}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="请输入描述信息（可选）"
-                  />
-                </div>
-                <div>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      checked={formData.ptzLinkageEnabled ?? false}
-                      onChange={(e) => setFormData({ ...formData, ptzLinkageEnabled: e.target.checked })}
-                    />
-                    <span className="text-sm font-medium text-gray-700">PTZ 联动</span>
-                  </label>
-                  <p className="mt-1 text-xs text-gray-500">开启后，雷达防区侵入时可联动装置内球机转向与抓拍</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('status')}</label>
-                  <select
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.status || 'active'}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
-                  >
-                    <option value="active">{t('active')}</option>
-                    <option value="inactive">{t('inactive')}</option>
-                  </select>
                 </div>
               </div>
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end space-x-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('assembly_description')}</label>
+                <textarea
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors text-sm resize-none"
+                  rows={2}
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="描述信息（可选）"
+                />
+              </div>
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                    formData.ptzLinkageEnabled ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'
+                  } transition-colors`}>
+                    <Zap size={16} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-gray-700">PTZ 联动</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">雷达侵入时联动球机转向与抓拍</div>
+                  </div>
+                </div>
                 <button
-                  onClick={handleCloseModal}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
+                  type="button"
+                  onClick={() => setFormData({ ...formData, ptzLinkageEnabled: !formData.ptzLinkageEnabled })}
+                  className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 ${
+                    formData.ptzLinkageEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
                 >
-                  {t('cancel')}
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-200 flex items-center"
-                >
-                  {isSaving && (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                  )}
-                  {t('save')}
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                    formData.ptzLinkageEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
                 </button>
               </div>
             </div>
+            <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                onClick={handleCloseModal}
+                className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-xl transition-colors text-sm font-medium"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="px-5 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                {isSaving && (
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                )}
+                {activeModal === 'CREATE' ? '创建装置' : '保存修改'}
+              </button>
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* 删除确认弹窗 */}
-        {activeModal === 'DELETE' && selectedAssembly && (
-          <ConfirmModal
-            isOpen={true}
-            onClose={handleCloseModal}
-            title={t('delete_assembly')}
-            message={`确定要删除装置 "${selectedAssembly.name}" 吗？此操作无法撤销。`}
-            onConfirm={handleDelete}
-            onCancel={handleCloseModal}
-            confirmText={t('delete')}
-            cancelText={t('cancel')}
-          />
-        )}
-      </div>
+      {/* 删除确认弹窗 */}
+      {activeModal === 'DELETE' && selectedAssembly && (
+        <ConfirmModal
+          isOpen={true}
+          onClose={handleCloseModal}
+          title={t('delete_assembly')}
+          message={`确定要删除装置 "${selectedAssembly.name}" 吗？此操作无法撤销。`}
+          onConfirm={handleDelete}
+          onCancel={handleCloseModal}
+          confirmText={t('delete')}
+          cancelText={t('cancel')}
+        />
+      )}
     </>
   );
 };

@@ -1298,7 +1298,11 @@ public class RadarController {
             float[] angles = t.calculatePTZAngles(cameraPoint);
             float pan = angles[0];
             float tilt = angles[1];
-            float zoom = 1.0f;
+            float zoom = body.get("zoom") != null ? numberToFloat(body.get("zoom")) : 1.0f;
+            if (zoom < 1.0f) zoom = 1.0f;
+            if (zoom > 40.0f) zoom = 40.0f;
+            logger.info("标定验证: pan={}°, tilt={}°, zoom={}x, radarDist={}m",
+                    pan, tilt, zoom, radarPoint.distance());
             boolean ok = ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
             Map<String, Object> data = new HashMap<>();
             data.put("pan", pan);

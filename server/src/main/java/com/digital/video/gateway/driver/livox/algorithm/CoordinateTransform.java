@@ -2,23 +2,30 @@ package com.digital.video.gateway.driver.livox.algorithm;
 
 import com.digital.video.gateway.driver.livox.model.Point;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
 /**
  * 坐标系转换工具类
  * 将雷达坐标系转换为摄像头坐标系
  */
 public class CoordinateTransform {
     // 平移参数（米）
-    private float translationX = 0;
-    private float translationY = 0;
-    private float translationZ = 0;
+    public float translationX = 0;
+    public float translationY = 0;
+    public float translationZ = 0;
 
     // 旋转参数（欧拉角，度）
-    private float rotationX = 0;
-    private float rotationY = 0;
-    private float rotationZ = 0;
+    public float rotationX = 0;
+    public float rotationY = 0;
+    public float rotationZ = 0;
 
     // 缩放参数
-    private float scale = 1.0f;
+    public float scale = 1.0f;
+
+    // 距离-变倍标定数据
+    private final List<float[]> zoomCalibPoints = new ArrayList<>();
 
     public CoordinateTransform() {
     }
@@ -100,6 +107,48 @@ public class CoordinateTransform {
         pan = (pan + 360) % 360;
         
         return new float[]{(float) pan, (float) tilt};
+    }
+
+    /**
+     * 添加一个距离-变倍标定数据点
+     */
+    public void addZoomCalibPoint(float distance, float zoom) {
+        zoomCalibPoints.add(new float[]{distance, zoom});
+    }
+
+    public boolean hasZoomCalibration() {
+        return !zoomCalibPoints.isEmpty();
+    }
+
+    /**
+     * 根据标定数据估算指定距离的变倍倍数。
+     * 单点标定：按线性比例 zoom/distance 推算。
+     * 多点标定：在最近的两个标定点之间做线性插值。
+     */
+    public float estimateZoom(float distance) {
+        if (zoomCalibPoints.isEmpty()) return 1.0f;
+        if (distance <= 0) return 1.0f;
+
+        if (zoomCalibPoints.size() == 1) {
+            float[] p = zoomCalibPoints.get(0);
+            float ratio = p[1] / p[0]; // zoom per meter
+            return Math.max(1.0f, Math.min(40.0f, ratio * distance));
+        }
+
+        List<float[]> sorted = new ArrayList<>(zoomCalibPoints);
+        sorted.sort(Comparator.comparingDouble(a -> a[0]));
+
+        if (distance <= sorted.get(0)[0]) return sorted.get(0)[1];
+        if (distance >= sorted.get(sorted.size() - 1)[0]) return sorted.get(sorted.size() - 1)[1];
+
+        for (int i = 0; i < sorted.size() - 1; i++) {
+            if (distance >= sorted.get(i)[0] && distance <= sorted.get(i + 1)[0]) {
+                float t = (distance - sorted.get(i)[0]) / (sorted.get(i + 1)[0] - sorted.get(i)[0]);
+                float zoom = sorted.get(i)[1] + t * (sorted.get(i + 1)[1] - sorted.get(i)[1]);
+                return Math.max(1.0f, Math.min(40.0f, zoom));
+            }
+        }
+        return zoomCalibPoints.get(0)[1];
     }
 
     // Getters and Setters
