@@ -96,6 +96,8 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
   const snapshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pointCloudBufferRef = useRef<{ x: number; y: number; z: number; r?: number; zoneId?: string; timestamp: number }[]>([]);
   const accumulationMs = 2000;
+  const renderTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bufferDirtyRef = useRef(false);
 
   // 加载标定上下文
   useEffect(() => {
@@ -154,14 +156,26 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
   }, [step, cameraIdForSuppress]);
 
   // WebSocket 点云连接 — 侵入检测由服务端完成，前端只渲染服务端标记的侵入点
+  // 数据累积在 ref 中（每帧），React 状态更新节流到 ~15fps 避免淹没渲染管线
   useEffect(() => {
     if (step !== 2 || !context?.radarDeviceId) return;
     const deviceId = context.radarDeviceId;
     const curZoneId = selectedZone?.zoneId;
     let isCleaningUp = false;
 
-    // 确保服务端处于检测模式
     radarService.setDetectionEnabled(deviceId, true).catch(() => {});
+
+    // 定时器：每 66ms (~15fps) 将 ref 缓冲刷新到 React 状态
+    renderTimerRef.current = setInterval(() => {
+      if (!bufferDirtyRef.current) return;
+      bufferDirtyRef.current = false;
+      const cutoff = Date.now() - accumulationMs;
+      const buf = pointCloudBufferRef.current;
+      let start = 0;
+      while (start < buf.length && buf[start].timestamp <= cutoff) start++;
+      if (start > 0) pointCloudBufferRef.current = buf.slice(start);
+      setPointCloudPoints(pointCloudBufferRef.current.map(({ timestamp, ...pt }) => pt));
+    }, 66);
 
     const ws = radarService.connectWebSocket(
       deviceId,
@@ -169,17 +183,11 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
         if (isCleaningUp) return;
         if (data.type === 'pointcloud' && data.points?.length) {
           const now = Date.now();
-          const newPoints: { x: number; y: number; z: number; r?: number; zoneId?: string; timestamp: number }[] = [];
           for (const p of data.points) {
             if (!p.isIntrusion) continue;
-            newPoints.push({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0, r: 255, zoneId: curZoneId, timestamp: now });
+            pointCloudBufferRef.current.push({ x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0, r: 255, zoneId: curZoneId, timestamp: now });
           }
-          const cutoff = now - accumulationMs;
-          pointCloudBufferRef.current = [
-            ...pointCloudBufferRef.current.filter((pt) => pt.timestamp > cutoff),
-            ...newPoints
-          ];
-          setPointCloudPoints(pointCloudBufferRef.current.map(({ timestamp, ...pt }) => pt));
+          bufferDirtyRef.current = true;
         }
         if (data.type === 'status') setWsConnected(!!data.connected);
       }
@@ -188,6 +196,10 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
     if ((ws as any).readyState === WebSocket.OPEN) setWsConnected(true);
     return () => {
       isCleaningUp = true;
+      if (renderTimerRef.current) {
+        clearInterval(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
       try {
         const w = wsRef.current as any;
         if (w && typeof w.close === 'function') w.close(1000, 'unmount');
@@ -333,13 +345,18 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
         modal.showModal({ message: '无法获取球机当前角度，请确认球机支持 PTZ 位置查询', type: 'warning' });
         return;
       }
-      setPoints((prev) => [...prev, {
+      const newPoint: CalibrationPoint = {
         radarX: target.radarX as number,
         radarY: target.radarY as number,
         radarZ: target.radarZ as number,
         cameraPan: typeof pos.pan === 'number' ? pos.pan : parseFloat(String(pos.pan)),
         cameraTilt: typeof pos.tilt === 'number' ? pos.tilt : parseFloat(String(pos.tilt))
-      }]);
+      };
+      setPoints((prev) => [...prev, newPoint]);
+      modal.showModal({
+        message: `采集成功！雷达坐标(${newPoint.radarX.toFixed(2)}, ${newPoint.radarY.toFixed(2)}, ${newPoint.radarZ.toFixed(2)}) → 球机 pan=${newPoint.cameraPan.toFixed(1)}° tilt=${newPoint.cameraTilt.toFixed(1)}°`,
+        type: 'success'
+      });
     } catch (e: any) {
       modal.showModal({ message: e?.message || '采集失败', type: 'error' });
     }

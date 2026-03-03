@@ -732,10 +732,12 @@ public class RadarService {
             if (background != null && zones != null) {
                 int beforeCount = processedPoints.size();
                 intrusionDetectionService.markIntruderPoints(processedPoints, zones, background);
-                long intruderCount = processedPoints.stream().filter(p -> p.zoneId != null).count();
+                int intruderCount = 0;
+                for (Point p : processedPoints) {
+                    if (p.zoneId != null) intruderCount++;
+                }
                 if (intruderCount > 0) {
-                    logger.debug("检测到侵入点: deviceId={}, 总点数={}, 侵入点数={}", deviceId, beforeCount, intruderCount);
-                    // 侵入记录点数排查：限流打点（约每5秒一次）
+                    // 限流打点（约每5秒一次）
                     long now = System.currentTimeMillis();
                     if (now - lastIntrusionLogTime.getOrDefault(deviceId, 0L) >= INTRUSION_LOG_INTERVAL_MS) {
                         lastIntrusionLogTime.put(deviceId, now);
@@ -751,16 +753,17 @@ public class RadarService {
                 }
             }
 
-            // 2. 处理录制（缓冲和保存侵入片段）
-            recordingManager.processFrame(deviceId, processedPoints);
-
-            // 3. 生成侵入事件（用于报警和PTZ）
-            List<IntrusionEvent> events = processDetection(deviceId, processedPoints);
-            // 实时推送点云数据
+            // 2. 立即推送已标记的点云（不等待 DBSCAN，零延迟送达前端）
             if (webSocketHandler != null) {
                 webSocketHandler.pushPointCloud(deviceId, processedPoints);
-                webSocketHandler.logPushStats(deviceId); // 记录推送日志
+                webSocketHandler.logPushStats(deviceId);
             }
+
+            // 3. 处理录制（缓冲和保存侵入片段）
+            recordingManager.processFrame(deviceId, processedPoints);
+
+            // 4. 生成侵入事件（用于报警和PTZ，不影响前端显示延迟）
+            List<IntrusionEvent> events = processDetection(deviceId, processedPoints);
             // 推送侵入检测结果
             if (webSocketHandler != null && !events.isEmpty()) {
                 for (IntrusionEvent event : events) {

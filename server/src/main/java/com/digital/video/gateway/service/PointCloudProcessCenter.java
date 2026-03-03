@@ -218,14 +218,8 @@ public class PointCloudProcessCenter {
         if (cameraDeviceId == null || cameraDeviceId.trim().isEmpty()) {
             return;
         }
-        if (isPtzSuppressed(cameraDeviceId)) {
-            return;
-        }
-        if (!isPtzLinkageEnabled(radarDeviceId)) {
-            return;
-        }
 
-        // 1. 分类：对每个聚类进行目标分类
+        // 1. 分类：对每个聚类进行目标分类（无论 PTZ 是否抑制都需要执行，以便标定时获取目标）
         for (IntrusionEvent event : events) {
             PointCluster cluster = event.getCluster();
             if (cluster != null) {
@@ -258,7 +252,7 @@ public class PointCloudProcessCenter {
             }
         }
 
-        // 3. 跟踪
+        // 3. 跟踪（无论 PTZ 是否抑制都需要执行，标定模式依赖跟踪目标获取坐标）
         List<PointCluster> clusters = events.stream()
                 .map(IntrusionEvent::getCluster)
                 .filter(c -> c != null && c.getCentroid() != null)
@@ -278,7 +272,15 @@ public class PointCloudProcessCenter {
             }
         }
 
-        // 3. PTZ 解算 + 跟随状态机
+        // 4. PTZ 控制前置检查：抑制模式或未启用联动时，跳过 PTZ 控制但保留跟踪结果
+        if (isPtzSuppressed(cameraDeviceId)) {
+            return;
+        }
+        if (!isPtzLinkageEnabled(radarDeviceId)) {
+            return;
+        }
+
+        // 5. PTZ 解算 + 跟随状态机
         if (trackedTargets.isEmpty()) {
             handleNoTargets(zone.getZoneId());
             return;

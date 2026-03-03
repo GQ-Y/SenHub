@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 
 interface Point {
   x: number;
@@ -72,6 +73,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
   const pointsRef = useRef<THREE.Points | null>(null);
   const modelingRef = useRef<THREE.LineSegments | null>(null);
   const backgroundPointsRef = useRef<THREE.Points | null>(null); // 背景参考点云
+  const defenseZoneMeshRef = useRef<THREE.Group | null>(null);   // 3D 防区可视化
   const intrusionPointsRef = useRef<THREE.Points | null>(null);  // Worker 模式下侵入点（红）
   const animationFrameRef = useRef<number | null>(null);
   const cameraInitializedRef = useRef<boolean>(false);
@@ -343,6 +345,7 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       pointsRef.current = null;
       backgroundPointsRef.current = null;
       intrusionPointsRef.current = null;
+      defenseZoneMeshRef.current = null;
       modelingRef.current = null;
       rangeRingsGroupRef.current = null;
       gridHelperRef.current = null;
@@ -623,6 +626,17 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       backgroundPointsRef.current.geometry.dispose();
       (backgroundPointsRef.current.material as THREE.Material).dispose();
     }
+    if (defenseZoneMeshRef.current) {
+      scene.remove(defenseZoneMeshRef.current);
+      defenseZoneMeshRef.current.traverse((obj: any) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
+      });
+      defenseZoneMeshRef.current = null;
+    }
 
     // --- 防御模式逻辑：背景参考网格 ---
     const bgSearchGrid: Record<string, number> = {};
@@ -700,6 +714,82 @@ export const PointCloudRenderer: React.FC<PointCloudRendererProps> = ({
       const bgPoints = new THREE.Points(bgGeom, bgMat);
       backgroundPointsRef.current = bgPoints;
       scene.add(bgPoints);
+    }
+
+    // --- 3D 防区凸包实体渲染 ---
+    if (defenseBackgroundPoints.length > 0 && shrinkDistance > 0) {
+      const shrunkVerts: THREE.Vector3[] = [];
+      for (const p of defenseBackgroundPoints) {
+        const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (r < 0.2) continue;
+        const newR = r - shrinkDistance;
+        if (newR <= 0.1) continue;
+        const scale = newR / r;
+        // 坐标映射：Radar.x -> T3.x, Radar.z -> T3.y, Radar.y -> T3.z (取反)
+        shrunkVerts.push(new THREE.Vector3(p.x * scale, p.z * scale, -p.y * scale));
+      }
+
+      if (shrunkVerts.length >= 4) {
+        const group = new THREE.Group();
+
+        // 降采样：点太多时均匀抽样以提升性能
+        let hullVerts = shrunkVerts;
+        const MAX_HULL_POINTS = 500;
+        if (shrunkVerts.length > MAX_HULL_POINTS) {
+          const step = Math.ceil(shrunkVerts.length / MAX_HULL_POINTS);
+          hullVerts = shrunkVerts.filter((_, i) => i % step === 0);
+        }
+
+        try {
+          const convexGeom = new ConvexGeometry(hullVerts);
+
+          const solidMat = new THREE.MeshBasicMaterial({
+            color: 0x4fc3f7,
+            transparent: true,
+            opacity: 0.08,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          });
+          const solidMesh = new THREE.Mesh(convexGeom, solidMat);
+          group.add(solidMesh);
+
+          const wireGeom = new THREE.EdgesGeometry(convexGeom);
+          const wireMat = new THREE.LineBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.25 });
+          const wireframe = new THREE.LineSegments(wireGeom, wireMat);
+          group.add(wireframe);
+
+          // "3D防区" 标签
+          convexGeom.computeBoundingBox();
+          const bbox = convexGeom.boundingBox!;
+          const center = new THREE.Vector3();
+          bbox.getCenter(center);
+
+          const labelCanvas = document.createElement('canvas');
+          const ctx2d = labelCanvas.getContext('2d')!;
+          labelCanvas.width = 256;
+          labelCanvas.height = 64;
+          ctx2d.clearRect(0, 0, 256, 64);
+          ctx2d.font = 'bold 32px sans-serif';
+          ctx2d.fillStyle = 'rgba(79,195,247,0.85)';
+          ctx2d.textAlign = 'center';
+          ctx2d.textBaseline = 'middle';
+          ctx2d.fillText('3D防区', 128, 32);
+          const labelTexture = new THREE.CanvasTexture(labelCanvas);
+          const spriteMat = new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false });
+          const sprite = new THREE.Sprite(spriteMat);
+          const spanX = bbox.max.x - bbox.min.x;
+          const spanZ = bbox.max.z - bbox.min.z;
+          const labelScale = Math.max(spanX, spanZ) * 0.25;
+          sprite.scale.set(labelScale, labelScale * 0.25, 1);
+          sprite.position.set(center.x, bbox.max.y + labelScale * 0.15, center.z);
+          group.add(sprite);
+
+          defenseZoneMeshRef.current = group;
+          scene.add(group);
+        } catch (_) {
+          // ConvexGeometry 可能因共面点等原因失败，安静忽略
+        }
+      }
     }
 
     // 2. 统计信息计算
