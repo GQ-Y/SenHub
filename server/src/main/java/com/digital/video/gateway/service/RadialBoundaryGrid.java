@@ -123,8 +123,8 @@ public class RadialBoundaryGrid {
      */
     public boolean isIntrusion(Point point) {
         float r = point.distance();
-        if (r < 0.1f)
-            return false; // 雷达中心附近忽略
+        if (r < 0.3f)
+            return false; // 雷达附近噪点忽略（含自身反射、安装件等）
 
         int theta = toThetaIndex(point.x, point.y);
         int phi = toPhiIndex(point.z, r);

@@ -267,10 +267,12 @@ public class IntrusionDetectionService {
      * @param background    背景模型
      */
     /** 背景减除搜索半径（米），取收缩距离的 3/4 以覆盖边界噪声 */
-    private static final float BG_SUBTRACT_RADIUS = 0.15f;
+    private static final float BG_SUBTRACT_RADIUS = 0.20f;
     /** 单帧孤立点过滤：标记后的侵入点需在此半径内有至少 MIN_NEIGHBORS 个同帧侵入点才保留 */
     private static final float ISOLATION_RADIUS = 0.5f;
     private static final int MIN_NEIGHBORS = 1;
+    /** 最小距离阈值（米）：距雷达太近的点直接忽略（自身反射、安装结构等噪点） */
+    private static final float MIN_INTRUSION_DISTANCE = 0.3f;
 
     public void markIntruderPoints(List<Point> currentPoints, List<DefenseZone> zones, BackgroundModel background) {
         if (currentPoints == null || currentPoints.isEmpty() || zones == null || zones.isEmpty()) {
@@ -291,6 +293,9 @@ public class IntrusionDetectionService {
 
         // 第一遍：初步标记
         for (Point point : currentPoints) {
+            // 距雷达过近的点直接跳过
+            if (point.distance() < MIN_INTRUSION_DISTANCE) continue;
+
             for (DefenseZone zone : zones) {
                 if (!zone.getEnabled())
                     continue;

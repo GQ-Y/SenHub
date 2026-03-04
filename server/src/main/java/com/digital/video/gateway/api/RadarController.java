@@ -1349,6 +1349,14 @@ public class RadarController {
                 ctx.result(createErrorResponse(500, "保存防区失败"));
                 return;
             }
+            // 清除坐标系变换缓存，使新标定参数立即生效
+            PointCloudProcessCenter center = radarService.getPointCloudProcessCenter();
+            if (center != null) {
+                center.invalidateCoordTransformCache(zoneId);
+            }
+            // 重新加载防区配置（同时会清除空间索引缓存）
+            radarService.reloadDeviceDetectionContext(deviceId);
+            logger.info("标定参数已保存并刷新缓存: zoneId={}, deviceId={}", zoneId, deviceId);
             ctx.status(200);
             ctx.result(createSuccessResponse(convertZoneToMap(defenseZoneService.getZone(zoneId))));
         } catch (Exception e) {

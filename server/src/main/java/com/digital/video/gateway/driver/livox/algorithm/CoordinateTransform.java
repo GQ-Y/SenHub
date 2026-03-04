@@ -122,8 +122,13 @@ public class CoordinateTransform {
 
     /**
      * 根据标定数据估算指定距离的变倍倍数。
-     * 单点标定：按线性比例 zoom/distance 推算。
-     * 多点标定：在最近的两个标定点之间做线性插值。
+     *
+     * 算法设计原理：目标在摄像头画面中的角大小与距离成反比，因此保持相同
+     * 画面大小所需的变倍与距离成正比: zoom = z₀ * (d / d₀)。
+     *
+     * 单点标定：以标定点的 zoom/distance 比例进行线性推算，但施加合理的距离分段上限，
+     * 避免近距离噪点导致变倍飙升。
+     * 多点标定：在标定点间做线性插值，超出范围时使用最近端点值。
      */
     public float estimateZoom(float distance) {
         if (zoomCalibPoints.isEmpty()) return 1.0f;
@@ -131,24 +136,40 @@ public class CoordinateTransform {
 
         if (zoomCalibPoints.size() == 1) {
             float[] p = zoomCalibPoints.get(0);
-            float ratio = p[1] / p[0]; // zoom per meter
-            return Math.max(1.0f, Math.min(40.0f, ratio * distance));
+            float calibDist = p[0];
+            float calibZoom = p[1];
+            if (calibDist <= 0 || calibZoom <= 0) return 1.0f;
+
+            float rawZoom = calibZoom * (distance / calibDist);
+
+            // 施加距离分段上限，防止短距离高变倍导致画面抖动
+            float maxZoom;
+            if (distance < 1.0f) maxZoom = 3.0f;
+            else if (distance < 3.0f) maxZoom = 8.0f;
+            else if (distance < 10.0f) maxZoom = 16.0f;
+            else if (distance < 30.0f) maxZoom = 25.0f;
+            else maxZoom = 35.0f;
+
+            return Math.max(1.0f, Math.min(maxZoom, rawZoom));
         }
 
         List<float[]> sorted = new ArrayList<>(zoomCalibPoints);
         sorted.sort(Comparator.comparingDouble(a -> a[0]));
 
-        if (distance <= sorted.get(0)[0]) return sorted.get(0)[1];
-        if (distance >= sorted.get(sorted.size() - 1)[0]) return sorted.get(sorted.size() - 1)[1];
+        // 超出标定范围时夹紧到端点值（不做外推）
+        if (distance <= sorted.get(0)[0]) return Math.max(1.0f, sorted.get(0)[1]);
+        if (distance >= sorted.get(sorted.size() - 1)[0]) {
+            return Math.max(1.0f, Math.min(35.0f, sorted.get(sorted.size() - 1)[1]));
+        }
 
         for (int i = 0; i < sorted.size() - 1; i++) {
             if (distance >= sorted.get(i)[0] && distance <= sorted.get(i + 1)[0]) {
                 float t = (distance - sorted.get(i)[0]) / (sorted.get(i + 1)[0] - sorted.get(i)[0]);
                 float zoom = sorted.get(i)[1] + t * (sorted.get(i + 1)[1] - sorted.get(i)[1]);
-                return Math.max(1.0f, Math.min(40.0f, zoom));
+                return Math.max(1.0f, Math.min(35.0f, zoom));
             }
         }
-        return zoomCalibPoints.get(0)[1];
+        return Math.max(1.0f, zoomCalibPoints.get(0)[1]);
     }
 
     // Getters and Setters

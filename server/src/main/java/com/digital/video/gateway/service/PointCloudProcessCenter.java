@@ -68,6 +68,29 @@ public class PointCloudProcessCenter {
     // 防区级互斥锁：确保同一防区不会被两个 PointCloudWorker 线程并发处理
     private final ConcurrentHashMap<String, Object> zoneLocks = new ConcurrentHashMap<>();
 
+    // ---- 静态噪点记忆 ----
+    // 记录反复出现的目标位置，用于自动识别和过滤持续性噪点
+    private final List<NoiseMemoryEntry> noiseMemory = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    static class NoiseMemoryEntry {
+        final float x, y, z;
+        long firstSeen;
+        long lastSeen;
+        int hitCount;
+
+        NoiseMemoryEntry(float x, float y, float z, long now) {
+            this.x = x; this.y = y; this.z = z;
+            this.firstSeen = now;
+            this.lastSeen = now;
+            this.hitCount = 1;
+        }
+
+        boolean isNear(float px, float py, float pz, float tolerance) {
+            float dx = x - px, dy = y - py, dz = z - pz;
+            return (dx * dx + dy * dy + dz * dz) <= tolerance * tolerance;
+        }
+    }
+
     // PTZ 联动开关缓存：radarDeviceId → (是否启用, 缓存过期时间戳)
     private final Map<String, long[]> ptzLinkageCache = new ConcurrentHashMap<>();
     private static final long PTZ_LINKAGE_CACHE_TTL_MS = 10_000;
@@ -89,6 +112,20 @@ public class PointCloudProcessCenter {
     public void unsuppressPtz(String cameraDeviceId) {
         ptzSuppressedDevices.remove(cameraDeviceId);
         logger.info("PTZ 跟随已恢复: cameraDeviceId={}", cameraDeviceId);
+    }
+
+    /**
+     * 清除指定防区的坐标系变换缓存（标定参数更新后调用）。
+     * 如果 zoneId 为 null 则清除全部缓存。
+     */
+    public void invalidateCoordTransformCache(String zoneId) {
+        if (zoneId == null) {
+            coordTransformCache.clear();
+            logger.info("已清除所有防区坐标系变换缓存");
+        } else {
+            coordTransformCache.remove(zoneId);
+            logger.info("已清除防区坐标系变换缓存: zoneId={}", zoneId);
+        }
     }
 
     /** 检查摄像头是否被抑制 */
@@ -118,6 +155,24 @@ public class PointCloudProcessCenter {
     private static final long TARGET_SWITCH_COOLDOWN_MS = 5000;
     /** 工作流触发最小间隔（毫秒）：同一防区连续触发工作流的最小间隔 */
     private static final long WORKFLOW_TRIGGER_MIN_INTERVAL_MS = 8000;
+    /** 最小跟随距离（米）：距雷达太近的目标忽略（通常是设备近处噪点） */
+    private static final float MIN_FOLLOW_DISTANCE = 0.3f;
+    /** PTZ 角度跳变阈值（度）：连续两次 pan 差超过此值时进入跳变观望 */
+    private static final float PAN_JUMP_THRESHOLD_DEG = 40f;
+    /** 跳变确认所需的连续稳定帧数：候选角度连续出现此次数后才确认执行 */
+    private static final int JUMP_CONFIRM_FRAMES = 3;
+    /** 跳变确认容差（度）：候选角度在此范围内视为"稳定" */
+    private static final float JUMP_CONFIRM_TOLERANCE = 15f;
+    /** 单次跳变最大抑制帧数：超过此帧数后强制执行，防止永久抑制 */
+    private static final int JUMP_MAX_SUPPRESS_FRAMES = 10;
+    /** Zoom 平滑：每次 PTZ beat 允许的最大 zoom 变化量 */
+    private static final float ZOOM_MAX_STEP = 3.0f;
+    /** 静态噪点记忆位置容差（米）：在此半径内反复出现的目标视为同一静态噪点 */
+    private static final float NOISE_POSITION_TOLERANCE = 0.5f;
+    /** 静态噪点记忆窗口时间（毫秒） */
+    private static final long NOISE_MEMORY_WINDOW_MS = 120_000;
+    /** 在窗口内同一位置出现超过此次数则视为静态噪点并过滤 */
+    private static final int NOISE_HIT_THRESHOLD = 4;
 
     /** 防区级分类投票窗口大小（跨跟踪 ID 累积，比单目标窗口更大以获得稳定性） */
     private static final int ZONE_TYPE_VOTE_WINDOW = 15;
@@ -138,6 +193,18 @@ public class PointCloudProcessCenter {
         long lastSwitchTime;
         /** 上次触发工作流的时间 */
         long lastWorkflowTriggerTime;
+        /** 上次实际执行的 PTZ pan 角度（用于跳变抑制） */
+        float lastExecutedPan = Float.NaN;
+        /** 上次实际执行的 PTZ tilt 角度 */
+        float lastExecutedTilt = Float.NaN;
+        /** 连续跳变抑制计数（防止永久抑制用） */
+        int jumpSuppressCount = 0;
+        /** 跳变观望中的候选 pan 角度（NaN 表示无候选） */
+        float pendingJumpPan = Float.NaN;
+        /** 候选角度连续出现的帧数（达到阈值后确认执行） */
+        int pendingJumpFrames = 0;
+        /** 上次实际执行的 zoom（用于平滑） */
+        float lastExecutedZoom = Float.NaN;
 
         /** 防区级分类投票历史（跨跟踪 ID 保持连续性） */
         final Deque<TargetType> zoneTypeHistory = new ArrayDeque<>();
@@ -327,10 +394,13 @@ public class PointCloudProcessCenter {
         float[] angles = coordTransform.calculatePTZAngles(predictedCameraPoint);
         float pan = angles[0];
         float tilt = angles[1];
-        float zoom = coordTransform.hasZoomCalibration()
+        float rawZoom = coordTransform.hasZoomCalibration()
                 ? coordTransform.estimateZoom(predictedCameraPoint.distance())
                 : calculateZoom(prediction, predictedCameraPoint);
         float distance = predictedCameraPoint.distance();
+
+        // Zoom 平滑：限制每次变化幅度
+        float zoom = smoothZoom(state, rawZoom);
 
         if (Float.isNaN(pan) || Float.isNaN(tilt) || Float.isNaN(zoom)
                 || Float.isInfinite(pan) || Float.isInfinite(tilt) || Float.isInfinite(zoom)) {
@@ -355,10 +425,17 @@ public class PointCloudProcessCenter {
             state.lastCaptureTime = now;
             state.lastSwitchTime = now;
             state.lastWorkflowTriggerTime = now;
+            state.lastExecutedPan = pan;
+            state.lastExecutedTilt = tilt;
+            state.lastExecutedZoom = zoom;
+            state.jumpSuppressCount = 0;
+            state.pendingJumpPan = Float.NaN;
+            state.pendingJumpFrames = 0;
 
-            logger.info("首次锁定目标: zoneId={}, trackingId={}, rawType={}, smoothedType={}, distance={}m",
+            logger.info("首次锁定目标: zoneId={}, trackingId={}, rawType={}, smoothedType={}, distance={}m, pan={}, tilt={}, zoom={}",
                     zoneId, primaryTarget.getTrackingId(), primaryTarget.getTargetType(),
-                    state.smoothedType, distance);
+                    state.smoothedType, String.format("%.2f", distance), String.format("%.1f", pan),
+                    String.format("%.1f", tilt), String.format("%.1f", zoom));
 
             triggerWorkflow(radarDeviceId, zone, primaryTarget, prediction,
                     pan, tilt, zoom, distance, cameraDeviceId, channel, state);
@@ -368,8 +445,10 @@ public class PointCloudProcessCenter {
             state.lastFollowedPosition = centroid;
 
             if (now - state.lastPtzTime >= PTZ_BEAT_INTERVAL_MS) {
-                ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
-                state.lastPtzTime = now;
+                if (isPtzJumpAllowed(state, pan, tilt, zoneId)) {
+                    ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
+                    state.lastPtzTime = now;
+                }
             }
 
             // 定时抓拍
@@ -389,8 +468,10 @@ public class PointCloudProcessCenter {
             // 即使 ID 变了，PTZ 仍然追踪最近的位置（保持云台跟随不中断）
             state.lastFollowedPosition = centroid;
             if (now - state.lastPtzTime >= PTZ_BEAT_INTERVAL_MS) {
-                ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
-                state.lastPtzTime = now;
+                if (isPtzJumpAllowed(state, pan, tilt, zoneId)) {
+                    ptzService.gotoAngle(cameraDeviceId, channel, pan, tilt, zoom);
+                    state.lastPtzTime = now;
+                }
             }
 
             if (cooldownPassed) {
@@ -411,6 +492,140 @@ public class PointCloudProcessCenter {
                 }
             }
         }
+    }
+
+    /**
+     * PTZ 角度跳变抑制：防止噪点或跟踪跳变导致云台剧烈旋转。
+     * <p>
+     * 核心策略：
+     * 1. 若 pan 变化量 > 阈值，进入"观望"状态，不立即执行 PTZ。
+     * 2. 连续 JUMP_CONFIRM_FRAMES 次都落在新角度附近（容差 JUMP_CONFIRM_TOLERANCE），
+     *    则认为目标确实移动到了新位置，执行 PTZ 并更新基准。
+     * 3. 若中途角度不稳定（散乱），抑制帧计数重置，继续观望。
+     * 4. 防止永久抑制：单方向抑制超过 JUMP_MAX_SUPPRESS_FRAMES 帧时强制执行。
+     * </p>
+     */
+    private boolean isPtzJumpAllowed(FollowState state, float pan, float tilt, String zoneId) {
+        if (Float.isNaN(state.lastExecutedPan)) {
+            state.lastExecutedPan = pan;
+            state.lastExecutedTilt = tilt;
+            state.jumpSuppressCount = 0;
+            state.pendingJumpPan = Float.NaN;
+            state.pendingJumpFrames = 0;
+            return true;
+        }
+
+        float panDelta = Math.abs(normalizeAngle(pan - state.lastExecutedPan));
+        boolean isJump = panDelta > PAN_JUMP_THRESHOLD_DEG;
+
+        if (!isJump) {
+            // 正常范围内的移动：清除跳变状态，直接允许
+            state.jumpSuppressCount = 0;
+            state.pendingJumpPan = Float.NaN;
+            state.pendingJumpFrames = 0;
+            state.lastExecutedPan = pan;
+            state.lastExecutedTilt = tilt;
+            return true;
+        }
+
+        // 检测到跳变——进入"观望"阶段
+        state.jumpSuppressCount++;
+
+        // 安全阀：抑制过久则强制执行，防止目标永远无法跟上
+        if (state.jumpSuppressCount > JUMP_MAX_SUPPRESS_FRAMES) {
+            logger.warn("PTZ跳变抑制超时强制执行: zoneId={}, pan={}, delta={}, suppressCount={}",
+                    zoneId, String.format("%.1f", pan), String.format("%.1f", panDelta), state.jumpSuppressCount);
+            state.lastExecutedPan = pan;
+            state.lastExecutedTilt = tilt;
+            state.jumpSuppressCount = 0;
+            state.pendingJumpPan = Float.NaN;
+            state.pendingJumpFrames = 0;
+            return true;
+        }
+
+        // 检查新角度是否"稳定"（连续落在同一位置附近）
+        if (Float.isNaN(state.pendingJumpPan)) {
+            // 首次跳变，记录候选角度
+            state.pendingJumpPan = pan;
+            state.pendingJumpFrames = 1;
+        } else {
+            float pendingDelta = Math.abs(normalizeAngle(pan - state.pendingJumpPan));
+            if (pendingDelta <= JUMP_CONFIRM_TOLERANCE) {
+                // 新角度在候选位置附近，累计确认帧
+                state.pendingJumpFrames++;
+            } else {
+                // 角度不稳定（散乱噪点），重置候选
+                state.pendingJumpPan = pan;
+                state.pendingJumpFrames = 1;
+            }
+        }
+
+        // 达到确认帧数：认为目标确实移动，执行 PTZ
+        if (state.pendingJumpFrames >= JUMP_CONFIRM_FRAMES) {
+            logger.info("PTZ跳变确认执行: zoneId={}, lastPan={}, newPan={}, delta={}, confirmFrames={}",
+                    zoneId, String.format("%.1f", state.lastExecutedPan),
+                    String.format("%.1f", pan), String.format("%.1f", panDelta), state.pendingJumpFrames);
+            state.lastExecutedPan = pan;
+            state.lastExecutedTilt = tilt;
+            state.jumpSuppressCount = 0;
+            state.pendingJumpPan = Float.NaN;
+            state.pendingJumpFrames = 0;
+            return true;
+        }
+
+        // 继续观望，本帧抑制
+        logger.debug("PTZ跳变抑制观望中: zoneId={}, lastPan={}, newPan={}, delta={}, pendingFrames={}/{}",
+                zoneId, String.format("%.1f", state.lastExecutedPan),
+                String.format("%.1f", pan), String.format("%.1f", panDelta),
+                state.pendingJumpFrames, JUMP_CONFIRM_FRAMES);
+        return false;
+    }
+
+    private static float normalizeAngle(float angle) {
+        while (angle > 180f) angle -= 360f;
+        while (angle < -180f) angle += 360f;
+        return angle;
+    }
+
+    /**
+     * Zoom 平滑：限制帧间 zoom 变化幅度，防止画面剧烈缩放。
+     */
+    private float smoothZoom(FollowState state, float targetZoom) {
+        if (Float.isNaN(state.lastExecutedZoom)) {
+            state.lastExecutedZoom = targetZoom;
+            return targetZoom;
+        }
+        float delta = targetZoom - state.lastExecutedZoom;
+        if (Math.abs(delta) <= ZOOM_MAX_STEP) {
+            state.lastExecutedZoom = targetZoom;
+            return targetZoom;
+        }
+        float smoothed = state.lastExecutedZoom + Math.signum(delta) * ZOOM_MAX_STEP;
+        state.lastExecutedZoom = smoothed;
+        return smoothed;
+    }
+
+    /**
+     * 检查一个位置是否属于已知的静态噪点位置。
+     * 同时记录本次位置，如果某位置在时间窗口内被反复命中，则被标记为静态噪点。
+     */
+    private boolean isStaticNoise(Point pos, long now) {
+        // 清理过期条目
+        noiseMemory.removeIf(e -> now - e.lastSeen > NOISE_MEMORY_WINDOW_MS);
+
+        for (NoiseMemoryEntry entry : noiseMemory) {
+            if (entry.isNear(pos.x, pos.y, pos.z, NOISE_POSITION_TOLERANCE)) {
+                entry.hitCount++;
+                entry.lastSeen = now;
+                if (entry.hitCount >= NOISE_HIT_THRESHOLD) {
+                    return true;
+                }
+                return false;
+            }
+        }
+        // 新位置，添加记忆
+        noiseMemory.add(new NoiseMemoryEntry(pos.x, pos.y, pos.z, now));
+        return false;
     }
 
     private volatile long lastStaleCleanTime = 0;
@@ -449,17 +664,28 @@ public class PointCloudProcessCenter {
      * 2. 否则选距离最近的目标
      */
     private TrackedTarget selectFollowTarget(List<TrackedTarget> targets, FollowState state) {
+        long now = System.currentTimeMillis();
+        // 过滤掉距雷达过近的噪点目标 + 静态噪点位置
+        List<TrackedTarget> valid = new java.util.ArrayList<>();
+        for (TrackedTarget t : targets) {
+            Point pos = t.getPosition();
+            if (pos.distance() < MIN_FOLLOW_DISTANCE) continue;
+            if (isStaticNoise(pos, now)) continue;
+            valid.add(t);
+        }
+        if (valid.isEmpty()) return null;
+
         if (state.followingTargetId != null) {
-            for (TrackedTarget t : targets) {
+            for (TrackedTarget t : valid) {
                 if (state.followingTargetId.equals(t.getTrackingId())) {
                     return t;
                 }
             }
         }
-        // 当前目标已丢失，选最近的
+        // 当前目标已丢失，选最近的有效目标
         TrackedTarget nearest = null;
         float minDist = Float.MAX_VALUE;
-        for (TrackedTarget t : targets) {
+        for (TrackedTarget t : valid) {
             Point pos = t.getPosition();
             float dist = pos.distance();
             if (dist < minDist) {
@@ -471,36 +697,39 @@ public class PointCloudProcessCenter {
     }
 
     /**
-     * 根据目标距离和运动状态计算变倍
+     * 默认变倍计算（无标定数据时使用）。
+     * 保守策略：近距离低变倍保证画面稳定，远距离适度提升。
      */
     private float calculateZoom(MotionPredictionService.PredictionResult prediction, Point cameraPoint) {
         float distance = cameraPoint.distance();
         float baseZoom;
 
-        if (distance > 40) {
-            baseZoom = 8.0f;
-        } else if (distance > 30) {
-            baseZoom = 5.0f;
-        } else if (distance > 20) {
-            baseZoom = 3.0f;
-        } else if (distance > 10) {
-            baseZoom = 2.0f;
-        } else {
+        if (distance < 1.0f) {
             baseZoom = 1.0f;
+        } else if (distance < 3.0f) {
+            baseZoom = 2.0f;
+        } else if (distance < 10.0f) {
+            baseZoom = 4.0f;
+        } else if (distance < 20.0f) {
+            baseZoom = 6.0f;
+        } else if (distance < 40.0f) {
+            baseZoom = 8.0f;
+        } else {
+            baseZoom = 10.0f;
         }
 
-        if (prediction.motionState == MotionPredictionService.MotionState.FALLING) {
-            baseZoom *= 1.2f;
-        }
-
-        return Math.max(1.0f, Math.min(40.0f, baseZoom));
+        return Math.max(1.0f, Math.min(35.0f, baseZoom));
     }
 
     /**
      * 查找雷达入侵专用工作流定义。
      * 优先查找 flowId="default_radar_intrusion_flow"，
-     * 再查找 flowType="radar" 的流程，
-     * 最后回退到默认报警流程。
+     * 再查找 flowType="radar" 的启用流程。
+     * <p>
+     * 注意：不回退到通用报警流程（flowType="alarm"），以防止将雷达事件错误地
+     * 路由到为摄像头报警设计的流程（MQTT主题、Webhook格式均不匹配雷达事件）。
+     * 若无可用的雷达专用流程，则跳过工作流触发。
+     * </p>
      */
     private FlowDefinition findRadarFlowDefinition() {
         // 优先使用雷达专用流程
@@ -510,7 +739,7 @@ public class PointCloudProcessCenter {
             if (def != null) return def;
         }
 
-        // 查找 flowType=radar 的流程
+        // 查找 flowType=radar 的已启用流程
         List<AlarmFlow> all = flowService.listFlows();
         if (all != null) {
             for (AlarmFlow f : all) {
@@ -521,14 +750,7 @@ public class PointCloudProcessCenter {
             }
         }
 
-        // 回退到默认流程
-        if (all != null && !all.isEmpty()) {
-            AlarmFlow defaultFlow = all.stream()
-                    .filter(AlarmFlow::isDefault)
-                    .findFirst()
-                    .orElse(all.get(0));
-            return flowService.toDefinition(defaultFlow);
-        }
+        // 无雷达专用流程可用，返回 null（不回退到通用报警流程）
         return null;
     }
 
@@ -586,6 +808,25 @@ public class PointCloudProcessCenter {
             context.setDeviceId(cameraDeviceId);
             context.setAssemblyId(zone.getAssemblyId());
             context.setAlarmType("RADAR_INTRUSION");
+
+            // 查询 AI 算法库中配置的中文名称，优先用于 webhook/MQTT 推送展示
+            String radarAlarmTypeName = null;
+            if (dbConnection != null) {
+                try {
+                    Map<String, Object> canonicalEvent = com.digital.video.gateway.database.CanonicalEventTable
+                            .getCanonicalEvent(dbConnection, "RADAR_INTRUSION");
+                    if (canonicalEvent != null) {
+                        Object nameZh = canonicalEvent.get("nameZh");
+                        if (nameZh instanceof String && !((String) nameZh).isEmpty()) {
+                            radarAlarmTypeName = (String) nameZh;
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (radarAlarmTypeName == null) {
+                radarAlarmTypeName = "雷达入侵";
+            }
+            context.putVariable("alarmTypeName", radarAlarmTypeName);
 
             // 写入完整空间信息
             context.putVariable("radarDeviceId", radarDeviceId);

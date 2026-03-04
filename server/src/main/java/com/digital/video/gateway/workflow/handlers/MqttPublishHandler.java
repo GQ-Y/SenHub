@@ -52,6 +52,13 @@ public class MqttPublishHandler implements FlowNodeHandler {
         payload.putIfAbsent("alarmType", context.getAlarmType());
         payload.put("flowId", context.getFlowId());
 
+        // 优先使用 AI 算法库中配置的中文名称
+        String alarmTypeName = (String) context.getVariables().get("alarmTypeName");
+        if (alarmTypeName != null && !alarmTypeName.isEmpty()) {
+            payload.put("alarmTypeName", alarmTypeName);
+            payload.put("eventName", alarmTypeName);
+        }
+
         if (context.getVariables().containsKey("captureUrl")) {
             payload.put("captureUrl", context.getVariables().get("captureUrl"));
         }
