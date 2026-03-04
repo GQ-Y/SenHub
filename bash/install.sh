@@ -10,8 +10,18 @@
 set -e
 
 # ---------- 版本与下载地址 ----------
-SENHUB_VERSION="1.0.1"
 SENHUB_BASE_URL="${SENHUB_BASE_URL:-http://demo.zt.admins.smartrail.cloud}"
+
+# 优先从服务器拉取最新版本号，拉取失败则退出
+if [ -z "$SENHUB_VERSION" ]; then
+    SENHUB_VERSION="$(curl -fsSL "${SENHUB_BASE_URL}/LATEST_VERSION" 2>/dev/null | tr -d '[:space:]')"
+    if [ -z "$SENHUB_VERSION" ]; then
+        echo "错误: 无法从 ${SENHUB_BASE_URL}/LATEST_VERSION 获取版本信息，请检查网络或手动指定 SENHUB_VERSION=x.x.x"
+        exit 1
+    fi
+    echo "检测到最新版本: $SENHUB_VERSION"
+fi
+
 SENHUB_APP_URL="${SENHUB_APP_URL:-${SENHUB_BASE_URL}/SenHub-app-${SENHUB_VERSION}.tar.gz}"
 SENHUB_LIBS_URL="${SENHUB_LIBS_URL:-${SENHUB_BASE_URL}/Senhub-libs.tar.gz}"
 

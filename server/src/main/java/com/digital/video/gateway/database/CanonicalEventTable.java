@@ -152,7 +152,7 @@ public class CanonicalEventTable {
                 return;
             }
             String updateSql = "UPDATE canonical_events SET event_id = ?, name_zh = ?, name_en = ?, category = ?, severity = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE event_key = ?";
-            String insertSql = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            String insertSql = "INSERT OR IGNORE INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
             int updated = 0, inserted = 0;
             String line = reader.readLine();
             if (line == null || !line.trim().toLowerCase().startsWith("event_id")) {

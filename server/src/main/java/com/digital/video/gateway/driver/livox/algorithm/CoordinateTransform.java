@@ -144,11 +144,11 @@ public class CoordinateTransform {
 
             // 施加距离分段上限，防止短距离高变倍导致画面抖动
             float maxZoom;
-            if (distance < 1.0f) maxZoom = 3.0f;
-            else if (distance < 3.0f) maxZoom = 8.0f;
-            else if (distance < 10.0f) maxZoom = 16.0f;
-            else if (distance < 30.0f) maxZoom = 25.0f;
-            else maxZoom = 35.0f;
+            if (distance < 1.0f)        maxZoom = 3.0f;
+            else if (distance < 3.0f)   maxZoom = 6.0f;
+            else if (distance < 8.0f)   maxZoom = 12.0f;
+            else if (distance < 20.0f)  maxZoom = 20.0f;
+            else                        maxZoom = 30.0f;
 
             return Math.max(1.0f, Math.min(maxZoom, rawZoom));
         }

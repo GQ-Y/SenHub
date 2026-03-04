@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * 完成后将 capturePath 写入 FlowContext，并回调 continueFromAsync。
  *
  * FlowContext 中需包含以下变量（由 PointCloudProcessCenter 写入）：
- *   cameraDeviceId, cameraChannel, pan, tilt, zoom, ptzDelay
+ *   cameraDeviceId, cameraChannel, pan, tilt, zoom, ptzDelay, lastExecutedPan
  *   radarDeviceId, zoneId, zoneName, targetId, targetType
  *   centroidX, centroidY, centroidZ, distance, azimuth
  *   motionState, bboxWidth, bboxHeight, bboxDepth, pointCount
@@ -31,6 +31,12 @@ public class RadarIntrusionHandler implements FlowNodeHandler {
     private final CaptureService captureService;
 
     private static final long DEFAULT_PTZ_DELAY_MS = 1500;
+    /** 每度转向估算时间（毫秒/度），用于动态计算等待时长 */
+    private static final float MS_PER_DEGREE = 20f;
+    /** 转向等待最短时间（毫秒） */
+    private static final long PTZ_DELAY_MIN_MS = 1500;
+    /** 转向等待最长时间（毫秒）：防止因噪点角度过大导致无限等待 */
+    private static final long PTZ_DELAY_MAX_MS = 5000;
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, r -> {
         Thread t = new Thread(r, "RadarIntrusion-Capture");
@@ -55,7 +61,19 @@ public class RadarIntrusionHandler implements FlowNodeHandler {
         float pan = getFloatVar(context, "pan", 0);
         float tilt = getFloatVar(context, "tilt", 0);
         float zoom = getFloatVar(context, "zoom", 1);
-        long ptzDelay = getLongVar(context, "ptzDelay", DEFAULT_PTZ_DELAY_MS);
+
+        // 动态计算 PTZ 等待时长：根据角度差估算球机转到位所需时间
+        float lastPan = getFloatVar(context, "lastExecutedPan", Float.NaN);
+        float lastTilt = getFloatVar(context, "lastExecutedTilt", Float.NaN);
+        long ptzDelay;
+        if (!Float.isNaN(lastPan) && !Float.isNaN(lastTilt)) {
+            float panDelta = Math.abs(normalizeAngle(pan - lastPan));
+            float tiltDelta = Math.abs(tilt - lastTilt);
+            float maxDelta = Math.max(panDelta, tiltDelta);
+            ptzDelay = Math.min(PTZ_DELAY_MAX_MS, Math.max(PTZ_DELAY_MIN_MS, (long)(maxDelta * MS_PER_DEGREE)));
+        } else {
+            ptzDelay = getLongVar(context, "ptzDelay", DEFAULT_PTZ_DELAY_MS);
+        }
 
         if (cameraDeviceId == null || cameraDeviceId.isEmpty()) {
             logger.error("雷达入侵Handler缺少 cameraDeviceId，跳过");
@@ -66,9 +84,11 @@ public class RadarIntrusionHandler implements FlowNodeHandler {
         String targetId = getStringVar(context, "targetId");
         String targetType = getStringVar(context, "targetType");
         logger.info("雷达入侵Handler执行: camera={}, ch={}, pan={}, tilt={}, zoom={}, " +
-                        "targetId={}, targetType={}, ptzDelay={}ms",
+                        "targetId={}, targetType={}, ptzDelay={}ms (角度差: pan±{}, tilt±{})",
                 cameraDeviceId, cameraChannel, pan, tilt, zoom,
-                targetId, targetType, ptzDelay);
+                targetId, targetType, ptzDelay,
+                Float.isNaN(lastPan) ? "?" : String.format("%.1f", Math.abs(normalizeAngle(pan - lastPan))),
+                Float.isNaN(lastTilt) ? "?" : String.format("%.1f", Math.abs(tilt - lastTilt)));
 
         boolean ptzOk = ptzService.gotoAngle(cameraDeviceId, cameraChannel, pan, tilt, zoom);
         if (!ptzOk) {
@@ -135,5 +155,11 @@ public class RadarIntrusionHandler implements FlowNodeHandler {
             try { return Long.parseLong((String) val); } catch (NumberFormatException e) { /* ignore */ }
         }
         return defaultVal;
+    }
+
+    private static float normalizeAngle(float angle) {
+        while (angle > 180f) angle -= 360f;
+        while (angle < -180f) angle += 360f;
+        return angle;
     }
 }

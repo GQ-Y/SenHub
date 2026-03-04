@@ -49,7 +49,7 @@ public class PointCloudProcessCenter {
 
     // ---- 配置常量 ----
     private static final long PTZ_BEAT_INTERVAL_MS = 200;
-    private static final long CAPTURE_INTERVAL_MS = 10_000;
+    private static final long CAPTURE_INTERVAL_MS = 30_000;
     private static final long DEFAULT_PTZ_DELAY_MS = 1500;
 
     // ---- 依赖 ----
@@ -152,9 +152,9 @@ public class PointCloudProcessCenter {
     /** 目标脱离宽限期（毫秒）：连续无目标超过此时间才认为目标真正离开 */
     private static final long TARGET_LOST_GRACE_MS = 3000;
     /** 目标切换冷却期（毫秒）：防止在不同 trackingId 之间频繁切换触发工作流 */
-    private static final long TARGET_SWITCH_COOLDOWN_MS = 5000;
+    private static final long TARGET_SWITCH_COOLDOWN_MS = 8000;
     /** 工作流触发最小间隔（毫秒）：同一防区连续触发工作流的最小间隔 */
-    private static final long WORKFLOW_TRIGGER_MIN_INTERVAL_MS = 8000;
+    private static final long WORKFLOW_TRIGGER_MIN_INTERVAL_MS = 15000;
     /** 最小跟随距离（米）：距雷达太近的目标忽略（通常是设备近处噪点） */
     private static final float MIN_FOLLOW_DISTANCE = 0.3f;
     /** PTZ 角度跳变阈值（度）：连续两次 pan 差超过此值时进入跳变观望 */
@@ -165,8 +165,10 @@ public class PointCloudProcessCenter {
     private static final float JUMP_CONFIRM_TOLERANCE = 15f;
     /** 单次跳变最大抑制帧数：超过此帧数后强制执行，防止永久抑制 */
     private static final int JUMP_MAX_SUPPRESS_FRAMES = 10;
-    /** Zoom 平滑：每次 PTZ beat 允许的最大 zoom 变化量 */
-    private static final float ZOOM_MAX_STEP = 3.0f;
+    /** Zoom 平滑：每次 PTZ beat 允许的最大 zoom 变化量（上升步长） */
+    private static final float ZOOM_MAX_STEP_UP = 1.0f;
+    /** Zoom 平滑：下降时允许更快收敛（切换目标后迅速回到合适变倍） */
+    private static final float ZOOM_MAX_STEP_DOWN = 3.0f;
     /** 静态噪点记忆位置容差（米）：在此半径内反复出现的目标视为同一静态噪点 */
     private static final float NOISE_POSITION_TOLERANCE = 0.5f;
     /** 静态噪点记忆窗口时间（毫秒） */
@@ -399,8 +401,10 @@ public class PointCloudProcessCenter {
                 : calculateZoom(prediction, predictedCameraPoint);
         float distance = predictedCameraPoint.distance();
 
-        // Zoom 平滑：限制每次变化幅度
-        float zoom = smoothZoom(state, rawZoom);
+        // Zoom 平滑：限制每次变化幅度；PTZ 跳变观望期间冻结 zoom
+        // pendingJumpPan != NaN 表示当前处于跳变观望中（pan 未确认到位）
+        boolean jumpPending = !Float.isNaN(state.pendingJumpPan);
+        float zoom = smoothZoom(state, rawZoom, distance, jumpPending);
 
         if (Float.isNaN(pan) || Float.isNaN(tilt) || Float.isNaN(zoom)
                 || Float.isInfinite(pan) || Float.isInfinite(tilt) || Float.isInfinite(zoom)) {
@@ -477,6 +481,8 @@ public class PointCloudProcessCenter {
             if (cooldownPassed) {
                 state.followingTargetId = primaryTarget.getTrackingId();
                 state.lastSwitchTime = now;
+                // 切换新目标时，重置 zoom 平滑历史，避免旧目标的高 zoom 传染给新目标
+                state.lastExecutedZoom = Float.NaN;
 
                 if (workflowReady) {
                     state.lastWorkflowTriggerTime = now;
@@ -540,6 +546,7 @@ public class PointCloudProcessCenter {
             state.jumpSuppressCount = 0;
             state.pendingJumpPan = Float.NaN;
             state.pendingJumpFrames = 0;
+            state.lastExecutedZoom = Float.NaN;
             return true;
         }
 
@@ -570,6 +577,8 @@ public class PointCloudProcessCenter {
             state.jumpSuppressCount = 0;
             state.pendingJumpPan = Float.NaN;
             state.pendingJumpFrames = 0;
+            // 跳变确认后重置 zoom 历史，让 zoom 从当前距离重新计算，避免旧方向的 zoom 影响新方向
+            state.lastExecutedZoom = Float.NaN;
             return true;
         }
 
@@ -589,18 +598,55 @@ public class PointCloudProcessCenter {
 
     /**
      * Zoom 平滑：限制帧间 zoom 变化幅度，防止画面剧烈缩放。
+     *
+     * <p>策略：
+     * <ul>
+     *   <li>上升慢（ZOOM_MAX_STEP_UP），防止云台未到位时画面已极度拉近</li>
+     *   <li>下降快（ZOOM_MAX_STEP_DOWN），切换目标后迅速回到合理倍数</li>
+     *   <li>PTZ 跳变观望期间冻结 zoom，避免方向未到位时 zoom 继续爬升</li>
+     *   <li>按当前目标距离施加动态上限，防止标定偏差导致变倍飙升</li>
+     * </ul>
+     * </p>
+     *
+     * @param state       防区跟随状态（含 lastExecutedZoom 和跳变抑制状态）
+     * @param targetZoom  本帧目标 zoom（来自 estimateZoom 或 calculateZoom）
+     * @param distance    当前目标距离（米），用于施加距离上限
+     * @param jumpPending 当前帧是否处于 PTZ 跳变观望中（true 时冻结 zoom）
      */
-    private float smoothZoom(FollowState state, float targetZoom) {
+    private float smoothZoom(FollowState state, float targetZoom, float distance, boolean jumpPending) {
+        // 按距离施加绝对硬上限：无论平滑过程中处于哪个阶段，输出不能超过此值
+        float distanceCap;
+        if (distance < 1.0f)       distanceCap = 3.0f;
+        else if (distance < 3.0f)  distanceCap = 6.0f;
+        else if (distance < 8.0f)  distanceCap = 12.0f;
+        else if (distance < 20.0f) distanceCap = 20.0f;
+        else                       distanceCap = 30.0f;
+        targetZoom = Math.min(targetZoom, distanceCap);
+
         if (Float.isNaN(state.lastExecutedZoom)) {
             state.lastExecutedZoom = targetZoom;
             return targetZoom;
         }
-        float delta = targetZoom - state.lastExecutedZoom;
-        if (Math.abs(delta) <= ZOOM_MAX_STEP) {
-            state.lastExecutedZoom = targetZoom;
-            return targetZoom;
+
+        // PTZ 跳变观望期间冻结 zoom（pan/tilt 未确认到位，不做拉近）
+        // 但仍需对冻结值做硬上限裁剪，防止旧位置的高 zoom 继续输出
+        if (jumpPending) {
+            float frozen = Math.min(state.lastExecutedZoom, distanceCap);
+            state.lastExecutedZoom = frozen;
+            return frozen;
         }
-        float smoothed = state.lastExecutedZoom + Math.signum(delta) * ZOOM_MAX_STEP;
+
+        float delta = targetZoom - state.lastExecutedZoom;
+        float smoothed;
+        if (delta >= 0) {
+            // 上升：步长小，慢慢推进
+            smoothed = (delta <= ZOOM_MAX_STEP_UP) ? targetZoom : state.lastExecutedZoom + ZOOM_MAX_STEP_UP;
+        } else {
+            // 下降：步长大，快速收敛
+            smoothed = (Math.abs(delta) <= ZOOM_MAX_STEP_DOWN) ? targetZoom : state.lastExecutedZoom - ZOOM_MAX_STEP_DOWN;
+        }
+        // 输出端再次施加硬上限，确保平滑过渡期内也不超出当前距离允许的最大值
+        smoothed = Math.max(1.0f, Math.min(smoothed, distanceCap));
         state.lastExecutedZoom = smoothed;
         return smoothed;
     }
@@ -856,6 +902,11 @@ public class PointCloudProcessCenter {
             context.putVariable("tilt", tilt);
             context.putVariable("zoom", zoom);
             context.putVariable("ptzDelay", DEFAULT_PTZ_DELAY_MS);
+            // 传入上次执行的PTZ角度，供RadarIntrusionHandler动态计算转向等待时长
+            if (followState != null && !Float.isNaN(followState.lastExecutedPan)) {
+                context.putVariable("lastExecutedPan", followState.lastExecutedPan);
+                context.putVariable("lastExecutedTilt", followState.lastExecutedTilt);
+            }
 
             context.putVariable("motionState", prediction.motionState != null ? prediction.motionState.name() : "UNKNOWN");
 
