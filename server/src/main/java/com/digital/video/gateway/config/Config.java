@@ -45,6 +45,9 @@ public class Config {
     @JsonProperty("zlm")
     private ZlmConfig zlm;
 
+    @JsonProperty("server")
+    private ServerConfig server = new ServerConfig();
+
     // Getters and Setters
     public ZlmConfig getZlm() {
         return zlm;
@@ -53,6 +56,15 @@ public class Config {
     public void setZlm(ZlmConfig zlm) {
         this.zlm = zlm;
     }
+
+    public ServerConfig getServer() {
+        return server;
+    }
+
+    public void setServer(ServerConfig server) {
+        this.server = server;
+    }
+
     public NotificationConfig getNotification() {
         return notification;
     }
@@ -873,5 +885,15 @@ public class Config {
         public void setTtsModel(String ttsModel) { this.ttsModel = ttsModel; }
         public String getTtsVoice() { return ttsVoice; }
         public void setTtsVoice(String ttsVoice) { this.ttsVoice = ttsVoice; }
+    }
+
+    /**
+     * HTTP 服务器配置
+     */
+    public static class ServerConfig {
+        private int port = 80;
+
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
     }
 }

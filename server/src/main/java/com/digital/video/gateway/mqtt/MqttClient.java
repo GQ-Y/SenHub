@@ -47,20 +47,31 @@ public class MqttClient {
         String broker = null;
         try {
             broker = config.getBroker();
-            String clientId = config.getClientId();
-            
+            String baseClientId = config.getClientId();
+
             // 验证配置
             if (broker == null || broker.isEmpty()) {
                 logger.error("MQTT broker地址未配置");
                 return false;
             }
-            if (clientId == null || clientId.isEmpty()) {
+            if (baseClientId == null || baseClientId.isEmpty()) {
                 logger.error("MQTT clientId未配置");
                 return false;
             }
-            
+
+            // 网关 ID 使用本机 MAC；LWT 发布到 senhub/gateway/status
+            gatewayId = getLocalMacAddress();
+            if (gatewayId == null || gatewayId.isEmpty()) {
+                gatewayId = baseClientId + "-unknown";
+                logger.warn("无法获取本机 MAC，网关 ID 使用: {}", gatewayId);
+            }
+
+            // clientId = 配置的 baseClientId + "-" + MAC（去掉冒号），保证多设备唯一
+            String macSuffix = gatewayId.replace(":", "");
+            String clientId = baseClientId + "-" + macSuffix;
+
             logger.debug("尝试连接MQTT服务器: broker={}, clientId={}", broker, clientId);
-            
+
             // 预解析DNS，提前发现DNS问题
             try {
                 String host = extractHostFromBroker(broker);
@@ -75,22 +86,17 @@ public class MqttClient {
                 return false;
             } catch (Exception e) {
                 logger.warn("DNS预解析警告: {}", e.getMessage());
-                // 继续尝试连接，可能只是警告
             }
 
             client = new MqttAsyncClient(broker, clientId, new MemoryPersistence());
 
             MqttConnectOptions options = new MqttConnectOptions();
             options.setCleanSession(true);
-            // 设置KeepAlive，至少60秒，避免频繁断开
             int keepAlive = Math.max(config.getKeepAlive(), 60);
             options.setKeepAliveInterval(keepAlive);
-            // 设置自动重连（但我们会手动处理重连逻辑）
             options.setAutomaticReconnect(false);
-            // 设置连接超时
             options.setConnectionTimeout(30);
 
-            // 设置用户名和密码（如果提供）
             if (config.getUsername() != null && !config.getUsername().isEmpty()) {
                 options.setUserName(config.getUsername());
             }
@@ -98,12 +104,6 @@ public class MqttClient {
                 options.setPassword(config.getPassword().toCharArray());
             }
 
-            // 网关 ID 使用本机 MAC；LWT 发布到 senhub/gateway/status
-            gatewayId = getLocalMacAddress();
-            if (gatewayId == null || gatewayId.isEmpty()) {
-                gatewayId = config.getClientId() != null ? config.getClientId() : "gateway-unknown";
-                logger.warn("无法获取本机 MAC，网关 ID 使用: {}", gatewayId);
-            }
             String gatewayTopic = config.getGatewayStatusTopic();
             String lwtPayload = buildGatewayStatusPayload("offline", "connection_lost");
             options.setWill(gatewayTopic, lwtPayload.getBytes(StandardCharsets.UTF_8), config.getQos(), false);

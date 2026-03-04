@@ -1,11 +1,15 @@
 # SenHub 视频网关配置文件
 
+# HTTP 服务器配置
+server:
+  port: 80  # HTTP 监听端口
+
 # MQTT配置（senhub 主题规范）
 mqtt:
-  broker: "tcp://mqtt.yingzhu.net:1883"  # MQTT服务器地址
-  client_id: "senhub-app"  # 客户端ID
-  username: "demos1"  # MQTT用户名
-  password: "demos1"  # MQTT密码
+  broker: ""  # MQTT服务器地址，例如: tcp://192.168.1.100:1883
+  client_id: "senhub-app"  # 客户端ID前缀，运行时自动拼接本机 MAC 地址以保证唯一性（如 senhub-app-5254001122AA）
+  username: ""  # MQTT用户名
+  password: ""  # MQTT密码
   status_topic: "senhub/device/status"  # 设备/雷达状态上报主题
   command_topic: "senhub/command"  # 命令接收主题
   response_topic: "senhub/response"  # 命令响应主题
