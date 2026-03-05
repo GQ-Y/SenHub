@@ -891,7 +891,7 @@ public class Config {
      * HTTP 服务器配置
      */
     public static class ServerConfig {
-        private int port = 80;
+        private int port = 8084;
 
         public int getPort() { return port; }
         public void setPort(int port) { this.port = port; }

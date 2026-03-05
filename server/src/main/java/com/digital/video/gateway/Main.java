@@ -863,7 +863,7 @@ public class Main {
      * 启动HTTP服务器
      */
     private void startHttpServer() {
-        int port = (config != null && config.getServer() != null) ? config.getServer().getPort() : 80;
+        int port = (config != null && config.getServer() != null) ? config.getServer().getPort() : 8084;
 
         app = Javalin.create(config -> {
             config.plugins.enableCors(cors -> cors.add(it -> it.anyHost()));
