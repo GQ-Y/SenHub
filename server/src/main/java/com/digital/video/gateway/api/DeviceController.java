@@ -141,6 +141,11 @@ public class DeviceController {
 
             List<Map<String, Object>> deviceList = new ArrayList<>();
             for (DeviceInfo device : devices) {
+                // 雷达设备有独立的管理接口 /api/radar/devices，不在通用设备列表中展示
+                if ("radar".equalsIgnoreCase(device.getBrand()) || "radar".equalsIgnoreCase(device.getCameraType())) {
+                    continue;
+                }
+
                 // 搜索过滤
                 if (search != null && !search.isEmpty()) {
                     String searchLower = search.toLowerCase();
