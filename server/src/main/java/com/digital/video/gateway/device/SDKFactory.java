@@ -22,8 +22,9 @@ public class SDKFactory {
     private static DahuaSDK dahuaSDK;
 
     private static boolean initialized = false;
-    /** 海康延迟初始化：仅当首次 getSDK("hikvision") 时再初始化，避免启动早期崩溃 */
+    /** 延迟初始化：仅当首次 getSDK("hikvision"/"tiandy") 时再初始化，避免启动早期崩溃 */
     private static Config.SdkConfig sdkConfigForLazyInit;
+    private static boolean tiandyAvailable;
     private static boolean hikvisionAvailable;
 
     /**
@@ -47,6 +48,7 @@ public class SDKFactory {
             Map<String, Boolean> sdkAvailability = detectAvailableSDKs(sdkConfig);
             sdkConfigForLazyInit = sdkConfig;
             hikvisionAvailable = Boolean.TRUE.equals(sdkAvailability.get("hikvision"));
+            tiandyAvailable = Boolean.TRUE.equals(sdkAvailability.get("tiandy"));
 
             prepareDahuaLibPath(sdkConfig);
 
@@ -56,17 +58,11 @@ public class SDKFactory {
                 logger.info("跳过海康SDK：未检测到可用库文件");
             }
 
-            // 初始化天地伟业SDK（仅x86且检测到库后）
+            // 天地伟业SDK：检测到库文件即标记可用，首次使用时再延迟初始化（避免无设备时SDK崩溃污染JVM）
             if (Boolean.TRUE.equals(sdkAvailability.get("tiandy"))) {
-                logger.info("尝试初始化天地伟业SDK...");
-                tiandySDK = TiandySDK.getInstance();
-                if (tiandySDK.init(sdkConfig)) {
-                    logger.info("✓ 天地伟业SDK初始化成功");
-                } else {
-                    logger.warn("✗ 天地伟业SDK初始化失败（可能原因：库文件不存在或架构不匹配）");
-                }
+                logger.info("天地伟业SDK库已检测到，将在首次使用时初始化（延迟初始化）");
             } else {
-                logger.info("跳过天地伟业SDK初始化：未检测到可用库文件或架构不支持");
+                logger.info("跳过天地伟业SDK：未检测到可用库文件或架构不支持");
             }
             
             // 初始化大华SDK（检测到库后再初始化）
@@ -177,11 +173,26 @@ public class SDKFactory {
             return hikvisionSDK != null && hikvisionSDK.isInitialized() ? hikvisionSDK : null;
         }
 
+        if ("tiandy".equalsIgnoreCase(brand)) {
+            if (tiandySDK == null && tiandyAvailable && sdkConfigForLazyInit != null) {
+                synchronized (SDKFactory.class) {
+                    if (tiandySDK == null) {
+                        logger.info("首次使用天地伟业SDK，执行延迟初始化...");
+                        tiandySDK = TiandySDK.getInstance();
+                        if (tiandySDK.init(sdkConfigForLazyInit)) {
+                            logger.info("✓ 天地伟业SDK延迟初始化成功");
+                        } else {
+                            logger.warn("✗ 天地伟业SDK延迟初始化失败（库文件不存在或架构不匹配）");
+                            tiandySDK = null;
+                        }
+                    }
+                }
+            }
+            return tiandySDK != null && tiandySDK.isInitialized() ? tiandySDK : null;
+        }
+
         DeviceSDK sdk = null;
         switch (brand.toLowerCase()) {
-            case "tiandy":
-                sdk = tiandySDK;
-                break;
             case "dahua":
                 sdk = dahuaSDK;
                 break;
