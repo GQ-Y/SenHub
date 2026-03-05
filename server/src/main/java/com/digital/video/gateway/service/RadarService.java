@@ -67,6 +67,8 @@ public class RadarService {
     // SDK 设备信息缓存：handle -> (serial, ip)
     private final Map<Integer, String[]> sdkDeviceInfoCache = new ConcurrentHashMap<>(); // handle -> [serial, ip]
     private final Map<String, Integer> ipToHandleMap = new ConcurrentHashMap<>(); // ip -> handle
+    // handle -> deviceId 缓存，避免每帧回调重复查库（匹配成功后永久缓存）
+    private final Map<Integer, String> handleToDeviceIdCache = new ConcurrentHashMap<>();
     
     // 点云数据超时检测（多雷达状态监测增强）
     private final Map<String, Long> lastPointCloudTime = new ConcurrentHashMap<>(); // deviceId -> 最后接收点云的时间戳
@@ -1103,15 +1105,17 @@ public class RadarService {
     }
 
     /**
-     * 根据 handle 获取设备ID
-     * 通过 SDK 设备信息缓存查找 handle 对应的设备 serial 和 ip，
-     * 然后从数据库中查找对应的 deviceId
-     * 
-     * @param handle SDK 设备句柄
-     * @return deviceId，如果找不到返回 null
+     * 根据 handle 获取设备ID（带缓存，避免每帧重复查库）。
+     * 匹配成功后结果永久缓存在 handleToDeviceIdCache 中。
      */
     private String getDeviceIdByHandle(int handle) {
-        // 1. 从 SDK 设备信息缓存获取 serial 和 ip
+        // 1. 先查缓存，命中直接返回
+        String cached = handleToDeviceIdCache.get(handle);
+        if (cached != null) {
+            return cached;
+        }
+
+        // 2. 从 SDK 设备信息缓存获取 serial 和 ip
         String[] info = sdkDeviceInfoCache.get(handle);
         if (info == null || info.length < 2) {
             logger.debug("无法找到 handle={} 对应的设备信息，缓存中无此 handle", handle);
@@ -1119,27 +1123,48 @@ public class RadarService {
         }
         String serial = info[0];
         String ip = info[1];
-        
-        // 2. 优先通过 serial 查找 deviceId
+
+        // 3. 优先通过 serial 查找 deviceId
         RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
         RadarDevice device = dao.getBySerial(serial);
         if (device != null) {
-            logger.debug("通过 serial 找到设备: handle={}, serial={}, deviceId={}", 
-                    handle, serial, device.getDeviceId());
+            // SN 匹配成功：若 IP 与数据库记录不一致，自动修正
+            if (ip != null && !ip.isEmpty() && !ip.equals(device.getRadarIp())) {
+                try {
+                    dao.updateIpAndStatus(device.getDeviceId(), ip, 1);
+                    logger.info("SN 匹配，自动修正雷达 IP: deviceId={}, serial={}, oldIp={} -> newIp={}",
+                            device.getDeviceId(), serial, device.getRadarIp(), ip);
+                } catch (Exception e) {
+                    logger.warn("自动修正雷达 IP 失败: deviceId={}", device.getDeviceId(), e);
+                }
+            } else {
+                logger.info("通过 serial 找到设备: handle={}, serial={}, deviceId={}", handle, serial, device.getDeviceId());
+            }
+            handleToDeviceIdCache.put(handle, device.getDeviceId());
             return device.getDeviceId();
         }
-        
-        // 3. 如果 serial 找不到，通过 IP 查找
+
+        // 4. SN 未配置或不匹配时，通过 IP 查找（兼容未填写 SN 的旧设备）
         List<RadarDevice> devices = dao.getAll();
         for (RadarDevice d : devices) {
             if (ip.equals(d.getRadarIp())) {
-                logger.debug("通过 IP 找到设备: handle={}, ip={}, deviceId={}", 
-                        handle, ip, d.getDeviceId());
+                logger.info("通过 IP 找到设备: handle={}, ip={}, deviceId={}", handle, ip, d.getDeviceId());
+                // IP 匹配成功，若数据库 SN 为空则顺手写入，方便下次直接通过 SN 匹配
+                if (serial != null && !serial.isEmpty() && (d.getRadarSerial() == null || d.getRadarSerial().isEmpty())) {
+                    try {
+                        dao.updateSerial(d.getDeviceId(), serial);
+                        logger.info("已自动补全雷达 SN: deviceId={}, serial={}", d.getDeviceId(), serial);
+                    } catch (Exception e) {
+                        logger.warn("自动补全雷达 SN 失败: deviceId={}", d.getDeviceId(), e);
+                    }
+                }
+                handleToDeviceIdCache.put(handle, d.getDeviceId());
                 return d.getDeviceId();
             }
         }
-        
-        logger.warn("无法找到 handle={} (serial={}, ip={}) 对应的 deviceId", handle, serial, ip);
+
+        logger.warn("无法找到 handle={} (serial={}, ip={}) 对应的 deviceId，请检查雷达设备配置中的 SN 是否与实际设备一致",
+                handle, serial, ip);
         return null;
     }
 

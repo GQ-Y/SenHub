@@ -6,9 +6,16 @@ import com.digital.video.gateway.database.DeviceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.FileImageOutputStream;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
@@ -153,7 +160,7 @@ public class CaptureService {
                 File picFile = new File(fileName);
                 if (picFile.exists()) {
                     logger.info("抓图成功: deviceId={}, channel={}, filePath={}", deviceId, actualChannel, fileName);
-                    return picFile.getAbsolutePath();
+                    return compressIfNeeded(picFile.getAbsolutePath());
                 } else {
                     logger.warn("抓图文件未生成: {}", fileName);
                     return null;
@@ -269,7 +276,7 @@ public class CaptureService {
                     File picFile = new File(fileName);
                     if (picFile.exists()) {
                         logger.info("异步抓图成功: deviceId={}, channel={}, filePath={}", finalDeviceId, finalActualChannel, picFile.getAbsolutePath());
-                        finalCallback.accept(picFile.getAbsolutePath(), true);
+                        finalCallback.accept(compressIfNeeded(picFile.getAbsolutePath()), true);
                     } else {
                         logger.warn("抓图文件未生成: {}", fileName);
                         finalCallback.accept(null, false);
@@ -308,5 +315,84 @@ public class CaptureService {
         } catch (Exception e) {
             logger.warn("清理旧抓图文件失败", e);
         }
+    }
+
+    /** 目标文件大小上限：600 KB */
+    private static final long MAX_CAPTURE_SIZE_BYTES = 600 * 1024L;
+
+    /**
+     * 对抓图文件进行无损质量递减压缩，确保文件不超过 600 KB。
+     * 采用二分查找快速定位合适的 JPEG quality，避免多次全量重编码。
+     *
+     * @param filePath 原始抓图的绝对路径（.jpg）
+     * @return 压缩后文件路径（与入参相同，原地替换）；若压缩失败则返回原路径
+     */
+    private String compressIfNeeded(String filePath) {
+        try {
+            File file = new File(filePath);
+            if (!file.exists()) return filePath;
+
+            long fileSize = file.length();
+            if (fileSize <= MAX_CAPTURE_SIZE_BYTES) {
+                // 文件已经在目标大小内，无需压缩
+                return filePath;
+            }
+
+            logger.info("抓图大小 {}KB 超过 600KB，开始压缩: {}", fileSize / 1024, filePath);
+
+            BufferedImage image = ImageIO.read(file);
+            if (image == null) {
+                logger.warn("无法读取图片用于压缩: {}", filePath);
+                return filePath;
+            }
+
+            // 获取 JPEG ImageWriter
+            Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
+            if (!writers.hasNext()) {
+                logger.warn("未找到 JPEG ImageWriter，跳过压缩");
+                return filePath;
+            }
+            ImageWriter writer = writers.next();
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+
+            // 二分查找合适的 quality（精度 0.02，最多约 6 次迭代）
+            float lo = 0.30f, hi = 0.95f, quality = 0.85f;
+            File tempFile = new File(filePath + ".tmp");
+            for (int iter = 0; iter < 8; iter++) {
+                quality = (lo + hi) / 2f;
+                param.setCompressionQuality(quality);
+                try (FileImageOutputStream fios = new FileImageOutputStream(tempFile)) {
+                    writer.setOutput(fios);
+                    writer.write(null, new IIOImage(image, null, null), param);
+                }
+                long sz = tempFile.length();
+                if (sz <= MAX_CAPTURE_SIZE_BYTES) {
+                    lo = quality; // 还可以提高质量
+                } else {
+                    hi = quality; // 需要继续降低质量
+                }
+                if ((hi - lo) < 0.02f) break;
+            }
+
+            writer.dispose();
+
+            // 用压缩结果替换原文件
+            if (tempFile.exists() && tempFile.length() > 0) {
+                if (file.delete() && tempFile.renameTo(file)) {
+                    logger.info("抓图压缩完成: quality={}, 压缩后大小={}KB, 路径={}",
+                            String.format("%.2f", quality), file.length() / 1024, filePath);
+                } else {
+                    logger.warn("替换压缩文件失败，保留原文件: {}", filePath);
+                    tempFile.delete();
+                }
+            } else {
+                logger.warn("压缩结果文件异常，保留原文件: {}", filePath);
+                if (tempFile.exists()) tempFile.delete();
+            }
+        } catch (Exception e) {
+            logger.warn("抓图压缩失败，使用原始文件: {}", filePath, e);
+        }
+        return filePath;
     }
 }

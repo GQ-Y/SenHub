@@ -166,6 +166,25 @@ public class RadarDeviceDAO {
     }
 
     /**
+     * 更新设备序列号（SN）
+     */
+    public boolean updateSerial(String deviceId, String serial) {
+        String sql = "UPDATE radar_devices SET radar_serial = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, serial);
+            pstmt.setString(2, deviceId);
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                logger.info("更新雷达设备SN: deviceId={}, serial={}", deviceId, serial);
+            }
+            return rows > 0;
+        } catch (SQLException e) {
+            logger.error("更新雷达设备SN失败: deviceId={}", deviceId, e);
+            return false;
+        }
+    }
+
+    /**
      * 更新当前背景模型ID
      */
     public boolean updateCurrentBackground(String deviceId, String backgroundId) {

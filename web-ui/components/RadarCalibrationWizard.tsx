@@ -76,9 +76,9 @@ const PtzButton: React.FC<{
 };
 
 const PTZ_SPEEDS = [
-  { label: '慢', value: 1 },
-  { label: '中', value: 3 },
-  { label: '快', value: 6 },
+  { label: '慢', value: 20 },
+  { label: '中', value: 50 },
+  { label: '快', value: 80 },
 ] as const;
 
 /** 在 1 秒采集的侵入点中找到距雷达最近的聚类 */
@@ -162,7 +162,7 @@ export const RadarCalibrationWizard: React.FC<RadarCalibrationWizardProps> = ({ 
   const [calibPhase, setCalibPhase] = useState<CalibrationPhase>('live');
   const [frozenPoint, setFrozenPoint] = useState<FrozenPoint | null>(null);
   const [ptzLive, setPtzLive] = useState<{ pan: number; tilt: number; zoom: number } | null>(null);
-  const [ptzSpeed, setPtzSpeed] = useState(3);
+  const [ptzSpeed, setPtzSpeed] = useState(50);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const wsRef = useRef<ReturnType<typeof radarService.connectWebSocket> | null>(null);

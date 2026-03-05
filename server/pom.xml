@@ -7,7 +7,7 @@
 
     <groupId>com.digital.video.gateway</groupId>
     <artifactId>senhub-app</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.3</version>
     <packaging>jar</packaging>
 
     <name>SenHub</name>

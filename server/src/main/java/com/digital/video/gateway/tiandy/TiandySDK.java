@@ -60,6 +60,16 @@ public class TiandySDK implements DeviceSDK {
     /** 下载连接ID到登录句柄映射，用于 DOWNLOAD_CMD_CONTROL 严格按官方示例传 m_iLogonID */
     private final Map<Integer, Integer> downloadIdToUserIdMap = new ConcurrentHashMap<>();
 
+    /**
+     * PTZ 位置内存缓存：key = "userId_channel"，通过 PARA_GET_PTZ 回调或 gotoAngle 成功后更新。
+     * 由于 SYNC_GETPTZ 在天地伟业设备上通常失败，依赖此缓存提供最新的已知位置。
+     */
+    private final Map<String, PtzPosition> ptzPositionCache = new ConcurrentHashMap<>();
+
+    private String ptzCacheKey(int userId, int channel) {
+        return userId + "_" + channel;
+    }
+
     // 回调对象（延迟初始化，在库加载后创建，确保JNA能正确映射）
     private NvssdkLibrary.MAIN_NOTIFY_V4 emptyMainNotify;
     private NvssdkLibrary.ALARM_NOTIFY_V4 emptyAlarmNotify;
@@ -122,11 +132,26 @@ public class TiandySDK implements DeviceSDK {
             };
         }
 
+        // PARA_GET_PTZ = 473：当球机 PTZ 位置发生变化时，SDK 通过此回调上报最新角度
+        // m_iPara[0]=pan*100, m_iPara[1]=tilt*100, m_iPara[2]=zoom*100
         emptyParaNotify = new NvssdkLibrary.PARACHANGE_NOTIFY_V4() {
+            private static final int PARA_GET_PTZ = 473;
             @Override
             public void apply(int ulLogonID, int iChan, int iParaType, TiandySDKStructure.STR_Para strPara,
                     com.sun.jna.Pointer iUser) {
-                // 空实现
+                try {
+                    if (iParaType == PARA_GET_PTZ && strPara != null) {
+                        float pan = strPara.m_iPara[0] / 100.0f;
+                        float tilt = strPara.m_iPara[1] / 100.0f;
+                        float zoom = strPara.m_iPara[2] / 100.0f;
+                        int channel = iChan + 1; // SDK 回调 iChan 从 0 开始
+                        ptzPositionCache.put(ptzCacheKey(ulLogonID, channel), new PtzPosition(pan, tilt, zoom));
+                        logger.debug("PARA_GET_PTZ 回调更新缓存: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
+                                ulLogonID, channel, pan, tilt, zoom);
+                    }
+                } catch (Exception e) {
+                    logger.warn("PARA_GET_PTZ 回调处理异常", e);
+                }
             }
         };
 
@@ -1242,13 +1267,12 @@ public class TiandySDK implements DeviceSDK {
                     userId, channel, pan, tilt, zoom);
 
             // 方法1：尝试使用COMMAND_ID_SYNC_SETPTZ同步接口设置绝对坐标
-            // 构造PTZ绝对坐标数据（格式：pan*100, tilt*100, zoom*100）
             TiandySDKStructure.PTZ_ABSOLUTE_POS ptzPos = new TiandySDKStructure.PTZ_ABSOLUTE_POS();
             ptzPos.iSize = ptzPos.size();
             ptzPos.iChannelNo = channelNo;
-            ptzPos.iPan = panValue; // 水平角度 * 100
-            ptzPos.iTilt = tiltValue; // 垂直角度 * 100
-            ptzPos.iZoom = zoomValue; // 变倍 * 100
+            ptzPos.iPan = panValue;
+            ptzPos.iTilt = tiltValue;
+            ptzPos.iZoom = zoomValue;
             ptzPos.write();
 
             int iRet = nvssdkLibrary.NetClient_SendCommand(userId,
@@ -1258,20 +1282,118 @@ public class TiandySDK implements DeviceSDK {
             if (iRet == NvssdkLibrary.RET_SUCCESS) {
                 logger.info("天地伟业云台绝对定位成功(SYNC_SETPTZ): userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
                         userId, channel, pan, tilt, zoom);
+                ptzPositionCache.put(ptzCacheKey(userId, channel), new PtzPosition(pan, tilt, zoom));
                 return true;
             }
 
             logger.warn("天地伟业SYNC_SETPTZ失败(错误码={}), 尝试备用方法...", iRet);
 
-            // 方法2：尝试使用预置位方式（如果设备不支持直接绝对定位）
-            // 某些天地伟业设备可能需要先设置预置位然后调用
-            // 这里暂时返回失败，等待后续扩展
-            logger.warn("天地伟业SDK绝对定位功能可能需要设备支持，当前设备可能不支持此功能");
-            logger.info("建议：1.检查设备是否为球机 2.检查设备固件版本 3.使用预置位功能替代");
+            // 方法2：先获取当前位置，再用方向控制模拟绝对定位
+            return gotoAngleFallback(userId, channel, channelNo, pan, tilt, zoom);
 
-            return false;
         } catch (Exception e) {
             logger.error("天地伟业云台绝对定位异常: userId={}, channel={}, pan={}, tilt={}", userId, channel, pan, tilt, e);
+            return false;
+        }
+    }
+
+    /**
+     * 天地伟业绝对定位 fallback：
+     * 先通过 SYNC_GETPTZ 读取当前位置，计算角度差，用方向控制转动到目标位置。
+     * 若无法读取当前位置，直接以高速发送方向控制指令并按角度估算转动时长。
+     */
+    private boolean gotoAngleFallback(int userId, int channel, int channelNo, float targetPan, float targetTilt, float targetZoom) {
+        try {
+            // 尝试获取当前 PTZ 位置
+            float currentPan = Float.NaN, currentTilt = Float.NaN;
+            TiandySDKStructure.PTZ_ABSOLUTE_POS getPtzPos = new TiandySDKStructure.PTZ_ABSOLUTE_POS();
+            getPtzPos.iSize = getPtzPos.size();
+            getPtzPos.iChannelNo = channelNo;
+            getPtzPos.write();
+            int getRet = nvssdkLibrary.NetClient_RecvCommand(userId,
+                    NvssdkLibrary.COMMAND_ID_SYNC_GETPTZ,
+                    channelNo, getPtzPos.getPointer(), getPtzPos.size());
+            if (getRet == NvssdkLibrary.RET_SUCCESS) {
+                getPtzPos.read();
+                currentPan = getPtzPos.iPan / 100.0f;
+                currentTilt = getPtzPos.iTilt / 100.0f;
+                logger.info("天地伟业当前PTZ位置: pan={}°, tilt={}°", currentPan, currentTilt);
+            } else {
+                logger.warn("天地伟业获取当前PTZ位置失败，将使用纯时间估算模式");
+            }
+
+            // 天地伟业 PTZ 全速大约 120°/s（根据实测估算，速度=100时）
+            final float DEG_PER_SEC_AT_MAX = 120.0f;
+            final int MOVE_SPEED = 80; // 使用80/100速度（约96°/s）
+            final float DEG_PER_SEC = DEG_PER_SEC_AT_MAX * MOVE_SPEED / 100.0f;
+
+            boolean panOk = true, tiltOk = true;
+
+            // --- Pan 控制 ---
+            if (!Float.isNaN(currentPan)) {
+                // 计算最短路径差（-180~+180）
+                float panDiff = targetPan - currentPan;
+                while (panDiff > 180) panDiff -= 360;
+                while (panDiff < -180) panDiff += 360;
+                if (Math.abs(panDiff) > 1.0f) {
+                    int panCmd = panDiff > 0 ? NvssdkLibrary.PROTOCOL_MOVE_RIGHT : NvssdkLibrary.PROTOCOL_MOVE_LEFT;
+                    long durationMs = (long) (Math.abs(panDiff) / DEG_PER_SEC * 1000);
+                    durationMs = Math.min(durationMs, 5000); // 最多转5秒
+                    nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, panCmd, MOVE_SPEED, 0, 0);
+                    Thread.sleep(durationMs);
+                    nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, NvssdkLibrary.PROTOCOL_MOVE_STOP, 0, 0, 0);
+                    logger.info("天地伟业pan方向控制: diff={}°, dur={}ms", String.format("%.1f", panDiff), durationMs);
+                }
+            } else {
+                // 没有当前位置，直接高速转向目标方向（无法精确到位，仅尽力而为）
+                // 此时无法计算差值，跳过
+                logger.warn("天地伟业无当前位置，跳过方向控制fallback");
+                return false;
+            }
+
+            // --- Tilt 控制 ---
+            if (!Float.isNaN(currentTilt)) {
+                float tiltDiff = targetTilt - currentTilt;
+                if (Math.abs(tiltDiff) > 1.0f) {
+                    int tiltCmd = tiltDiff > 0 ? NvssdkLibrary.PROTOCOL_MOVE_UP : NvssdkLibrary.PROTOCOL_MOVE_DOWN;
+                    long durationMs = (long) (Math.abs(tiltDiff) / DEG_PER_SEC * 1000);
+                    durationMs = Math.min(durationMs, 3000);
+                    nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, tiltCmd, 0, MOVE_SPEED, 0);
+                    Thread.sleep(durationMs);
+                    nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, NvssdkLibrary.PROTOCOL_MOVE_STOP, 0, 0, 0);
+                    logger.info("天地伟业tilt方向控制: diff={}°, dur={}ms", String.format("%.1f", tiltDiff), durationMs);
+                }
+            }
+
+            // --- Zoom 控制（简单时间估算）---
+            float currentZoom = Float.NaN;
+            if (getRet == NvssdkLibrary.RET_SUCCESS) {
+                currentZoom = getPtzPos.iZoom / 100.0f;
+            }
+            if (!Float.isNaN(currentZoom) && Math.abs(targetZoom - currentZoom) > 0.5f) {
+                int zoomCmd = targetZoom > currentZoom ? NvssdkLibrary.ZOOM_BIG : NvssdkLibrary.ZOOM_SMALL;
+                int zoomStopCmd = targetZoom > currentZoom ? NvssdkLibrary.ZOOM_BIG_STOP : NvssdkLibrary.ZOOM_SMALL_STOP;
+                long zoomMs = (long) (Math.abs(targetZoom - currentZoom) * 200); // 约200ms/倍
+                zoomMs = Math.min(zoomMs, 3000);
+                nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, zoomCmd, 0, 0, 0);
+                Thread.sleep(zoomMs);
+                nvssdkLibrary.NetClient_DeviceCtrlEx(userId, channelNo, zoomStopCmd, 0, 0, 0);
+                logger.info("天地伟业zoom控制: diff={}, dur={}ms", String.format("%.1f", targetZoom - currentZoom), zoomMs);
+            }
+
+            logger.info("天地伟业云台绝对定位(fallback)完成: userId={}, targetPan={}°, targetTilt={}°, targetZoom={}x",
+                    userId, targetPan, targetTilt, targetZoom);
+            boolean result = panOk && tiltOk;
+            if (result) {
+                ptzPositionCache.put(ptzCacheKey(userId, channel), new PtzPosition(targetPan, targetTilt, targetZoom));
+            }
+            return result;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            logger.warn("天地伟业绝对定位fallback被中断");
+            return false;
+        } catch (Exception e) {
+            logger.error("天地伟业绝对定位fallback异常", e);
             return false;
         }
     }
@@ -1308,15 +1430,23 @@ public class TiandySDK implements DeviceSDK {
                 logger.debug("天地伟业获取PTZ位置成功: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
                         userId, channel, pan, tilt, zoom);
 
-                return new PtzPosition(pan, tilt, zoom);
+                PtzPosition pos = new PtzPosition(pan, tilt, zoom);
+                ptzPositionCache.put(ptzCacheKey(userId, channel), pos);
+                return pos;
             } else {
                 logger.debug("天地伟业获取PTZ位置失败(错误码={}): userId={}, channel={}", iRet, userId, channel);
                 logger.debug("天地伟业SDK可能不支持SYNC_GETPTZ，需要通过PARA_GET_PTZ回调获取");
-                return null;
+                // 返回内存缓存（由 PARA_GET_PTZ 回调或上次 gotoAngle 写入）
+                PtzPosition cached = ptzPositionCache.get(ptzCacheKey(userId, channel));
+                if (cached != null) {
+                    logger.debug("天地伟业使用PTZ位置缓存: userId={}, channel={}, pan={}°, tilt={}°, zoom={}x",
+                            userId, channel, cached.getPan(), cached.getTilt(), cached.getZoom());
+                }
+                return cached;
             }
         } catch (Exception e) {
             logger.error("天地伟业获取PTZ位置异常: userId={}, channel={}", userId, channel, e);
-            return null;
+            return ptzPositionCache.get(ptzCacheKey(userId, channel));
         }
     }
 

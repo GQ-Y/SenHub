@@ -136,7 +136,7 @@ export const deviceService = {
    * @param action 动作 (start/stop)
    * @param speed 速度 (1-7)
    */
-  async ptzControl(deviceId: string, command: string, action: string, speed: number = 1) {
+  async ptzControl(deviceId: string, command: string, action: string, speed: number = 50) {
     const response = await post<{ message: string }>(`/devices/${encodeURIComponent(deviceId)}/ptz`, { command, action, speed });
     return response;
   },
