@@ -5,6 +5,7 @@ import com.digital.video.gateway.config.Config;
 import com.digital.video.gateway.mqtt.MqttClient;
 import com.digital.video.gateway.service.ConfigService;
 import com.digital.video.gateway.service.NotificationService;
+import com.digital.video.gateway.Main;
 import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,9 +34,35 @@ public class SystemController {
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private com.digital.video.gateway.service.AiAnalysisService aiAnalysisService;
+    private com.digital.video.gateway.database.Database database;
+
+    /** 读取打包进 jar 的版本号（Maven shade 插件写入 MANIFEST.MF） */
+    public static String readAppVersion() {
+        try {
+            java.util.jar.Manifest mf = new java.util.jar.Manifest(
+                Main.class.getResourceAsStream("/META-INF/MANIFEST.MF"));
+            String v = mf.getMainAttributes().getValue("Implementation-Version");
+            if (v != null && !v.isBlank()) return v.trim();
+        } catch (Exception ignored) {}
+        // fallback: 从 pom.properties
+        try (java.io.InputStream is = Main.class.getResourceAsStream(
+                "/META-INF/maven/com.digital.video.gateway/senhub-app/pom.properties")) {
+            if (is != null) {
+                java.util.Properties p = new java.util.Properties();
+                p.load(is);
+                String v = p.getProperty("version");
+                if (v != null && !v.isBlank()) return v.trim();
+            }
+        } catch (Exception ignored) {}
+        return "unknown";
+    }
 
     public void setAiAnalysisService(com.digital.video.gateway.service.AiAnalysisService aiAnalysisService) {
         this.aiAnalysisService = aiAnalysisService;
+    }
+
+    public void setDatabase(com.digital.video.gateway.database.Database database) {
+        this.database = database;
     }
 
     public SystemController(ConfigService configService) {
@@ -862,8 +889,9 @@ public class SystemController {
 
     /**
      * 批量删除 AI 分析记录
-     * POST /api/system/ai-analysis-records/batch-delete  body: { "ids": ["id1", "id2"] }
+     * POST /api/system/ai-analysis-records/batch-delete
      */
+    @SuppressWarnings("unchecked")
     public void batchDeleteAiAnalysisRecords(Context ctx) {
         try {
             if (aiAnalysisService == null) {
@@ -871,12 +899,11 @@ public class SystemController {
                 ctx.result(createErrorResponse(404, "服务不可用"));
                 return;
             }
-            @SuppressWarnings("unchecked")
             Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
             Object idsObj = body.get("ids");
-            List<String> ids = new ArrayList<>();
-            if (idsObj instanceof List) {
-                for (Object o : (List<?>) idsObj) {
+            java.util.List<String> ids = new ArrayList<>();
+            if (idsObj instanceof java.util.List) {
+                for (Object o : (java.util.List<?>) idsObj) {
                     if (o != null) ids.add(o.toString());
                 }
             }
@@ -892,4 +919,193 @@ public class SystemController {
             ctx.result(createErrorResponse(500, "批量删除失败: " + e.getMessage()));
         }
     }
+
+    /**
+     * 获取系统基础信息（版本号、系统名称）
+     * GET /api/system/info
+     */
+    public void getSystemInfo(Context ctx) {
+        try {
+            Map<String, Object> info = new HashMap<>();
+            info.put("version", readAppVersion());
+            // 系统名称从 configs 表读取，fallback 到默认
+            String systemName = database != null ? database.getConfig("system.name") : null;
+            if (systemName == null || systemName.isBlank()) systemName = "SenHub";
+            info.put("systemName", systemName);
+            // 自动更新配置
+            if (database != null) {
+                info.put("autoUpdate", buildAutoUpdateInfo());
+            }
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(info));
+        } catch (Exception e) {
+            logger.error("获取系统信息失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 更新系统基本信息（系统名称等）
+     * PUT /api/system/info
+     */
+    @SuppressWarnings("unchecked")
+    public void updateSystemInfo(Context ctx) {
+        try {
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
+            if (database == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "数据库不可用"));
+                return;
+            }
+            Object name = body.get("systemName");
+            if (name != null && !name.toString().isBlank()) {
+                database.saveOrUpdateConfig("system.name", name.toString().trim(), "string");
+            }
+            ctx.status(200);
+            ctx.result(createSuccessResponse(Map.of("message", "已保存")));
+        } catch (Exception e) {
+            logger.error("更新系统信息失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    // ==================== 自动更新 ====================
+
+    private static final String UPDATE_KEY_ENABLED      = "auto_update.enabled";
+    private static final String UPDATE_KEY_SCHEDULE     = "auto_update.schedule";   // e.g. FRIDAY,02:00
+    private static final String UPDATE_KEY_UPDATE_URL   = "auto_update.update_url";
+    private static final String DEFAULT_UPDATE_URL      = "http://demo.zt.admins.smartrail.cloud";
+
+    private Map<String, Object> buildAutoUpdateInfo() {
+        if (database == null) return Map.of();
+        String enabled   = database.getConfig(UPDATE_KEY_ENABLED);
+        String schedule  = database.getConfig(UPDATE_KEY_SCHEDULE);
+        String updateUrl = database.getConfig(UPDATE_KEY_UPDATE_URL);
+        Map<String, Object> m = new HashMap<>();
+        m.put("enabled",   "true".equalsIgnoreCase(enabled));
+        m.put("schedule",  schedule  != null ? schedule  : "FRIDAY,02:00");
+        m.put("updateUrl", updateUrl != null ? updateUrl : DEFAULT_UPDATE_URL);
+        return m;
+    }
+
+    /**
+     * 获取自动更新配置
+     * GET /api/system/auto-update
+     */
+    public void getAutoUpdate(Context ctx) {
+        try {
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(buildAutoUpdateInfo()));
+        } catch (Exception e) {
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 保存自动更新配置
+     * PUT /api/system/auto-update
+     * body: { "enabled": true, "schedule": "FRIDAY,02:00", "updateUrl": "http://..." }
+     */
+    @SuppressWarnings("unchecked")
+    public void saveAutoUpdate(Context ctx) {
+        try {
+            if (database == null) {
+                ctx.status(503);
+                ctx.result(createErrorResponse(503, "数据库不可用"));
+                return;
+            }
+            Map<String, Object> body = objectMapper.readValue(ctx.body(), Map.class);
+            if (body.containsKey("enabled"))   database.saveOrUpdateConfig(UPDATE_KEY_ENABLED,   String.valueOf(body.get("enabled")), "boolean");
+            if (body.containsKey("schedule"))  database.saveOrUpdateConfig(UPDATE_KEY_SCHEDULE,  body.get("schedule").toString(), "string");
+            if (body.containsKey("updateUrl")) database.saveOrUpdateConfig(UPDATE_KEY_UPDATE_URL, body.get("updateUrl").toString(), "string");
+            ctx.status(200);
+            ctx.result(createSuccessResponse(buildAutoUpdateInfo()));
+        } catch (Exception e) {
+            logger.error("保存自动更新配置失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 检查远程是否有新版本
+     * GET /api/system/auto-update/check
+     * 返回: { currentVersion, latestVersion, hasUpdate }
+     */
+    public void checkForUpdate(Context ctx) {
+        try {
+            String updateUrl = database != null ? database.getConfig(UPDATE_KEY_UPDATE_URL) : null;
+            if (updateUrl == null || updateUrl.isBlank()) updateUrl = DEFAULT_UPDATE_URL;
+            String current = readAppVersion();
+            String latest = fetchLatestVersion(updateUrl);
+            Map<String, Object> result = new HashMap<>();
+            result.put("currentVersion", current);
+            result.put("latestVersion",  latest != null ? latest : current);
+            result.put("hasUpdate", latest != null && !latest.equals(current));
+            result.put("updateUrl", updateUrl);
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(result));
+        } catch (Exception e) {
+            logger.error("检查更新失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    /**
+     * 立即执行更新（异步，调用 vgw update）
+     * POST /api/system/auto-update/apply
+     */
+    public void applyUpdate(Context ctx) {
+        try {
+            String updateUrl = database != null ? database.getConfig(UPDATE_KEY_UPDATE_URL) : null;
+            if (updateUrl == null || updateUrl.isBlank()) updateUrl = DEFAULT_UPDATE_URL;
+            final String finalUpdateUrl = updateUrl;
+            // 先响应客户端，再异步执行更新
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("message", "更新任务已启动，系统将在更新完成后自动重启");
+            ctx.status(200);
+            ctx.contentType("application/json");
+            ctx.result(createSuccessResponse(resp));
+            new Thread(() -> {
+                try {
+                    Thread.sleep(1000);
+                    logger.info("开始执行自动更新, updateUrl={}", finalUpdateUrl);
+                    // 设置更新地址环境变量后调用 vgw update
+                    ProcessBuilder pb = new ProcessBuilder("bash", "-c",
+                            "UPDATE_SERVER_URL=\"" + finalUpdateUrl + "\" /usr/local/bin/vgw update >> /opt/senhub/logs/update.log 2>&1");
+                    pb.redirectErrorStream(true);
+                    pb.start();
+                } catch (Exception e) {
+                    logger.error("执行更新失败", e);
+                }
+            }, "auto-update").start();
+        } catch (Exception e) {
+            logger.error("触发更新失败", e);
+            ctx.status(500);
+            ctx.result(createErrorResponse(500, e.getMessage()));
+        }
+    }
+
+    private String fetchLatestVersion(String baseUrl) {
+        try {
+            String url = baseUrl.replaceAll("/$", "") + "/LATEST_VERSION";
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(5)).GET().build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) return resp.body().trim();
+        } catch (Exception e) {
+            logger.warn("获取最新版本号失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
 }
+

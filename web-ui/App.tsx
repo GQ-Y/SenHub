@@ -20,6 +20,7 @@ import { FlowManagement } from './components/FlowManagement';
 import { AiAnalysisRecords } from './components/AiAnalysisRecords';
 import { AiAlgorithmLibrary } from './components/AiAlgorithmLibrary';
 import BigScreen from './components/BigScreen';
+import UpdatePage from './components/UpdatePage';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 import { setupService } from './src/api/services';
 
@@ -60,6 +61,7 @@ const AppContent: React.FC = () => {
   const currentView = getViewFromPath(location.pathname);
   const isLoginPage = location.pathname === '/login';
   const isBigScreen = location.pathname === '/big-screen';
+  const isUpdatePage = location.pathname === '/update';
 
   // 登录页面独立显示，不包含 Layout
   if (isLoginPage) {
@@ -69,6 +71,11 @@ const AppContent: React.FC = () => {
   // 大屏页面独立显示，不包含 Layout
   if (isBigScreen) {
     return <BigScreen />;
+  }
+
+  // 更新页面独立全屏显示
+  if (isUpdatePage) {
+    return isAuthenticated ? <UpdatePage /> : <Navigate to="/login" replace />;
   }
 
   // 其他页面使用 Layout 包裹

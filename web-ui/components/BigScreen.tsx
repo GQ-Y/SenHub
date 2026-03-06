@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import { 
+import {
   BarChart, Bar, XAxis, Tooltip as RechartsTooltip, Cell, ResponsiveContainer,
   AreaChart, Area, YAxis, CartesianGrid,
-  LineChart, Line
+  LineChart, Line, ReferenceLine
 } from 'recharts';
 import { Camera, Wifi, WifiOff, AlertTriangle, Zap, Activity, Monitor } from 'lucide-react';
 
@@ -261,14 +261,14 @@ const VideoOverviewCard = () => {
       <CardTitle title="视频监控总览" />
       
       <div className="flex-1 flex flex-col justify-between min-h-0">
-        <div className="flex-shrink-0">
-          <div className="text-[rgba(0,212,255,0.7)] text-xs mb-1">在线摄像头</div>
-          <div className="text-[#00ff9d] text-[48px] font-bold leading-none animate-glow-pulse font-mono">
+        <div className="flex-shrink-0 flex items-center justify-between">
+          <div className="text-[rgba(0,212,255,0.7)] text-xs">在线摄像头</div>
+          <div className="text-[#00ff9d] text-[42px] font-bold leading-none animate-glow-pulse font-mono">
             {displayOnline}
           </div>
         </div>
 
-        <div className="flex-shrink-0 my-2">
+        <div className="flex-shrink-0 mt-1 mb-2">
           <div className="flex justify-between text-[10px] text-[rgba(255,255,255,0.4)] mb-1">
             <span>在线率</span>
             <span>{onlineRate.toFixed(1)}%</span>
@@ -711,21 +711,50 @@ const RadarFramerateCard = () => {
 
   return (
     <div className="card-bg p-4 h-full flex flex-col">
-      <CardTitle title="帧率历史曲线" />
+      <div className="flex items-center justify-between mb-1">
+        <CardTitle title="帧率历史曲线" />
+        <div className="flex items-center gap-2">
+          {radarKeys.map((key, i) => (
+            <div key={key} className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full" style={{ background: colors[i % colors.length] }} />
+              <span className="text-[10px] text-[rgba(255,255,255,0.5)] truncate max-w-[60px]">{key.replace('radar_', '').replace(/_/g, '.')}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="flex-1 w-full min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <defs>
+              {radarKeys.map((key, i) => (
+                <linearGradient key={key} id={`grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={colors[i % colors.length]} stopOpacity={0.25} />
+                  <stop offset="95%" stopColor={colors[i % colors.length]} stopOpacity={0} />
+                </linearGradient>
+              ))}
+            </defs>
             <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
-            <XAxis dataKey="time" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} axisLine={false} tickLine={false} interval={2} />
-            <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 25]} />
-            <RechartsTooltip 
-              contentStyle={{ backgroundColor: 'rgba(3,7,18,0.9)', borderColor: 'rgba(0,212,255,0.4)', color: '#fff', fontSize: '12px' }}
-              cursor={{ stroke: 'rgba(0,212,255,0.4)', strokeWidth: 1, strokeDasharray: '5 5' }}
+            <XAxis dataKey="time" tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 9 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 9 }} axisLine={false} tickLine={false} domain={[0, 30]} tickFormatter={(v: number) => String(Math.round(v))} />
+            <ReferenceLine y={20} stroke="rgba(255,107,53,0.3)" strokeDasharray="3 3" />
+            <RechartsTooltip
+              contentStyle={{ backgroundColor: 'rgba(3,7,18,0.92)', borderColor: 'rgba(0,212,255,0.4)', color: '#fff', fontSize: '11px', borderRadius: '6px' }}
+              cursor={{ stroke: 'rgba(0,212,255,0.3)', strokeWidth: 1, strokeDasharray: '4 4' }}
+              formatter={(v: any, name: string) => [`${Math.round(Number(v))} fps`, name.replace('radar_', '').replace(/_/g, '.')]}
             />
             {radarKeys.map((key, i) => (
-              <Line key={key} type="monotone" dataKey={key} stroke={colors[i % colors.length]} strokeWidth={2} dot={false} />
+              <Area
+                key={key}
+                type="monotone"
+                dataKey={key}
+                stroke={colors[i % colors.length]}
+                strokeWidth={1.5}
+                fill={`url(#grad-${i})`}
+                dot={false}
+                activeDot={{ r: 3, strokeWidth: 0 }}
+              />
             ))}
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       </div>
     </div>
@@ -736,9 +765,14 @@ const RadarFramerateCard = () => {
 
 const TopBar = () => {
   const [time, setTime] = useState(new Date());
+  const [systemName, setSystemName] = useState('SenHub');
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
+    // 读取系统名称
+    fetchAPI<{ systemName?: string }>('/api/system/info').then(info => {
+      if (info?.systemName) setSystemName(info.systemName);
+    });
     return () => clearInterval(timer);
   }, []);
 
@@ -769,7 +803,7 @@ const TopBar = () => {
       {/* Center: Title */}
       <div className="flex flex-col items-center">
         <h1 className="text-white text-[28px] font-bold text-glow tracking-wider">
-          智能安防监控指挥中心
+          {systemName} 运行状态监控平台
         </h1>
         <div className="text-[11px] text-[rgba(0,212,255,0.6)] tracking-[4px] mt-1">
           INTELLIGENT SECURITY COMMAND CENTER
@@ -789,8 +823,12 @@ const BottomBar = () => {
   const [alarms, setAlarms] = useState<AlarmRecord[]>([]);
   const [currentAlarmIndex, setCurrentAlarmIndex] = useState(0);
   const [ping, setPing] = useState(12);
+  const [appVersion, setAppVersion] = useState('...');
 
   useEffect(() => {
+    fetchAPI<{ version?: string }>('/api/system/info').then(info => {
+      if (info?.version) setAppVersion(info.version);
+    });
     const loadAlarms = async () => {
       const res = await fetchAPI<any[]>('/api/metrics/alarm-recent?limit=20');
       if (res && res.length > 0) {
@@ -823,7 +861,7 @@ const BottomBar = () => {
   return (
     <div className="h-[50px] bg-[rgba(0,0,0,0.5)] border-t border-[rgba(0,212,255,0.2)] flex items-center justify-between px-6 z-10">
       <div className="text-[rgba(255,255,255,0.3)] text-[11px] font-mono">
-        v1.0.0 BUILD 20260306
+        v{appVersion} BUILD {new Date().toISOString().slice(0,10).replace(/-/g,'')}
       </div>
 
       <div className="flex-1 mx-10 h-full flex items-center justify-center overflow-hidden relative">

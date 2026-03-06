@@ -413,6 +413,9 @@ public class Main {
             deviceMetricsCollector.start();
             logger.info("设备在线率时序采集器已启动");
 
+            // 11.2. 启动自动更新定时任务
+            startAutoUpdateScheduler(database);
+
             // 11.5. 为所有已存在的设备启动录制（如果录制功能启用，异步执行避免阻塞）
             if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
                 // 在后台线程中执行，避免阻塞主线程
@@ -851,6 +854,43 @@ public class Main {
     }
 
     /**
+     * 自动更新定时任务：每分钟检查是否到了配置的更新时间窗口
+     */
+    private void startAutoUpdateScheduler(com.digital.video.gateway.database.Database db) {
+        java.util.concurrent.ScheduledExecutorService sched =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "AutoUpdateScheduler");
+                    t.setDaemon(true);
+                    return t;
+                });
+        sched.scheduleAtFixedRate(() -> {
+            try {
+                String enabled = db.getConfig("auto_update.enabled");
+                if (!"true".equalsIgnoreCase(enabled)) return;
+                String schedule = db.getConfig("auto_update.schedule"); // e.g. FRIDAY,02:00
+                if (schedule == null || schedule.isBlank()) return;
+                String[] parts = schedule.split(",");
+                if (parts.length < 2) return;
+                String dayName  = parts[0].trim().toUpperCase();
+                String timePart = parts[1].trim(); // HH:mm
+                java.time.LocalDateTime now = java.time.LocalDateTime.now();
+                String currentDay  = now.getDayOfWeek().name();
+                String currentTime = String.format("%02d:%02d", now.getHour(), now.getMinute());
+                if (currentDay.equals(dayName) && currentTime.equals(timePart)) {
+                    logger.info("[AutoUpdate] 触发定时自动更新, schedule={}", schedule);
+                    ProcessBuilder pb = new ProcessBuilder("bash", "-c",
+                            "/usr/local/bin/vgw update >> /opt/senhub/logs/update.log 2>&1");
+                    pb.redirectErrorStream(true);
+                    pb.start();
+                }
+            } catch (Exception e) {
+                logger.warn("[AutoUpdate] 定时检查异常: {}", e.getMessage());
+            }
+        }, 60, 60, java.util.concurrent.TimeUnit.SECONDS);
+        logger.info("自动更新定时任务已启动");
+    }
+
+    /**
      * 清理 storage/downloads 下超过3天的录像片段
      */
     private void cleanupExpiredPlaybackDownloads() {
@@ -986,6 +1026,7 @@ public class Main {
         DriverController driverController = new DriverController(database);
         MqttController mqttController = new MqttController(configService, mqttClient);
         SystemController systemController = new SystemController(configService, mqttClient);
+        systemController.setDatabase(database);
         if (aiAnalysisService != null) {
             systemController.setAiAnalysisService(aiAnalysisService);
         }
@@ -1063,6 +1104,12 @@ public class Main {
         app.get("/api/system/config", systemController::getConfig);
         app.put("/api/system/config", systemController::updateConfig);
         app.get("/api/system/health", systemController::healthCheck);
+        app.get("/api/system/info", systemController::getSystemInfo);
+        app.put("/api/system/info", systemController::updateSystemInfo);
+        app.get("/api/system/auto-update", systemController::getAutoUpdate);
+        app.put("/api/system/auto-update", systemController::saveAutoUpdate);
+        app.get("/api/system/auto-update/check", systemController::checkForUpdate);
+        app.post("/api/system/auto-update/apply", systemController::applyUpdate);
 
         app.post("/api/scanner/start", scannerController::startScan);
         app.get("/api/scanner/status/{sessionId}", scannerController::getScanStatus);

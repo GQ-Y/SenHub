@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { AutoUpdateWidget } from './AutoUpdateWidget';
 import { 
   LayoutDashboard, 
   Monitor,
@@ -414,7 +415,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
             )}
             <div className="h-6 w-px bg-gray-200 mx-2"></div>
             
-            <button 
+            <button
                 onClick={toggleLanguage}
                 className="p-2 text-gray-500 hover:text-blue-600 transition-colors rounded-lg hover:bg-blue-50 flex items-center space-x-1"
                 title="Switch Language"
@@ -422,6 +423,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
                 <Languages size={20} />
                 <span className="text-xs font-bold uppercase">{language}</span>
             </button>
+
+            <AutoUpdateWidget />
 
             <button
               onClick={handleLogout}

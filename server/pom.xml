@@ -7,7 +7,7 @@
 
     <groupId>com.digital.video.gateway</groupId>
     <artifactId>senhub-app</artifactId>
-    <version>1.2.14</version>
+    <version>1.2.16</version>
     <packaging>jar</packaging>
 
     <name>SenHub</name>
@@ -171,6 +171,10 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.digital.video.gateway.Main</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                        <Implementation-Title>${project.artifactId}</Implementation-Title>
+                                    </manifestEntries>
                                 </transformer>
                             </transformers>
                         </configuration>
