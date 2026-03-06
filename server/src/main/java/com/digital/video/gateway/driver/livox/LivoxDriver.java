@@ -2,6 +2,8 @@ package com.digital.video.gateway.driver.livox;
 
 import com.digital.video.gateway.driver.livox.protocol.SdkPacket;
 import com.digital.video.gateway.database.Database;
+import com.digital.video.gateway.database.RadarDevice;
+import com.digital.video.gateway.database.RadarDeviceDAO;
 // 使用项目内部的 LivoxJNI（包含设备信息回调支持）
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -16,6 +18,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
+import java.util.List;
 
 /**
  * Livox Driver - 基于官方 SDK (JNI) 的驱动实现
@@ -164,19 +167,23 @@ public class LivoxDriver {
     }
 
     /**
-     * 生成 Livox 配置文件
+     * 生成 Livox 配置文件。
+     * 支持多雷达：为数据库中每台雷达分配独立的主机端口组，
+     * 避免多台 Mid-360 共享同一端口导致 SDK 层数据冲突。
+     * 端口分配规则：第 N 台（0-based）雷达的各端口 = 基础端口 + N * 10。
+     *
      * @return 配置文件路径，失败返回 null
      */
     private String generateLivoxConfig() {
         try {
             // 从数据库读取配置
             String hostIp = getConfig("livox.host_ip");
-            String multicastIp = getConfig("livox.multicast_ip", DEFAULT_MULTICAST_IP);
-            int cmdDataPort = getIntConfig("livox.cmd_data_port", DEFAULT_CMD_DATA_PORT);
-            int pushMsgPort = getIntConfig("livox.push_msg_port", DEFAULT_PUSH_MSG_PORT);
-            int pointDataPort = getIntConfig("livox.point_data_port", DEFAULT_POINT_DATA_PORT);
-            int imuDataPort = getIntConfig("livox.imu_data_port", DEFAULT_IMU_DATA_PORT);
-            int logDataPort = getIntConfig("livox.log_data_port", DEFAULT_LOG_DATA_PORT);
+            String multicastIp        = getConfig("livox.multicast_ip",    DEFAULT_MULTICAST_IP);
+            int baseCmdDataPort       = getIntConfig("livox.cmd_data_port",   DEFAULT_CMD_DATA_PORT);
+            int basePushMsgPort       = getIntConfig("livox.push_msg_port",   DEFAULT_PUSH_MSG_PORT);
+            int basePointDataPort     = getIntConfig("livox.point_data_port", DEFAULT_POINT_DATA_PORT);
+            int baseImuDataPort       = getIntConfig("livox.imu_data_port",   DEFAULT_IMU_DATA_PORT);
+            int baseLogDataPort       = getIntConfig("livox.log_data_port",   DEFAULT_LOG_DATA_PORT);
 
             // 如果 host_ip 为空，自动检测
             if (hostIp == null || hostIp.trim().isEmpty()) {
@@ -188,32 +195,54 @@ public class LivoxDriver {
                 log.info("自动检测到本地 IP: {}", hostIp);
             }
 
+            // 从数据库读取已注册雷达设备列表，用于确定需要分配的端口组数量
+            List<RadarDevice> radarDevices = null;
+            if (database != null) {
+                try {
+                    radarDevices = new RadarDeviceDAO(database.getConnection()).getAll();
+                } catch (Exception e) {
+                    log.warn("读取雷达设备列表失败，退化为单雷达端口配置: {}", e.getMessage());
+                }
+            }
+            int radarCount = (radarDevices != null && !radarDevices.isEmpty()) ? radarDevices.size() : 1;
+
             // 创建 JSON 配置
             ObjectMapper mapper = new ObjectMapper();
-            ObjectNode root = mapper.createObjectNode();
-            ObjectNode mid360 = mapper.createObjectNode();
+            ObjectNode root     = mapper.createObjectNode();
+            ObjectNode mid360   = mapper.createObjectNode();
             root.set("MID360", mid360);
 
-            // lidar_net_info (雷达端端口)
+            // lidar_net_info：雷达端固定端口（所有型号统一，不区分台数）
             ObjectNode lidarNetInfo = mapper.createObjectNode();
-            lidarNetInfo.put("cmd_data_port", 56100);
-            lidarNetInfo.put("push_msg_port", 56200);
+            lidarNetInfo.put("cmd_data_port",   56100);
+            lidarNetInfo.put("push_msg_port",   56200);
             lidarNetInfo.put("point_data_port", 56300);
-            lidarNetInfo.put("imu_data_port", 56400);
-            lidarNetInfo.put("log_data_port", 56500);
+            lidarNetInfo.put("imu_data_port",   56400);
+            lidarNetInfo.put("log_data_port",   56500);
             mid360.set("lidar_net_info", lidarNetInfo);
 
-            // host_net_info (主机端端口)
+            // host_net_info：每台雷达独立一组端口（偏移量 = index * 10）
             ArrayNode hostNetInfoArray = mapper.createArrayNode();
-            ObjectNode hostNetInfo = mapper.createObjectNode();
-            hostNetInfo.put("host_ip", hostIp);
-            hostNetInfo.put("multicast_ip", multicastIp);
-            hostNetInfo.put("cmd_data_port", cmdDataPort);
-            hostNetInfo.put("push_msg_port", pushMsgPort);
-            hostNetInfo.put("point_data_port", pointDataPort);
-            hostNetInfo.put("imu_data_port", imuDataPort);
-            hostNetInfo.put("log_data_port", logDataPort);
-            hostNetInfoArray.add(hostNetInfo);
+            for (int i = 0; i < radarCount; i++) {
+                int offset = i * 10;
+                ObjectNode hostNetInfo = mapper.createObjectNode();
+                hostNetInfo.put("host_ip",         hostIp);
+                hostNetInfo.put("multicast_ip",    multicastIp);
+                hostNetInfo.put("cmd_data_port",   baseCmdDataPort   + offset);
+                hostNetInfo.put("push_msg_port",   basePushMsgPort   + offset);
+                hostNetInfo.put("point_data_port", basePointDataPort + offset);
+                hostNetInfo.put("imu_data_port",   baseImuDataPort   + offset);
+                hostNetInfo.put("log_data_port",   baseLogDataPort   + offset);
+                hostNetInfoArray.add(hostNetInfo);
+
+                String radarIp = (radarDevices != null && i < radarDevices.size())
+                        ? radarDevices.get(i).getRadarIp() : "unknown";
+                log.info("多雷达端口分配: 第{}台 radarIp={}, cmd={}, push={}, point={}, imu={}, log={}",
+                        i + 1, radarIp,
+                        baseCmdDataPort + offset, basePushMsgPort + offset,
+                        basePointDataPort + offset, baseImuDataPort + offset,
+                        baseLogDataPort + offset);
+            }
             mid360.set("host_net_info", hostNetInfoArray);
 
             // 写入配置文件
@@ -224,13 +253,11 @@ public class LivoxDriver {
             }
 
             String configPath = configDir + "/livox-config.json";
-            File configFile = new File(configPath);
-            
-            try (FileWriter writer = new FileWriter(configFile)) {
+            try (FileWriter writer = new FileWriter(new File(configPath))) {
                 mapper.writerWithDefaultPrettyPrinter().writeValue(writer, root);
             }
 
-            log.info("Livox 配置文件已生成: {}", configPath);
+            log.info("Livox 配置文件已生成: {}，共 {} 台雷达端口配置", configPath, radarCount);
             return configPath;
 
         } catch (Exception e) {

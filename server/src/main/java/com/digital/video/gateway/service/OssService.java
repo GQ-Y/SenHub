@@ -235,8 +235,9 @@ public class OssService {
                         file);
                 aliyunClient.putObject(putObjectRequest);
 
+                String cleanEndpoint = ossConfig.getEndpoint().replaceAll("^https?://", "");
                 String url = "https://" + ossConfig.getBucketName() + "." +
-                        ossConfig.getEndpoint() + "/" + objectKey;
+                        cleanEndpoint + "/" + objectKey;
                 logger.info("文件上传 阿里云 OSS 成功: localPath={}, key={}, url={}", localFilePath, objectKey, url);
                 return url;
             }

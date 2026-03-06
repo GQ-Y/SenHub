@@ -99,10 +99,20 @@ public class RadarService {
     /**
      * 点云处理线程池：将 routePointCloud（降噪/侵入检测/推送）从 Livox 回调线程中剥离，
      * 避免在检测模式下阻塞回调导致 UDP 收包变慢、点云吞吐量骤降。
-     * Mid-360 约 2,000+ 帧/秒，需 4 线程 + 256 深度队列才能保证检测模式下 < 5% 丢帧。
+     *
+     * 线程数动态适配：按可用 CPU 核心数的 80% 计算，最少 2 线程、最多 16 线程，
+     * 在多雷达（帧率成倍增加）场景下自动提升并发能力。
+     * 队列深度同比例扩展：线程数 * 64（单雷达约 256，4 核机器约 4*64=256）。
      */
-    private static final int POINT_CLOUD_WORKER_THREADS = 4;
-    private static final int POINT_CLOUD_QUEUE_CAPACITY = 256;
+    private static final int POINT_CLOUD_WORKER_THREADS;
+    private static final int POINT_CLOUD_QUEUE_CAPACITY;
+
+    static {
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        // 取 CPU 核心数的 80%，向上取整，下限 2，上限 16
+        POINT_CLOUD_WORKER_THREADS = Math.min(16, Math.max(2, (int) Math.ceil(cpuCores * 0.8)));
+        POINT_CLOUD_QUEUE_CAPACITY = POINT_CLOUD_WORKER_THREADS * 64;
+    }
     private final AtomicLong lastQueueFullLogTime = new AtomicLong(0);
     private final ThreadPoolExecutor pointCloudExecutor = new ThreadPoolExecutor(
             POINT_CLOUD_WORKER_THREADS, POINT_CLOUD_WORKER_THREADS, 60L, TimeUnit.SECONDS,
@@ -141,6 +151,9 @@ public class RadarService {
         this.motionPredictionService = new MotionPredictionService();
         this.webSocketHandler = new RadarWebSocketHandler(this);
         this.statusMonitor = new RadarStatusMonitor(database);
+        logger.info("点云处理线程池: workers={}, queue={} (CPU核心数={}，使用80%)",
+                POINT_CLOUD_WORKER_THREADS, POINT_CLOUD_QUEUE_CAPACITY,
+                Runtime.getRuntime().availableProcessors());
     }
 
     /**
@@ -1221,6 +1234,39 @@ public class RadarService {
      */
     public Map<String, Long> getLastPointCloudTimeMap() {
         return new HashMap<>(lastPointCloudTime);
+    }
+
+    /**
+     * 设备被删除时清理所有与其相关的内存缓存。
+     * 必须在数据库删除之后、下一帧点云到达之前调用，否则旧的 handle 映射依然有效，
+     * 会将新注册（同 IP/SN）设备的数据错误路由到已删除的 deviceId。
+     *
+     * @param deviceId 被删除的设备ID
+     */
+    public void onDeviceRemoved(String deviceId) {
+        // 1. 清除 handle -> deviceId 缓存（核心修复）
+        handleToDeviceIdCache.entrySet().removeIf(entry -> deviceId.equals(entry.getValue()));
+
+        // 2. 清除设备运行状态
+        deviceStates.remove(deviceId);
+        loadedBackgrounds.remove(deviceId);
+        deviceZones.remove(deviceId);
+        deviceSerialMap.remove(deviceId);
+        deviceConnectionStatus.remove(deviceId);
+        lastPointCloudTime.remove(deviceId);
+        lastIntrusionLogTime.remove(deviceId);
+
+        // 3. 清除 ip -> handle 映射中与该设备关联的条目
+        //    通过 serial 反查 ip，再从 ipToHandleMap 中移除
+        String serial = deviceSerialMap.remove(deviceId);
+        if (serial != null) {
+            sdkDeviceInfoCache.entrySet().removeIf(e -> {
+                String[] info = e.getValue();
+                return info != null && info.length > 0 && serial.equals(info[0]);
+            });
+        }
+
+        logger.info("设备缓存已清除: deviceId={}", deviceId);
     }
 
     // ==================== 公共API方法 ====================

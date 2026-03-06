@@ -398,13 +398,16 @@ public class RadarController {
             // 4. 删除雷达设备
             if (radarDeviceDAO.delete(deviceId)) {
                 logger.info("雷达设备已删除: deviceId={}", deviceId);
-                
+
+                // 清除 RadarService 内存缓存（handle->deviceId 映射等），防止旧映射污染后续设备
+                radarService.onDeviceRemoved(deviceId);
+
                 Map<String, Object> result = new HashMap<>();
                 result.put("deviceId", deviceId);
                 result.put("deletedIntrusions", deletedIntrusions);
                 result.put("deletedZones", deletedZones);
                 result.put("deletedBackgrounds", deletedBackgrounds);
-                
+
                 ctx.result(createSuccessResponse(result));
             } else {
                 ctx.status(400);
