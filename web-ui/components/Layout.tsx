@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
+  Monitor,
   Camera, 
   Settings, 
   Cpu, 
@@ -253,6 +254,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView }) => {
               label={t('dashboard')} 
               isActive={currentView === 'DASHBOARD'} 
               onClick={() => handleNavigate('DASHBOARD')}
+              collapsed={sidebarCollapsed}
+            />
+            <SidebarItem 
+              icon={Monitor} 
+              label={t('big_screen') || 'Big Screen'} 
+              isActive={false} 
+              onClick={() => window.open('/big-screen', '_blank')}
               collapsed={sidebarCollapsed}
             />
             {!sidebarCollapsed && (

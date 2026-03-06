@@ -125,10 +125,19 @@ public class SetupController {
             // 返回成功
             Map<String, Object> resp = new HashMap<>();
             resp.put("code", 200);
-            resp.put("message", "安装完成，请使用设定的账号登录系统");
+            resp.put("message", "安装完成，系统即将重启，请稍候几秒后刷新页面登录");
             resp.put("data", null);
             ctx.status(200).contentType("application/json");
             ctx.result(objectMapper.writeValueAsString(resp));
+
+            // 响应发送后异步重启：systemd Restart=on-failure 会自动拉起进入完整模式
+            new Thread(() -> {
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ignored) {}
+                logger.info("安装向导完成，触发进程重启以进入完整运行模式...");
+                System.exit(0);
+            }, "setup-restart").start();
 
         } catch (Exception e) {
             logger.error("安装向导执行失败", e);

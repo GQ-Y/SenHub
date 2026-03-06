@@ -3,6 +3,7 @@ package com.digital.video.gateway.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.digital.video.gateway.database.Assembly;
 import com.digital.video.gateway.database.AssemblyDevice;
+import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.driver.livox.model.DefenseZone;
 import com.digital.video.gateway.service.AssemblyService;
 import com.digital.video.gateway.service.DefenseZoneService;
@@ -10,6 +11,10 @@ import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,11 +28,17 @@ public class AssemblyController {
     private static final Logger logger = LoggerFactory.getLogger(AssemblyController.class);
     private final AssemblyService assemblyService;
     private final DefenseZoneService defenseZoneService;
+    private final Database database;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AssemblyController(AssemblyService assemblyService, DefenseZoneService defenseZoneService) {
+        this(assemblyService, defenseZoneService, null);
+    }
+
+    public AssemblyController(AssemblyService assemblyService, DefenseZoneService defenseZoneService, Database database) {
         this.assemblyService = assemblyService;
         this.defenseZoneService = defenseZoneService;
+        this.database = database;
     }
 
     /**
@@ -44,9 +55,27 @@ public class AssemblyController {
             List<Map<String, Object>> result = new java.util.ArrayList<>();
             for (Assembly assembly : assemblies) {
                 Map<String, Object> map = assembly.toMap();
-                // 获取设备数量
+                // 获取设备数量及在线数量
                 List<AssemblyDevice> devices = assemblyService.getAssemblyDevices(assembly.getAssemblyId());
-                map.put("deviceCount", devices.size());
+                int totalCount = devices.size();
+                map.put("deviceCount", totalCount);
+                // 通过 SQL 查询在线设备数
+                int onlineCount = 0;
+                if (database != null && totalCount > 0) {
+                    try (Connection conn = database.getPoolConnection();
+                         PreparedStatement pstmt = conn.prepareStatement(
+                                 "SELECT COUNT(*) FROM devices d " +
+                                 "JOIN assembly_devices ad ON d.device_id = ad.device_id " +
+                                 "WHERE ad.assembly_id = ? AND d.status = 1")) {
+                        pstmt.setString(1, assembly.getAssemblyId());
+                        try (ResultSet rs = pstmt.executeQuery()) {
+                            if (rs.next()) onlineCount = rs.getInt(1);
+                        }
+                    } catch (SQLException e) {
+                        logger.debug("查询装置在线设备数失败: {}", e.getMessage());
+                    }
+                }
+                map.put("onlineDeviceCount", onlineCount);
                 result.add(map);
             }
 

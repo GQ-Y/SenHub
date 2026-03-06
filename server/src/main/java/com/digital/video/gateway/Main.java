@@ -993,7 +993,7 @@ public class Main {
         IntrusionDetectionService intrusionDetectionService = new IntrusionDetectionService(database);
 
         // 初始化新增控制器（使用已初始化的服务实例）
-        AssemblyController assemblyController = new AssemblyController(assemblyService, defenseZoneService);
+        AssemblyController assemblyController = new AssemblyController(assemblyService, defenseZoneService, database);
         AlarmRuleController alarmRuleController = new AlarmRuleController(alarmRuleService);
         AlarmRecordController alarmRecordController = new AlarmRecordController(alarmRecordService, deviceManager, assemblyService);
         SpeakerController speakerController = new SpeakerController(speakerService);
@@ -1231,6 +1231,8 @@ public class Main {
         app.get("/api/metrics/device-availability", metricsController::getDeviceAvailability);
         app.get("/api/metrics/radar-framerate", metricsController::getRadarFramerate);
         app.get("/api/metrics/radar-compare", metricsController::getRadarCompare);
+        app.get("/api/metrics/big-screen-summary", metricsController::getBigScreenSummary);
+        app.get("/api/metrics/alarm-recent", metricsController::getAlarmRecent);
 
         app.start(port);
         logger.info("HTTP服务器已启动，端口: {}", port);
@@ -1249,18 +1251,23 @@ public class Main {
 
         io.javalin.Javalin setupApp = io.javalin.Javalin.create(javalinConfig -> {
             javalinConfig.plugins.enableCors(cors -> cors.add(it -> it.anyHost()));
+            javalinConfig.staticFiles.add(sf -> {
+                sf.hostedPath = "/";
+                sf.directory = "/static";
+                sf.location = io.javalin.http.staticfiles.Location.CLASSPATH;
+            });
+            javalinConfig.spaRoot.addFile("/", "/static/index.html", io.javalin.http.staticfiles.Location.CLASSPATH);
         });
 
         SetupController setupCtrl = new SetupController(db, cfg);
         setupApp.get("/api/setup/status", setupCtrl::getStatus);
         setupApp.post("/api/setup/install", setupCtrl::install);
 
-        // 所有其他请求返回 503
-        setupApp.before("*", ctx -> {
+        // 只拦截 /api/ 请求中非 setup 的部分，静态文件和前端页面正常放行
+        setupApp.before("/api/*", ctx -> {
             String path = ctx.path();
             if (!path.startsWith("/api/setup/")) {
                 ctx.status(503).result("{\"code\":503,\"message\":\"系统尚未完成初始化，请先访问安装向导\",\"data\":null}");
-                ctx.skipRemainingHandlers();
             }
         });
 

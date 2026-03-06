@@ -25,7 +25,16 @@ public class RadarDeviceDAO {
         String sql = "INSERT INTO radar_devices " +
                 "(device_id, radar_ip, radar_name, assembly_id, radar_serial, status, current_background_id, " +
                 "coordinate_transform, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW()) " +
+                "ON CONFLICT (device_id) DO UPDATE SET " +
+                "radar_ip = EXCLUDED.radar_ip, " +
+                "radar_name = EXCLUDED.radar_name, " +
+                "assembly_id = EXCLUDED.assembly_id, " +
+                "radar_serial = COALESCE(EXCLUDED.radar_serial, radar_devices.radar_serial), " +
+                "status = EXCLUDED.status, " +
+                "current_background_id = COALESCE(EXCLUDED.current_background_id, radar_devices.current_background_id), " +
+                "coordinate_transform = COALESCE(EXCLUDED.coordinate_transform, radar_devices.coordinate_transform), " +
+                "updated_at = NOW()";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
             pstmt.setString(2, device.getRadarIp());

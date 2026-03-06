@@ -95,8 +95,8 @@ public class CanonicalEventTable {
      * 确保 GIS_INFO_UPLOAD 标准事件及海康映射存在（云台操作会上报该事件，需入事件库以便规则可显式配置）
      */
     public static void ensureGisInfoUploadEvent(Connection connection) throws SQLException {
-        String insertEvent = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, description, severity) VALUES (1122, 'GIS_INFO_UPLOAD', 'GIS信息上传', 'GIS Info Upload', 'basic', '云台/球机上报GIS位置信息', 'info')";
-        String insertMapping = "INSERT INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) VALUES ('hikvision', 'command', 16402, 'GIS_INFO_UPLOAD', 0, 'GIS信息上传 (COMM_GISINFO_UPLOAD 0x4012)')";
+        String insertEvent = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, description, severity) VALUES (1122, 'GIS_INFO_UPLOAD', 'GIS信息上传', 'GIS Info Upload', 'basic', '云台/球机上报GIS位置信息', 'info') ON CONFLICT DO NOTHING";
+        String insertMapping = "INSERT INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) VALUES ('hikvision', 'command', 16402, 'GIS_INFO_UPLOAD', 0, 'GIS信息上传 (COMM_GISINFO_UPLOAD 0x4012)') ON CONFLICT DO NOTHING";
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(insertEvent);
             stmt.execute(insertMapping);
@@ -152,7 +152,7 @@ public class CanonicalEventTable {
                 return;
             }
             String updateSql = "UPDATE canonical_events SET event_id = ?, name_zh = ?, name_en = ?, category = ?, severity = ?, description = ?, updated_at = NOW() WHERE event_key = ?";
-            String insertSql = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            String insertSql = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
             int updated = 0, inserted = 0;
             String line = reader.readLine();
             if (line == null || !line.trim().toLowerCase().startsWith("event_id")) {

@@ -207,6 +207,7 @@ public class RadarController {
                 if (assembly == null) {
                     ctx.status(400);
                     ctx.result(createErrorResponse(400, "指定的装置不存在: " + assemblyId));
+                    return;
                 }
                 device.setAssemblyId(assemblyId.trim());
             }
@@ -284,6 +285,7 @@ public class RadarController {
             if (existingDevice == null) {
                 ctx.status(404);
                 ctx.result(createErrorResponse(404, "雷达设备不存在: " + deviceId));
+                return;
             }
             
             // 更新字段
@@ -295,6 +297,7 @@ public class RadarController {
                 if (!isValidIpAddress(radarIp)) {
                     ctx.status(400);
                     ctx.result(createErrorResponse(400, "无效的IP地址格式"));
+                    return;
                 }
                 // 检查IP是否被其他设备占用
                 List<RadarDevice> allDevices = radarDeviceDAO.getAll();
@@ -302,6 +305,7 @@ public class RadarController {
                     if (radarIp.equals(d.getRadarIp()) && !deviceId.equals(d.getDeviceId())) {
                         ctx.status(400);
                         ctx.result(createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp));
+                        return;
                     }
                 }
                 existingDevice.setRadarIp(radarIp.trim());
@@ -320,6 +324,7 @@ public class RadarController {
                     if (assembly == null) {
                         ctx.status(400);
                         ctx.result(createErrorResponse(400, "指定的装置不存在: " + assemblyId));
+                        return;
                     }
                     existingDevice.setAssemblyId(assemblyId.trim());
                 }

@@ -15,6 +15,8 @@ import java.util.*;
  * GET /api/metrics/device-availability   — 近N分钟每分钟设备在线率折线图
  * GET /api/metrics/radar-framerate       — 指定雷达近N分钟点云帧率曲线
  * GET /api/metrics/radar-compare         — 多雷达实时对比仪表盘
+ * GET /api/metrics/big-screen-summary    — 大屏汇总数据（设备/告警/工作流/装置）
+ * GET /api/metrics/alarm-recent          — 最近N条告警记录（底部滚动栏）
  */
 public class MetricsController {
     private static final Logger logger = LoggerFactory.getLogger(MetricsController.class);
@@ -236,6 +238,184 @@ public class MetricsController {
             sendSuccess(ctx, new ArrayList<>(radarMap.values()));
         } catch (SQLException e) {
             logger.error("获取多雷达对比数据失败", e);
+            sendError(ctx, 500, "查询失败: " + e.getMessage());
+        }
+    }
+
+    // ==================== 5. 大屏汇总 ====================
+
+    /**
+     * GET /api/metrics/big-screen-summary
+     * 一次返回大屏所需的设备在线率、雷达运行率、告警处理率、工作流统计、webhook统计
+     */
+    public void getBigScreenSummary(Context ctx) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+
+        try (Connection conn = database.getPoolConnection()) {
+
+            // --- 设备在线率（最近一条 device_metrics 记录）---
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                         "SELECT total_count, online_count FROM device_metrics ORDER BY time DESC LIMIT 1")) {
+                if (rs.next()) {
+                    int total = rs.getInt("total_count");
+                    int online = rs.getInt("online_count");
+                    double rate = total > 0 ? Math.round(online * 1000.0 / total) / 10.0 : 0.0;
+                    summary.put("deviceTotal", total);
+                    summary.put("deviceOnline", online);
+                    summary.put("deviceAvailability", rate);
+                } else {
+                    // 从 devices 表实时计算
+                    try (Statement s2 = conn.createStatement();
+                         ResultSet r2 = s2.executeQuery(
+                                 "SELECT COUNT(*) as total, SUM(CASE WHEN status=1 THEN 1 ELSE 0 END) as online FROM devices")) {
+                        if (r2.next()) {
+                            int total = r2.getInt("total");
+                            int online = r2.getInt("online");
+                            double rate = total > 0 ? Math.round(online * 1000.0 / total) / 10.0 : 0.0;
+                            summary.put("deviceTotal", total);
+                            summary.put("deviceOnline", online);
+                            summary.put("deviceAvailability", rate);
+                        } else {
+                            summary.put("deviceTotal", 0);
+                            summary.put("deviceOnline", 0);
+                            summary.put("deviceAvailability", 0.0);
+                        }
+                    }
+                }
+            } catch (SQLException e) {
+                summary.put("deviceTotal", 0);
+                summary.put("deviceOnline", 0);
+                summary.put("deviceAvailability", 0.0);
+            }
+
+            // --- 24h 告警总数 + 已处理数 ---
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                         "SELECT COUNT(*) as total, " +
+                         "SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END) as processed " +
+                         "FROM alarm_records " +
+                         "WHERE recorded_at >= NOW() - INTERVAL '24 hours'")) {
+                if (rs.next()) {
+                    int total = rs.getInt("total");
+                    int processed = rs.getInt("processed");
+                    double alarmRate = total > 0 ? Math.round(processed * 1000.0 / total) / 10.0 : 100.0;
+                    summary.put("alarmTotal24h", total);
+                    summary.put("alarmProcessed24h", processed);
+                    summary.put("alarmHandleRate", alarmRate);
+                }
+            } catch (SQLException e) {
+                summary.put("alarmTotal24h", 0);
+                summary.put("alarmProcessed24h", 0);
+                summary.put("alarmHandleRate", 100.0);
+            }
+
+            // --- 雷达运行率（最近65秒有数据即算在线）---
+            try {
+                int totalRadars = 0;
+                int onlineRadars = 0;
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM radar_devices")) {
+                    if (rs.next()) totalRadars = rs.getInt(1);
+                }
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery(
+                             "SELECT COUNT(DISTINCT device_id) FROM radar_frame_metrics " +
+                             "WHERE time >= NOW() - INTERVAL '65 seconds'")) {
+                    if (rs.next()) onlineRadars = rs.getInt(1);
+                }
+                double radarRate = totalRadars > 0 ? Math.round(onlineRadars * 1000.0 / totalRadars) / 10.0 : 0.0;
+                summary.put("radarTotal", totalRadars);
+                summary.put("radarOnline", onlineRadars);
+                summary.put("radarRate", radarRate);
+            } catch (SQLException e) {
+                summary.put("radarTotal", 0);
+                summary.put("radarOnline", 0);
+                summary.put("radarRate", 0.0);
+            }
+
+            // --- 工作流 24h 执行统计 ---
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                         "SELECT COUNT(*) as total, COUNT(DISTINCT flow_id) as unique_flows " +
+                         "FROM workflow_execution_history " +
+                         "WHERE executed_at >= NOW() - INTERVAL '24 hours'")) {
+                if (rs.next()) {
+                    summary.put("workflowExec24h", rs.getInt("total"));
+                    summary.put("workflowActive24h", rs.getInt("unique_flows"));
+                }
+            } catch (SQLException e) {
+                summary.put("workflowExec24h", 0);
+                summary.put("workflowActive24h", 0);
+            }
+
+            // --- OSS 上传 24h 统计（oss_upload_history 表，若存在）---
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                         "SELECT COUNT(*) as total, " +
+                         "SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) as success " +
+                         "FROM oss_upload_history " +
+                         "WHERE created_at >= NOW() - INTERVAL '24 hours'")) {
+                if (rs.next()) {
+                    summary.put("ossUpload24h", rs.getInt("total"));
+                    summary.put("ossUploadSuccess24h", rs.getInt("success"));
+                }
+            } catch (SQLException ignored) {
+                // oss_upload_history 表可能不存在
+                summary.put("ossUpload24h", 0);
+                summary.put("ossUploadSuccess24h", 0);
+            }
+
+            sendSuccess(ctx, summary);
+        } catch (SQLException e) {
+            logger.error("获取大屏汇总数据失败", e);
+            sendError(ctx, 500, "查询失败: " + e.getMessage());
+        }
+    }
+
+    // ==================== 6. 最近告警记录（底部滚动栏）====================
+
+    /**
+     * GET /api/metrics/alarm-recent?limit=20
+     * 返回最近 N 条告警记录（用于大屏底部告警滚动栏）
+     */
+    public void getAlarmRecent(Context ctx) {
+        int limit = parseIntParam(ctx.queryParam("limit"), 20);
+        if (limit < 1 || limit > 100) limit = 20;
+
+        String sql = "SELECT r.alarm_id, r.alarm_type, r.alarm_level, r.recorded_at, " +
+                "d.name AS device_name, d.ip AS ip_address " +
+                "FROM alarm_records r " +
+                "LEFT JOIN devices d ON d.device_id = r.device_id " +
+                "ORDER BY r.recorded_at DESC LIMIT " + limit;
+
+        try (Connection conn = database.getPoolConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            List<Map<String, Object>> result = new ArrayList<>();
+            while (rs.next()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("id", rs.getString("alarm_id"));
+                item.put("time", rs.getString("recorded_at") != null
+                        ? rs.getTimestamp("recorded_at").toLocalDateTime()
+                              .atZone(java.time.ZoneId.of("Asia/Shanghai"))
+                              .toLocalTime().toString().substring(0, 8)
+                        : "--:--:--");
+                String deviceName = rs.getString("device_name");
+                String alarmType = rs.getString("alarm_type");
+                String level = rs.getString("alarm_level");
+                item.put("content", (deviceName != null ? deviceName : "未知设备")
+                        + " " + (alarmType != null ? alarmType : "告警")
+                        + (level != null ? " [" + level + "]" : ""));
+                item.put("level", level);
+                item.put("deviceName", deviceName);
+                result.add(item);
+            }
+
+            sendSuccess(ctx, result);
+        } catch (SQLException e) {
+            logger.error("获取最近告警记录失败", e);
             sendError(ctx, 500, "查询失败: " + e.getMessage());
         }
     }

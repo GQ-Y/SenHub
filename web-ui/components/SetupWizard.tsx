@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield, User, Lock, Eye, EyeOff, ArrowRight,
   CheckCircle, Database, Server, Key, ChevronRight
@@ -33,6 +33,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [submitError, setSubmitError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   const validate = (): boolean => {
     const newErrors: Partial<FormData> = {};
@@ -65,7 +66,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     try {
       await setupService.install(form.username.trim(), form.password, form.confirmPassword);
+      // 安装成功，服务端会在 1.5s 后重启，前端倒计时 8s 后自动跳转登录
       setStep('done');
+      setCountdown(8);
     } catch (err: any) {
       setSubmitError(err.message || '安装失败，请检查系统日志');
       setStep('account');
@@ -73,6 +76,19 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
       setIsLoading(false);
     }
   };
+
+  // 倒计时自动跳转
+  useEffect(() => {
+    if (step !== 'done' || countdown <= 0) return;
+    if (countdown === 0) { onComplete(); return; }
+    const t = setTimeout(() => {
+      setCountdown((c) => {
+        if (c <= 1) { onComplete(); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [step, countdown]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
@@ -316,8 +332,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             <div className="text-center space-y-2">
               <h3 className="font-bold text-gray-800 text-xl">安装完成！</h3>
               <p className="text-gray-500 text-sm leading-relaxed">
-                SenHub 已成功初始化，<br />
-                请使用您设置的账号密码登录。
+                SenHub 已成功初始化，系统正在重启中...
               </p>
             </div>
             <div className="w-full bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-sm text-emerald-700 space-y-1">
@@ -334,13 +349,26 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <span>系统配置已写入</span>
               </div>
             </div>
-            <button
-              onClick={onComplete}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
-            >
-              <span>进入登录页面</span>
-              <ArrowRight size={20} />
-            </button>
+            <div className="w-full text-center space-y-3">
+              <p className="text-gray-400 text-sm">
+                {countdown > 0
+                  ? `系统重启中，${countdown} 秒后自动跳转登录页...`
+                  : '正在跳转...'}
+              </p>
+              <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
+                  style={{ width: `${((8 - countdown) / 8) * 100}%` }}
+                />
+              </div>
+              <button
+                onClick={onComplete}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <span>立即进入登录页面</span>
+                <ArrowRight size={20} />
+              </button>
+            </div>
           </div>
         )}
       </div>

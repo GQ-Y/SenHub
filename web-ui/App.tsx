@@ -19,6 +19,7 @@ import { RadarMonitoring } from './components/RadarMonitoring';
 import { FlowManagement } from './components/FlowManagement';
 import { AiAnalysisRecords } from './components/AiAnalysisRecords';
 import { AiAlgorithmLibrary } from './components/AiAlgorithmLibrary';
+import BigScreen from './components/BigScreen';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 import { setupService } from './src/api/services';
 
@@ -58,10 +59,16 @@ const AppContent: React.FC = () => {
   const { isAuthenticated } = useAppContext();
   const currentView = getViewFromPath(location.pathname);
   const isLoginPage = location.pathname === '/login';
+  const isBigScreen = location.pathname === '/big-screen';
 
   // 登录页面独立显示，不包含 Layout
   if (isLoginPage) {
     return isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />;
+  }
+
+  // 大屏页面独立显示，不包含 Layout
+  if (isBigScreen) {
+    return <BigScreen />;
   }
 
   // 其他页面使用 Layout 包裹
@@ -212,7 +219,6 @@ const App: React.FC = () => {
         setInstalled(res.installed);
       })
       .catch(() => {
-        // 无法获取状态时默认当作已安装（服务端旧版本没有此接口）
         setInstalled(true);
       })
       .finally(() => {
@@ -228,10 +234,14 @@ const App: React.FC = () => {
     );
   }
 
+  // 未安装：只渲染安装向导，所有路径均指向 SetupWizard
   if (!installed) {
     return (
       <BrowserRouter>
-        <SetupWizard onComplete={() => setInstalled(true)} />
+        <Routes>
+          <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/login'} />} />
+          <Route path="*" element={<Navigate to="/setup" replace />} />
+        </Routes>
       </BrowserRouter>
     );
   }
