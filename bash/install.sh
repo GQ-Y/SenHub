@@ -313,6 +313,27 @@ EOF
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME"
     echo "  已安装并启用 $SERVICE_NAME"
+
+    # 创建独立的更新 watcher service（不依赖 senhub-app，不受其停止影响）
+    cat > "/etc/systemd/system/senhub-updater.service" << EOF
+[Unit]
+Description=SenHub Update Watcher Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash $INSTALL_DIR/bin/senhub-updater.sh
+Restart=always
+RestartSec=5
+StandardOutput=append:$INSTALL_DIR/logs/updater.log
+StandardError=append:$INSTALL_DIR/logs/updater.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable senhub-updater
+    echo "  已安装并启用 senhub-updater"
 }
 
 # ---------- 步骤 10：注入快捷命令 vgw ----------
@@ -474,6 +495,39 @@ VGWSCRIPT
     echo "  已创建 /usr/local/bin/vgw"
 }
 
+# ---------- 步骤 10b：创建 senhub-updater watcher 脚本 ----------
+step10b_updater_script() {
+    echo "[10b] 创建更新 watcher 脚本..."
+    cat > "$INSTALL_DIR/bin/senhub-updater.sh" << 'UPDATERSCRIPT'
+#!/bin/bash
+# senhub-updater.sh - 独立于 senhub-app.service 运行的更新 watcher
+# 监听 /opt/senhub/update.trigger 文件，检测到后执行 vgw update
+INSTALL_DIR="/opt/senhub"
+TRIGGER_FILE="$INSTALL_DIR/update.trigger"
+LOG_FILE="$INSTALL_DIR/logs/update.log"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] senhub-updater 已启动，监听触发文件: $TRIGGER_FILE"
+
+while true; do
+    if [ -f "$TRIGGER_FILE" ]; then
+        UPDATE_URL="$(head -1 "$TRIGGER_FILE" 2>/dev/null | tr -d '[:space:]')"
+        rm -f "$TRIGGER_FILE"
+        echo "" >> "$LOG_FILE"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 检测到更新触发，UPDATE_URL=$UPDATE_URL" >> "$LOG_FILE"
+        if [ -n "$UPDATE_URL" ]; then
+            SENHUB_BASE_URL="$UPDATE_URL" /usr/local/bin/vgw update >> "$LOG_FILE" 2>&1
+        else
+            /usr/local/bin/vgw update >> "$LOG_FILE" 2>&1
+        fi
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 更新任务执行完毕，退出码: $?" >> "$LOG_FILE"
+    fi
+    sleep 3
+done
+UPDATERSCRIPT
+    chmod +x "$INSTALL_DIR/bin/senhub-updater.sh"
+    echo "  已创建 $INSTALL_DIR/bin/senhub-updater.sh"
+}
+
 # ---------- 步骤 11：验证数据库连接 ----------
 step11_verify_db() {
     echo "[11/12] 验证数据库连接..."
@@ -505,6 +559,7 @@ step11_verify_db() {
 step12_start() {
     echo "[12/12] 启动服务..."
     systemctl start "$SERVICE_NAME"
+    systemctl start senhub-updater
     sleep 5
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "  服务已启动 (版本: $SENHUB_VERSION)"
@@ -534,6 +589,7 @@ main() {
     step8_env
     step9_systemd
     step10_vgw_cmd
+    step10b_updater_script
     step11_verify_db
     step12_start
     echo ""

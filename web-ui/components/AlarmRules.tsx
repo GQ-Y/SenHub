@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Search, Edit2, Trash2, X, ToggleLeft, ToggleRight, Workflow } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { alarmRuleService, flowService, eventTypeService } from '../src/api/services';
@@ -31,14 +32,14 @@ const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, children }) => 
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
       <div
-        className="absolute right-0 top-0 h-screen w-2/3 max-w-full bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out"
+        className="absolute right-0 top-0 h-full w-2/3 max-w-full bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out"
         style={{ transform: isOpen ? 'translateX(0)' : 'translateX(100%)' }}
       >
         <div className="flex-shrink-0 w-full px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
@@ -54,7 +55,8 @@ const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, children }) => 
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

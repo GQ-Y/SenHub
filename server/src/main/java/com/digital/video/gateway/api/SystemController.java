@@ -1059,7 +1059,7 @@ public class SystemController {
     }
 
     /**
-     * 立即执行更新（异步，调用 vgw update）
+     * 立即执行更新（异步，写触发文件由独立 watcher service 执行）
      * POST /api/system/auto-update/apply
      */
     public void applyUpdate(Context ctx) {
@@ -1067,23 +1067,24 @@ public class SystemController {
             String updateUrl = database != null ? database.getConfig(UPDATE_KEY_UPDATE_URL) : null;
             if (updateUrl == null || updateUrl.isBlank()) updateUrl = DEFAULT_UPDATE_URL;
             final String finalUpdateUrl = updateUrl;
-            // 先响应客户端，再异步执行更新
             Map<String, Object> resp = new HashMap<>();
-            resp.put("message", "更新任务已启动，系统将在更新完成后自动重启");
+            resp.put("message", "更新任务已提交，系统将在后台下载并自动重启");
             ctx.status(200);
             ctx.contentType("application/json");
             ctx.result(createSuccessResponse(resp));
             new Thread(() -> {
                 try {
-                    Thread.sleep(1000);
-                    logger.info("开始执行自动更新, updateUrl={}", finalUpdateUrl);
-                    // 设置更新地址环境变量后调用 vgw update
-                    ProcessBuilder pb = new ProcessBuilder("bash", "-c",
-                            "UPDATE_SERVER_URL=\"" + finalUpdateUrl + "\" /usr/local/bin/vgw update >> /opt/senhub/logs/update.log 2>&1");
-                    pb.redirectErrorStream(true);
-                    pb.start();
+                    Thread.sleep(500);
+                    logger.info("写入更新触发文件, updateUrl={}", finalUpdateUrl);
+                    // 写触发文件，由独立的 senhub-updater.service watcher 负责执行 vgw update
+                    // 这样 systemctl stop senhub-app 不会影响更新进程
+                    java.nio.file.Path trigger = java.nio.file.Paths.get("/opt/senhub/update.trigger");
+                    java.nio.file.Files.writeString(trigger, finalUpdateUrl + "\n",
+                            java.nio.file.StandardOpenOption.CREATE,
+                            java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                    logger.info("更新触发文件已写入: {}", trigger);
                 } catch (Exception e) {
-                    logger.error("执行更新失败", e);
+                    logger.error("写入更新触发文件失败", e);
                 }
             }, "auto-update").start();
         } catch (Exception e) {

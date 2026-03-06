@@ -16,8 +16,8 @@ export const LoginPage: React.FC = () => {
   const { login, t, setLanguage, language } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('123456');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [showPassword, setShowPassword] = useState(false);

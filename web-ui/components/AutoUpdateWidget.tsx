@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, RefreshCw, Settings, X, CheckCircle, AlertCircle, Clock, Globe, ToggleLeft, ToggleRight, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -99,9 +100,9 @@ export const AutoUpdateWidget: React.FC = () => {
         )}
       </button>
 
-      {/* 设置模态框 */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      {/* 设置模态框 - 挂载到 body 避免被 sticky header 裁剪 */}
+      {showModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-[480px] max-w-[95vw] overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
@@ -232,7 +233,8 @@ export const AutoUpdateWidget: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

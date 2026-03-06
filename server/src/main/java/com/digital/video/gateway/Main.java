@@ -878,10 +878,18 @@ public class Main {
                 String currentTime = String.format("%02d:%02d", now.getHour(), now.getMinute());
                 if (currentDay.equals(dayName) && currentTime.equals(timePart)) {
                     logger.info("[AutoUpdate] 触发定时自动更新, schedule={}", schedule);
-                    ProcessBuilder pb = new ProcessBuilder("bash", "-c",
-                            "/usr/local/bin/vgw update >> /opt/senhub/logs/update.log 2>&1");
-                    pb.redirectErrorStream(true);
-                    pb.start();
+                    // 写触发文件，由独立的 senhub-updater.service watcher 负责执行
+                    try {
+                        java.nio.file.Path trigger = java.nio.file.Paths.get("/opt/senhub/update.trigger");
+                        String updateUrl = db.getConfig("auto_update.update_url");
+                        if (updateUrl == null || updateUrl.isBlank()) updateUrl = "http://demo.zt.admins.smartrail.cloud";
+                        java.nio.file.Files.writeString(trigger, updateUrl + "\n",
+                                java.nio.file.StandardOpenOption.CREATE,
+                                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                        logger.info("[AutoUpdate] 更新触发文件已写入: {}", trigger);
+                    } catch (Exception ex) {
+                        logger.warn("[AutoUpdate] 写触发文件失败: {}", ex.getMessage());
+                    }
                 }
             } catch (Exception e) {
                 logger.warn("[AutoUpdate] 定时检查异常: {}", e.getMessage());
