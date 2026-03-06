@@ -56,7 +56,7 @@ public class CameraTestRunner {
         logger.info("加载配置...");
         config = ConfigLoader.load("config.yaml");
         SDKFactory.init(config);
-        database = new Database(config.getDatabase().getPath());
+        database = new Database(config.getDatabase());
         database.init();
         deviceManager = new DeviceManager(database, config.getDevice());
         captureService = new CaptureService(deviceManager, "./storage/captures");

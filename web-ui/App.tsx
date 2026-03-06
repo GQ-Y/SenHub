@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -8,6 +8,7 @@ import { DriverConfig } from './components/DriverConfig';
 import { MqttConfig } from './components/MqttConfig';
 import { SystemSettings } from './components/SystemSettings';
 import { LoginPage } from './components/LoginPage';
+import { SetupWizard } from './components/SetupWizard';
 import { AssemblyManagement } from './components/AssemblyManagement';
 import { AssemblyDetail } from './components/AssemblyDetail';
 import { AlarmRules } from './components/AlarmRules';
@@ -19,6 +20,7 @@ import { FlowManagement } from './components/FlowManagement';
 import { AiAnalysisRecords } from './components/AiAnalysisRecords';
 import { AiAlgorithmLibrary } from './components/AiAlgorithmLibrary';
 import { AppProvider, useAppContext } from './contexts/AppContext';
+import { setupService } from './src/api/services';
 
 // 路由守卫组件
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -201,6 +203,39 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  const [installChecked, setInstallChecked] = useState(false);
+  const [installed, setInstalled] = useState(true);
+
+  useEffect(() => {
+    setupService.getStatus()
+      .then((res) => {
+        setInstalled(res.installed);
+      })
+      .catch(() => {
+        // 无法获取状态时默认当作已安装（服务端旧版本没有此接口）
+        setInstalled(true);
+      })
+      .finally(() => {
+        setInstallChecked(true);
+      });
+  }, []);
+
+  if (!installChecked) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!installed) {
+    return (
+      <BrowserRouter>
+        <SetupWizard onComplete={() => setInstalled(true)} />
+      </BrowserRouter>
+    );
+  }
+
   return (
     <BrowserRouter>
       <AppProvider>

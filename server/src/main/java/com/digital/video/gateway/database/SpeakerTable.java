@@ -19,15 +19,15 @@ public class SpeakerTable {
     public static void createTables(Connection connection) throws SQLException {
         // speakers 表
         String createSpeakersTable = "CREATE TABLE IF NOT EXISTS speakers (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "id SERIAL PRIMARY KEY, " +
             "device_id TEXT UNIQUE NOT NULL, " +
             "name TEXT NOT NULL, " +
             "api_endpoint TEXT, " +
             "api_type TEXT DEFAULT 'http', " +
             "api_config TEXT, " +
             "status TEXT DEFAULT 'offline', " +
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+            "created_at TIMESTAMP DEFAULT NOW(), " +
+            "updated_at TIMESTAMP DEFAULT NOW()" +
             ")";
 
         // 创建索引

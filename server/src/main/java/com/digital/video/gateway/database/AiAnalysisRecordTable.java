@@ -23,7 +23,7 @@ public class AiAnalysisRecordTable {
                 + "verify_reason TEXT,"
                 + "alert_text TEXT,"
                 + "voice_url TEXT,"
-                + "created_at TEXT DEFAULT (datetime('now','localtime'))"
+                + "created_at TEXT DEFAULT (NOW())"
                 + ")";
         String indexSql = "CREATE INDEX IF NOT EXISTS idx_ai_analysis_time ON ai_analysis_records(time DESC)";
         try (Statement stmt = connection.createStatement()) {
@@ -33,7 +33,7 @@ public class AiAnalysisRecordTable {
     }
 
     public static void insert(Connection connection, Map<String, Object> record) throws SQLException {
-        String sql = "INSERT OR REPLACE INTO ai_analysis_records "
+        String sql = "INSERT INTO ai_analysis_records "
                 + "(id, image_url, event_title, event_name, time, verify_result, verify_reason, alert_text, voice_url) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {

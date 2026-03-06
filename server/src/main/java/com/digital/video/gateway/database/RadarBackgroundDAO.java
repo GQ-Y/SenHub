@@ -28,7 +28,7 @@ public class RadarBackgroundDAO {
                     "bg_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8));
         }
 
-        String sql = "INSERT OR REPLACE INTO radar_backgrounds " +
+        String sql = "INSERT INTO radar_backgrounds " +
                 "(background_id, device_id, assembly_id, frame_count, point_count, grid_resolution, " +
                 "duration_seconds, file_path, status) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";

@@ -22,11 +22,11 @@ public class RadarDefenseZoneDAO {
      * 保存或更新防区
      */
     public boolean save(RadarDefenseZone zone) {
-        String sql = "INSERT OR REPLACE INTO radar_defense_zones " +
+        String sql = "INSERT INTO radar_defense_zones " +
                 "(zone_id, device_id, assembly_id, background_id, zone_type, shrink_distance_cm, " +
                 "min_x, max_x, min_y, max_y, min_z, max_z, camera_device_id, camera_channel, " +
                 "coordinate_transform, enabled, name, description, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, zone.getZoneId());
             pstmt.setString(2, zone.getDeviceId());
@@ -97,7 +97,7 @@ public class RadarDefenseZoneDAO {
                 "background_id = ?, zone_type = ?, shrink_distance_cm = ?, " +
                 "min_x = ?, max_x = ?, min_y = ?, max_y = ?, min_z = ?, max_z = ?, " +
                 "camera_device_id = ?, camera_channel = ?, coordinate_transform = ?, " +
-                "enabled = ?, name = ?, description = ?, updated_at = CURRENT_TIMESTAMP " +
+                "enabled = ?, name = ?, description = ?, updated_at = NOW() " +
                 "WHERE zone_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, zone.getBackgroundId());
@@ -141,7 +141,7 @@ public class RadarDefenseZoneDAO {
      * 启用/禁用防区
      */
     public boolean toggle(String zoneId, boolean enabled) {
-        String sql = "UPDATE radar_defense_zones SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE zone_id = ?";
+        String sql = "UPDATE radar_defense_zones SET enabled = ?, updated_at = NOW() WHERE zone_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, enabled ? 1 : 0);
             pstmt.setString(2, zoneId);

@@ -25,6 +25,10 @@ public class AuthFilter {
             return;
         }
 
+        if (path.startsWith("/api/setup/")) {
+            return;
+        }
+
         if (path != null && path.contains("/radar/stream")) {
             logger.debug("放行雷达 WebSocket 路径（免 Token）: {}", path);
             return;

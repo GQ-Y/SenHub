@@ -19,7 +19,7 @@ public class RadarDeviceTable {
     public static void createTables(Connection connection) throws SQLException {
         // radar_devices 表
         String createRadarDevicesTable = "CREATE TABLE IF NOT EXISTS radar_devices (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "device_id TEXT UNIQUE NOT NULL, " +
                 "radar_ip TEXT NOT NULL, " +
                 "radar_name TEXT, " +
@@ -28,8 +28,8 @@ public class RadarDeviceTable {
                 "status INTEGER DEFAULT 0, " + // 0:离线, 1:在线, 2:采集背景中
                 "current_background_id TEXT, " +
                 "coordinate_transform TEXT, " + // JSON格式的坐标系转换参数
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW(), " +
                 "FOREIGN KEY (device_id) REFERENCES devices(device_id), " +
                 "FOREIGN KEY (assembly_id) REFERENCES assemblies(assembly_id)" +
                 ")";

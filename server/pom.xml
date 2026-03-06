@@ -7,7 +7,7 @@
 
     <groupId>com.digital.video.gateway</groupId>
     <artifactId>senhub-app</artifactId>
-    <version>1.2.4</version>
+    <version>1.2.5</version>
     <packaging>jar</packaging>
 
     <name>SenHub</name>
@@ -22,7 +22,8 @@
         <jackson.version>2.15.2</jackson.version>
         <slf4j.version>2.0.7</slf4j.version>
         <logback.version>1.4.8</logback.version>
-        <sqlite.version>3.42.0.0</sqlite.version>
+        <postgresql.version>42.7.3</postgresql.version>
+        <hikaricp.version>5.1.0</hikaricp.version>
         <yaml.version>2.14.2</yaml.version>
         <javalin.version>5.6.5</javalin.version>
         <jwt.version>4.4.0</jwt.version>
@@ -61,11 +62,18 @@
             <version>${jackson.version}</version>
         </dependency>
 
-        <!-- SQLite Database -->
+        <!-- PostgreSQL Database -->
         <dependency>
-            <groupId>org.xerial</groupId>
-            <artifactId>sqlite-jdbc</artifactId>
-            <version>${sqlite.version}</version>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
+        </dependency>
+
+        <!-- HikariCP Connection Pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikaricp.version}</version>
         </dependency>
 
         <!-- Logging -->

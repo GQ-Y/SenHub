@@ -48,7 +48,7 @@ public class CaptureTest {
 
             // 3. 初始化数据库和设备管理器
             logger.info("\n[3/4] 初始化数据库和设备管理器...");
-            Database database = new Database(config.getDatabase().getPath());
+            Database database = new Database(config.getDatabase());
             database.init();
             logger.info("✓ 数据库初始化成功");
 

@@ -32,7 +32,7 @@ public class CanonicalEventTable {
      */
     public static void createTables(Connection connection) throws SQLException {
         String createCanonicalEventsTable = "CREATE TABLE IF NOT EXISTS canonical_events (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "event_id INTEGER UNIQUE, " + // 网关事件编号 1000～2000，与 mqtt-alarm-event-ids.csv 一致
                 "event_key TEXT UNIQUE NOT NULL, " + // 标准事件键（全局唯一，如 PERIMETER_INTRUSION）
                 "name_zh TEXT NOT NULL, " +
@@ -41,12 +41,12 @@ public class CanonicalEventTable {
                 "description TEXT, " +
                 "severity TEXT DEFAULT 'warning', " +
                 "enabled INTEGER DEFAULT 1, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW()" +
                 ")";
 
         String createBrandMappingTable = "CREATE TABLE IF NOT EXISTS brand_event_mapping (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "brand TEXT NOT NULL, " + // 品牌: tiandy, hikvision
                 "source_kind TEXT NOT NULL, " + // 源类型: alarm_type, vca_event, alarm_type_ext, command
                 "source_code INTEGER NOT NULL, " + // 源代码（iAlarmType, iEventType, lCommand等）
@@ -54,7 +54,7 @@ public class CanonicalEventTable {
                 "priority INTEGER DEFAULT 0, " + // 优先级（当同一source_code有多个映射时，优先级高的优先）
                 "note TEXT, " + // 备注说明
                 "enabled INTEGER DEFAULT 1, " + // 是否可用
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
                 "FOREIGN KEY (event_key) REFERENCES canonical_events(event_key), " +
                 "UNIQUE(brand, source_kind, source_code, event_key)" +
                 ")";
@@ -66,11 +66,11 @@ public class CanonicalEventTable {
                 "CREATE INDEX IF NOT EXISTS idx_brand_mapping_event_key ON brand_event_mapping(event_key);";
 
         String createRawPayloadTable = "CREATE TABLE IF NOT EXISTS event_raw_payload (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "event_key TEXT NOT NULL, " +
                 "brand TEXT NOT NULL, " +
                 "raw_payload TEXT, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
                 "UNIQUE(event_key, brand)" +
                 ")";
 
@@ -95,8 +95,8 @@ public class CanonicalEventTable {
      * 确保 GIS_INFO_UPLOAD 标准事件及海康映射存在（云台操作会上报该事件，需入事件库以便规则可显式配置）
      */
     public static void ensureGisInfoUploadEvent(Connection connection) throws SQLException {
-        String insertEvent = "INSERT OR IGNORE INTO canonical_events (event_id, event_key, name_zh, name_en, category, description, severity) VALUES (1122, 'GIS_INFO_UPLOAD', 'GIS信息上传', 'GIS Info Upload', 'basic', '云台/球机上报GIS位置信息', 'info')";
-        String insertMapping = "INSERT OR IGNORE INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) VALUES ('hikvision', 'command', 16402, 'GIS_INFO_UPLOAD', 0, 'GIS信息上传 (COMM_GISINFO_UPLOAD 0x4012)')";
+        String insertEvent = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, description, severity) VALUES (1122, 'GIS_INFO_UPLOAD', 'GIS信息上传', 'GIS Info Upload', 'basic', '云台/球机上报GIS位置信息', 'info')";
+        String insertMapping = "INSERT INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) VALUES ('hikvision', 'command', 16402, 'GIS_INFO_UPLOAD', 0, 'GIS信息上传 (COMM_GISINFO_UPLOAD 0x4012)')";
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(insertEvent);
             stmt.execute(insertMapping);
@@ -151,8 +151,8 @@ public class CanonicalEventTable {
                 logger.warn("未找到 mqtt-alarm-event-ids.csv，跳过 event_id 回填");
                 return;
             }
-            String updateSql = "UPDATE canonical_events SET event_id = ?, name_zh = ?, name_en = ?, category = ?, severity = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE event_key = ?";
-            String insertSql = "INSERT OR IGNORE INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            String updateSql = "UPDATE canonical_events SET event_id = ?, name_zh = ?, name_en = ?, category = ?, severity = ?, description = ?, updated_at = NOW() WHERE event_key = ?";
+            String insertSql = "INSERT INTO canonical_events (event_id, event_key, name_zh, name_en, category, severity, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
             int updated = 0, inserted = 0;
             String line = reader.readLine();
             if (line == null || !line.trim().toLowerCase().startsWith("event_id")) {
@@ -661,7 +661,7 @@ public class CanonicalEventTable {
 
         if (!eventExists) {
             // 写入 canonical_events
-            String insertEvent = "INSERT OR IGNORE INTO canonical_events (event_key, name_zh, name_en, category, description, severity, is_generic) " +
+            String insertEvent = "INSERT INTO canonical_events (event_key, name_zh, name_en, category, description, severity, is_generic) " +
                     "VALUES (?, ?, ?, 'unknown', ?, 'info', 0)";
             try (PreparedStatement pstmt = connection.prepareStatement(insertEvent)) {
                 pstmt.setString(1, alarmType);
@@ -675,7 +675,7 @@ public class CanonicalEventTable {
             }
 
             // 写入 brand_event_mapping
-            String insertMapping = "INSERT OR IGNORE INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) " +
+            String insertMapping = "INSERT INTO brand_event_mapping (brand, source_kind, source_code, event_key, priority, note) " +
                     "VALUES (?, 'event_key', 0, ?, 0, ?)";
             try (PreparedStatement pstmt = connection.prepareStatement(insertMapping)) {
                 pstmt.setString(1, brand.toLowerCase());
@@ -698,7 +698,7 @@ public class CanonicalEventTable {
     // ==================== event_raw_payload 操作 ====================
 
     public static void insertRawPayload(Connection connection, String eventKey, String brand, String rawPayload) {
-        String sql = "INSERT OR IGNORE INTO event_raw_payload (event_key, brand, raw_payload) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO event_raw_payload (event_key, brand, raw_payload) VALUES (?, ?, ?)";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, eventKey);
             pstmt.setString(2, brand.toLowerCase());
@@ -853,7 +853,7 @@ public class CanonicalEventTable {
      */
     public static boolean updateCanonicalEvent(Connection connection, int id, String nameZh, String nameEn,
             String category, String severity, String description, Boolean enabled, Boolean isGeneric, String aiVerifyPrompt) throws SQLException {
-        StringBuilder sql = new StringBuilder("UPDATE canonical_events SET updated_at = CURRENT_TIMESTAMP");
+        StringBuilder sql = new StringBuilder("UPDATE canonical_events SET updated_at = NOW()");
         List<Object> params = new ArrayList<>();
         if (nameZh != null) { sql.append(", name_zh = ?"); params.add(nameZh); }
         if (nameEn != null) { sql.append(", name_en = ?"); params.add(nameEn); }

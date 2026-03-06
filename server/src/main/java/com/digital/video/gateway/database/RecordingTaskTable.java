@@ -19,7 +19,7 @@ public class RecordingTaskTable {
     public static void createTables(Connection connection) throws SQLException {
         // recording_tasks 表
         String createRecordingTasksTable = "CREATE TABLE IF NOT EXISTS recording_tasks (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "task_id TEXT UNIQUE NOT NULL, " +
                 "device_id TEXT NOT NULL, " +
                 "channel INTEGER NOT NULL, " +
@@ -31,8 +31,8 @@ public class RecordingTaskTable {
                 "progress INTEGER DEFAULT 0, " +
                 "download_handle INTEGER, " +
                 "error_message TEXT, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW()" +
                 ")";
 
         // 创建索引

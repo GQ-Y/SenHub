@@ -48,7 +48,7 @@ public class IntegrationTest {
 
             // 3. 初始化数据库
             logger.info("\n[3/7] 初始化数据库...");
-            Database database = new Database(config.getDatabase().getPath());
+            Database database = new Database(config.getDatabase());
             if (!database.init()) {
                 logger.error("✗ 数据库初始化失败");
                 System.exit(1);

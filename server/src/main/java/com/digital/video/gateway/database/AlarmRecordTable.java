@@ -19,7 +19,7 @@ public class AlarmRecordTable {
     public static void createTables(Connection connection) throws SQLException {
         // alarm_records 表
         String createAlarmRecordsTable = "CREATE TABLE IF NOT EXISTS alarm_records (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "id SERIAL PRIMARY KEY, " +
             "alarm_id TEXT UNIQUE NOT NULL, " +
             "device_id TEXT NOT NULL, " +
             "assembly_id TEXT, " +
@@ -32,7 +32,7 @@ public class AlarmRecordTable {
             "status TEXT DEFAULT 'pending', " +
             "mqtt_sent INTEGER DEFAULT 0, " +
             "speaker_triggered INTEGER DEFAULT 0, " +
-            "recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+            "recorded_at TIMESTAMP DEFAULT NOW(), " +
             "processed_at TIMESTAMP" +
             ")";
 

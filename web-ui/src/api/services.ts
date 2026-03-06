@@ -1407,3 +1407,15 @@ export const eventLibraryService = {
   },
 };
 
+export const setupService = {
+  async getStatus(): Promise<{ installed: boolean }> {
+    const response = await get<{ installed: boolean }>('/setup/status', undefined, { skipAuth: true });
+    const raw = response as any;
+    return raw?.data ?? raw;
+  },
+
+  async install(username: string, password: string, confirmPassword: string): Promise<void> {
+    await post<any>('/setup/install', { username, password, confirmPassword }, { skipAuth: true });
+  },
+};
+

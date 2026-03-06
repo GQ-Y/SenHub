@@ -19,7 +19,7 @@ public class AlarmRuleTable {
     public static void createTables(Connection connection) throws SQLException {
         // alarm_rules 表
         String createAlarmRulesTable = "CREATE TABLE IF NOT EXISTS alarm_rules (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "id SERIAL PRIMARY KEY, " +
             "rule_id TEXT UNIQUE NOT NULL, " +
             "name TEXT NOT NULL, " +
             "alarm_type TEXT NOT NULL, " +
@@ -31,8 +31,8 @@ public class AlarmRuleTable {
             "flow_id TEXT, " +
             "actions TEXT NOT NULL, " +
             "conditions TEXT, " +
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+            "created_at TIMESTAMP DEFAULT NOW(), " +
+            "updated_at TIMESTAMP DEFAULT NOW()" +
             ")";
 
         // 创建索引

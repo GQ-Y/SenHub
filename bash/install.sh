@@ -31,7 +31,7 @@ SERVICE_NAME="senhub-app"
 
 # ---------- 步骤 1：系统环境检测 ----------
 step1_check_system() {
-    echo "[1/9] 检测系统环境..."
+    echo "[1/12] 检测系统环境..."
     local os arch
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -50,8 +50,8 @@ step1_check_system() {
     esac
     local avail
     avail="$(df -m "$(dirname "$INSTALL_DIR")" 2>/dev/null | tail -1 | awk '{print $4}')"
-    if [ -n "$avail" ] && [ "$avail" -lt 1024 ]; then
-        echo "错误: 磁盘剩余空间不足 1GB"
+    if [ -n "$avail" ] && [ "$avail" -lt 2048 ]; then
+        echo "错误: 磁盘剩余空间不足 2GB（PostgreSQL 需要额外空间）"
         exit 1
     fi
     echo "  系统: $os ($arch), 安装目录: $INSTALL_DIR"
@@ -59,10 +59,10 @@ step1_check_system() {
 
 # ---------- 步骤 2：安装系统依赖 ----------
 step2_install_deps() {
-    echo "[2/9] 安装系统依赖..."
+    echo "[2/12] 安装系统依赖..."
     apt-get update -qq || true
     apt-get install -y --no-install-recommends \
-        wget curl ca-certificates tar gzip \
+        wget curl ca-certificates tar gzip openssl \
         libstdc++6 libglib2.0-0 \
         libx11-6 libxext6 libxrender1 \
         libpulse0
@@ -84,7 +84,7 @@ step2_install_deps() {
 
 # ---------- 步骤 3：检测 Java 环境 ----------
 step3_java() {
-    echo "[3/9] 检测 Java 环境..."
+    echo "[3/12] 检测 Java 环境..."
     local ver
     if command -v java &>/dev/null; then
         ver="$(java -version 2>&1 | head -1)"
@@ -100,16 +100,133 @@ step3_java() {
     java -version
 }
 
-# ---------- 步骤 4：创建安装目录 ----------
-step4_dirs() {
-    echo "[4/9] 创建安装目录..."
+# ---------- 步骤 4：安装 PostgreSQL ----------
+step4_postgresql() {
+    echo "[4/12] 安装 PostgreSQL..."
+
+    if command -v psql &>/dev/null; then
+        local pg_ver
+        pg_ver="$(psql --version 2>/dev/null | awk '{print $3}' | cut -d. -f1)"
+        echo "  PostgreSQL 已存在 (版本: $pg_ver)，跳过安装"
+        # 确保服务已启动
+        systemctl start postgresql 2>/dev/null || service postgresql start 2>/dev/null || true
+        return
+    fi
+
+    echo "  安装 PostgreSQL 16..."
+    # 添加官方 PostgreSQL APT 仓库以获取最新版本
+    apt-get install -y --no-install-recommends gnupg lsb-release 2>/dev/null || true
+
+    # 尝试通过官方仓库安装 pg16，失败则回退到系统仓库
+    local installed=false
+    if curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg 2>/dev/null; then
+        local codename
+        codename="$(lsb_release -cs 2>/dev/null || echo "bookworm")"
+        echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${codename}-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list
+        apt-get update -qq 2>/dev/null || true
+        if apt-get install -y --no-install-recommends postgresql-16 2>/dev/null; then
+            installed=true
+            echo "  已通过官方仓库安装 PostgreSQL 16"
+        fi
+    fi
+
+    if [ "$installed" = "false" ]; then
+        echo "  官方仓库安装失败，使用系统仓库..."
+        apt-get install -y --no-install-recommends postgresql 2>/dev/null || {
+            echo "错误: PostgreSQL 安装失败，请手动安装后重试"
+            exit 1
+        }
+    fi
+
+    systemctl enable postgresql
+    systemctl start postgresql
+    sleep 2
+
+    if ! systemctl is-active --quiet postgresql; then
+        echo "错误: PostgreSQL 服务启动失败"
+        exit 1
+    fi
+    echo "  PostgreSQL 安装并启动成功"
+}
+
+# ---------- 步骤 5：创建数据库用户和数据库 ----------
+step5_db_setup() {
+    echo "[5/12] 配置 PostgreSQL 数据库..."
+
+    # 生成随机密码（32位字母数字）
+    local db_password
+    db_password="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32)"
+    if [ -z "$db_password" ]; then
+        # openssl 不可用时的备用方案
+        db_password="$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 32 2>/dev/null || date +%s%N | sha256sum | head -c 32)"
+    fi
+
+    local db_user="senhub"
+    local db_name="senhub"
+    local db_host="127.0.0.1"
+    local db_port="5432"
+
+    # 创建数据库用户（已存在则更新密码）
+    sudo -u postgres psql -c "DO \$\$ BEGIN
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${db_user}') THEN
+            CREATE ROLE ${db_user} WITH LOGIN PASSWORD '${db_password}';
+        ELSE
+            ALTER ROLE ${db_user} WITH PASSWORD '${db_password}';
+        END IF;
+    END \$\$;" 2>/dev/null || {
+        echo "错误: 无法创建数据库用户，请检查 PostgreSQL 是否正常运行"
+        exit 1
+    }
+
+    # 创建数据库（已存在则跳过）
+    sudo -u postgres psql -c "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" | grep -q 1 || \
+        sudo -u postgres psql -c "CREATE DATABASE ${db_name} OWNER ${db_user} ENCODING 'UTF8' LC_COLLATE 'en_US.UTF-8' LC_CTYPE 'en_US.UTF-8';" 2>/dev/null || \
+        sudo -u postgres psql -c "CREATE DATABASE ${db_name} OWNER ${db_user};" 2>/dev/null || {
+            echo "错误: 无法创建数据库 ${db_name}"
+            exit 1
+        }
+
+    # 授权
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};" 2>/dev/null || true
+    sudo -u postgres psql -d "${db_name}" -c "GRANT ALL ON SCHEMA public TO ${db_user};" 2>/dev/null || true
+
+    # 确保安装目录的 config 目录已存在
+    mkdir -p "$INSTALL_DIR/config"
+
+    # 写入凭据文件（systemd EnvironmentFile 格式）
+    local db_env_file="$INSTALL_DIR/config/db.env"
+    cat > "$db_env_file" << DBENV
+# SenHub 数据库凭据（由 install.sh 自动生成，请勿手动修改）
+# 生成时间: $(date '+%Y-%m-%d %H:%M:%S')
+DB_HOST=${db_host}
+DB_PORT=${db_port}
+DB_USER=${db_user}
+DB_PASSWORD=${db_password}
+DB_NAME=${db_name}
+DBENV
+
+    # 严格限制权限：仅 root 可读写，防止密码泄露
+    chmod 640 "$db_env_file"
+    chown root:root "$db_env_file"
+
+    echo "  数据库配置完成"
+    echo "    用户: ${db_user}"
+    echo "    数据库: ${db_name}"
+    echo "    凭据文件: ${db_env_file}"
+    echo "  注意: 数据库密码已随机生成并保存到凭据文件，应用启动时自动读取"
+}
+
+# ---------- 步骤 6：创建安装目录 ----------
+step6_dirs() {
+    echo "[6/12] 创建安装目录..."
     mkdir -p "$INSTALL_DIR"/{bin,lib,config,data,storage/captures,storage/records,storage/recordings,storage/downloads,storage/radar/backgrounds,storage/tts,logs,sdkLog,tmp,test}
     echo "  目录: $INSTALL_DIR"
 }
 
-# ---------- 步骤 5：下载并解压（应用包结构见 bash/PACK.md）----------
-step5_download_extract() {
-    echo "[5/9] 下载并解压..."
+# ---------- 步骤 7：下载并解压（应用包结构见 bash/PACK.md）----------
+step7_download_extract() {
+    echo "[7/12] 下载并解压..."
     local tmp_app="/tmp/senhub-app-$$" tmp_libs="/tmp/senhub-libs-$$"
     mkdir -p "$tmp_app" "$tmp_libs"
     if [ -n "$SENHUB_LIBS_URL" ] && [ "$SENHUB_LIBS_URL" != "https://example.com/"* ]; then
@@ -147,9 +264,9 @@ step5_download_extract() {
     echo "  已安装版本: $SENHUB_VERSION"
 }
 
-# ---------- 步骤 6：设置 LD_LIBRARY_PATH ----------
-step6_env() {
-    echo "[6/9] 设置环境变量..."
+# ---------- 步骤 8：设置 LD_LIBRARY_PATH ----------
+step8_env() {
+    echo "[8/12] 设置环境变量..."
     local vgw_env="$INSTALL_DIR/bin/vgw-env"
     cat > "$vgw_env" << EOF
 # SenHub 运行环境（systemd EnvironmentFile 格式，不可使用 export）
@@ -167,18 +284,20 @@ EOF
     echo "  已写入 $vgw_env 与 /etc/profile.d/senhub.sh"
 }
 
-# ---------- 步骤 7：创建 systemd 服务 ----------
-step7_systemd() {
-    echo "[7/9] 创建 systemd 服务..."
+# ---------- 步骤 9：创建 systemd 服务 ----------
+step9_systemd() {
+    echo "[9/12] 创建 systemd 服务..."
     cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=SenHub Video Gateway Service
-After=network.target
+After=network.target postgresql.service
+Requires=postgresql.service
 
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$INSTALL_DIR/bin/vgw-env
+EnvironmentFile=$INSTALL_DIR/config/db.env
 ExecStart=/usr/bin/java \\
   -Djava.io.tmpdir=$INSTALL_DIR/tmp \\
   -Djava.library.path=\${JAVA_LIB_PATH} \\
@@ -196,15 +315,16 @@ EOF
     echo "  已安装并启用 $SERVICE_NAME"
 }
 
-# ---------- 步骤 8：注入快捷命令 vgw ----------
-step8_vgw_cmd() {
-    echo "[8/9] 注入快捷命令 vgw..."
+# ---------- 步骤 10：注入快捷命令 vgw ----------
+step10_vgw_cmd() {
+    echo "[10/12] 注入快捷命令 vgw..."
     cat > "$INSTALL_DIR/bin/vgw" << 'VGWSCRIPT'
 #!/bin/bash
 self="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 INSTALL_DIR="$(cd "$(dirname "$self")/.." && pwd)"
 SERVICE_NAME="senhub-app"
 VGW_ENV="$INSTALL_DIR/bin/vgw-env"
+DB_ENV="$INSTALL_DIR/config/db.env"
 SENHUB_BASE_URL="http://demo.zt.admins.smartrail.cloud"
 
 # 语义化版本比较：$1 > $2 返回 0
@@ -231,6 +351,34 @@ case "$cmd" in
             tail -f "$INSTALL_DIR/logs/sdk.log" 2>/dev/null || tail -f "$INSTALL_DIR/sdkLog"/*.log 2>/dev/null || echo "无 SDK 日志"
         else
             tail -f "$INSTALL_DIR/logs/server.log" 2>/dev/null || tail -f "$INSTALL_DIR/logs/app.log" 2>/dev/null || echo "无日志"
+        fi
+        ;;
+    db)
+        echo "========== SenHub 数据库状态 =========="
+        if [ -f "$DB_ENV" ]; then
+            # 加载数据库凭据（仅在 root 下可读）
+            if [ -r "$DB_ENV" ]; then
+                . "$DB_ENV"
+                echo "  主机:   ${DB_HOST}:${DB_PORT}"
+                echo "  数据库: ${DB_NAME}"
+                echo "  用户:   ${DB_USER}"
+                echo "  凭据文件: ${DB_ENV}"
+                echo ""
+                echo "  PostgreSQL 服务状态:"
+                systemctl is-active postgresql && echo "    运行中" || echo "    未运行"
+                echo ""
+                echo "  测试数据库连接..."
+                if command -v psql &>/dev/null; then
+                    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+                        -c "SELECT version();" 2>/dev/null && echo "  连接成功" || echo "  连接失败，请检查 PostgreSQL 服务"
+                else
+                    echo "  psql 未安装，无法测试连接"
+                fi
+            else
+                echo "  凭据文件权限不足（需要 root 权限）"
+            fi
+        else
+            echo "  凭据文件不存在: ${DB_ENV}"
         fi
         ;;
     version)
@@ -315,9 +463,10 @@ case "$cmd" in
         echo "  JAR:      $INSTALL_DIR/senhub-app.jar"
         echo "  日志:     $INSTALL_DIR/logs/"
         echo "  数据:     $INSTALL_DIR/data/ $INSTALL_DIR/storage/"
+        echo "  数据库:   PostgreSQL (详情: vgw db)"
         echo "  访问:     http://$(hostname -I 2>/dev/null | awk '{print $1}'):8084"
         ;;
-    *) echo "用法: vgw { start | stop | restart | status | logs [sdk] | version | check | update | info }"; exit 1 ;;
+    *) echo "用法: vgw { start | stop | restart | status | logs [sdk] | db | version | check | update | info }"; exit 1 ;;
 esac
 VGWSCRIPT
     chmod 755 "$INSTALL_DIR/bin/vgw"
@@ -325,17 +474,47 @@ VGWSCRIPT
     echo "  已创建 /usr/local/bin/vgw"
 }
 
-# ---------- 步骤 9：启动服务 ----------
-step9_start() {
-    echo "[9/9] 启动服务..."
+# ---------- 步骤 11：验证数据库连接 ----------
+step11_verify_db() {
+    echo "[11/12] 验证数据库连接..."
+    if [ ! -f "$INSTALL_DIR/config/db.env" ]; then
+        echo "  警告: 凭据文件不存在，跳过验证"
+        return
+    fi
+    . "$INSTALL_DIR/config/db.env"
+    local retries=5
+    local ok=false
+    for i in $(seq 1 $retries); do
+        if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" \
+                -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
+            ok=true
+            break
+        fi
+        echo "  等待 PostgreSQL 就绪... ($i/$retries)"
+        sleep 2
+    done
+    if [ "$ok" = "true" ]; then
+        echo "  数据库连接验证成功"
+    else
+        echo "  警告: 数据库连接验证失败，应用启动后可能无法连接数据库"
+        echo "  请执行 'vgw db' 手动检查数据库状态"
+    fi
+}
+
+# ---------- 步骤 12：启动服务 ----------
+step12_start() {
+    echo "[12/12] 启动服务..."
     systemctl start "$SERVICE_NAME"
     sleep 5
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "  服务已启动 (版本: $SENHUB_VERSION)"
         tail -20 "$INSTALL_DIR/logs/server.log" 2>/dev/null || true
         echo ""
-        echo "  访问地址: http://$(hostname -I 2>/dev/null | awk '{print $1}'):8084"
-        echo "  快捷命令: vgw start | stop | restart | status | logs | version | check | update | info"
+        local ip
+        ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+        echo "  访问地址: http://${ip}:8084"
+        echo "  首次访问将进入安装向导，请设置管理员账号密码"
+        echo "  快捷命令: vgw start | stop | restart | status | logs | db | version | check | update | info"
     else
         echo "  启动可能异常，请检查: journalctl -u $SERVICE_NAME -n 50"
         exit 1
@@ -348,14 +527,18 @@ main() {
     step1_check_system
     step2_install_deps
     step3_java
-    step4_dirs
-    step5_download_extract
-    step6_env
-    step7_systemd
-    step8_vgw_cmd
-    step9_start
+    step4_postgresql
+    step5_db_setup
+    step6_dirs
+    step7_download_extract
+    step8_env
+    step9_systemd
+    step10_vgw_cmd
+    step11_verify_db
+    step12_start
     echo ""
     echo "安装完成. (版本: $SENHUB_VERSION)"
+    echo "提示: 首次访问系统时请完成安装向导设置管理员账号"
 }
 
 main "$@"

@@ -184,7 +184,8 @@ public class AssemblyService {
      * 添加设备到装置
      */
     public AssemblyDevice addDeviceToAssembly(String assemblyId, String deviceId, String role, String positionInfo) {
-        String sql = "INSERT OR REPLACE INTO assembly_devices (assembly_id, device_id, device_role, position_info, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)";
+        String sql = "INSERT INTO assembly_devices (assembly_id, device_id, device_role, position_info, updated_at) VALUES (?, ?, ?, ?, NOW()) " +
+                "ON CONFLICT (assembly_id, device_id) DO UPDATE SET device_role=EXCLUDED.device_role, position_info=EXCLUDED.position_info, updated_at=NOW()";
         Connection conn = database.getConnection();
         try (
                 PreparedStatement pstmt = conn.prepareStatement(sql)) {

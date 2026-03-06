@@ -26,7 +26,7 @@ public class CameraEventTypeTable {
     public static void createTables(Connection connection) throws SQLException {
         // camera_event_types 表 - 事件类型定义
         String createEventTypesTable = "CREATE TABLE IF NOT EXISTS camera_event_types (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "brand TEXT NOT NULL, " + // 摄像头品牌: tiandy, hikvision
                 "event_code INTEGER NOT NULL, " + // 事件代码
                 "event_name TEXT NOT NULL, " + // 事件名称
@@ -34,19 +34,19 @@ public class CameraEventTypeTable {
                 "category TEXT DEFAULT 'vca', " + // 分类: basic, vca, face, its
                 "description TEXT, " + // 描述
                 "enabled INTEGER DEFAULT 1, " + // 是否可用
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
                 "UNIQUE(brand, event_code)" +
                 ")";
 
         // device_event_subscriptions 表 - 设备事件订阅
         String createSubscriptionsTable = "CREATE TABLE IF NOT EXISTS device_event_subscriptions (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "device_id TEXT NOT NULL, " + // 设备ID
                 "event_type_id INTEGER NOT NULL, " + // 事件类型ID
                 "enabled INTEGER DEFAULT 1, " + // 是否启用
                 "mqtt_forward INTEGER DEFAULT 1, " + // 是否MQTT转发
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW(), " +
                 "FOREIGN KEY (device_id) REFERENCES devices(device_id), " +
                 "FOREIGN KEY (event_type_id) REFERENCES camera_event_types(id), " +
                 "UNIQUE(device_id, event_type_id)" +
@@ -491,9 +491,9 @@ public class CameraEventTypeTable {
      */
     public static boolean subscribeDeviceEvent(Connection connection, String deviceId, int eventTypeId,
             boolean mqttForward) {
-        String sql = "INSERT OR REPLACE INTO device_event_subscriptions (device_id, event_type_id, enabled, mqtt_forward, updated_at) "
+        String sql = "INSERT INTO device_event_subscriptions (device_id, event_type_id, enabled, mqtt_forward, updated_at) "
                 +
-                "VALUES (?, ?, 1, ?, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, 1, ?, NOW())";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
             pstmt.setInt(2, eventTypeId);
@@ -510,7 +510,7 @@ public class CameraEventTypeTable {
      * 取消订阅设备事件类型
      */
     public static boolean unsubscribeDeviceEvent(Connection connection, String deviceId, int eventTypeId) {
-        String sql = "UPDATE device_event_subscriptions SET enabled = 0, updated_at = CURRENT_TIMESTAMP " +
+        String sql = "UPDATE device_event_subscriptions SET enabled = 0, updated_at = NOW() " +
                 "WHERE device_id = ? AND event_type_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, deviceId);
@@ -632,7 +632,7 @@ public class CameraEventTypeTable {
      * 批量订阅设备的所有事件类型（按品牌）
      */
     public static int subscribeAllEventsByBrand(Connection connection, String deviceId, String brand) {
-        String sql = "INSERT OR IGNORE INTO device_event_subscriptions (device_id, event_type_id, enabled, mqtt_forward) "
+        String sql = "INSERT INTO device_event_subscriptions (device_id, event_type_id, enabled, mqtt_forward) "
                 +
                 "SELECT ?, id, 1, 1 FROM camera_event_types WHERE brand = ? AND enabled = 1";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {

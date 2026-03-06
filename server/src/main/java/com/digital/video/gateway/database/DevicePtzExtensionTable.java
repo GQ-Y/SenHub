@@ -19,17 +19,17 @@ public class DevicePtzExtensionTable {
      */
     public static void createTables(Connection connection) throws SQLException {
         String createDevicePtzExtensionTable = "CREATE TABLE IF NOT EXISTS device_ptz_extension (" +
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "id SERIAL PRIMARY KEY, " +
             "device_id TEXT NOT NULL UNIQUE, " +
             "is_ptz_enabled INTEGER DEFAULT 0, " +      // 是否启用PTZ信息获取
-            "pan REAL DEFAULT 0.0, " +                  // 水平角度
-            "tilt REAL DEFAULT 0.0, " +                 // 垂直角度
-            "zoom REAL DEFAULT 1.0, " +                 // 变倍
-            "azimuth REAL DEFAULT 0.0, " +              // 方位角
-            "horizontal_fov REAL DEFAULT 0.0, " +       // 水平视场角
-            "vertical_fov REAL DEFAULT 0.0, " +         // 垂直视场角
-            "visible_radius REAL DEFAULT 0.0, " +       // 可视半径
-            "last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+            "pan FLOAT8 DEFAULT 0.0, " +                  // 水平角度
+            "tilt FLOAT8 DEFAULT 0.0, " +                 // 垂直角度
+            "zoom FLOAT8 DEFAULT 1.0, " +                 // 变倍
+            "azimuth FLOAT8 DEFAULT 0.0, " +              // 方位角
+            "horizontal_fov FLOAT8 DEFAULT 0.0, " +       // 水平视场角
+            "vertical_fov FLOAT8 DEFAULT 0.0, " +         // 垂直视场角
+            "visible_radius FLOAT8 DEFAULT 0.0, " +       // 可视半径
+            "last_updated TIMESTAMP DEFAULT NOW()" +
             ")";
 
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_ptz_ext_device_id ON device_ptz_extension(device_id); " +
@@ -111,9 +111,9 @@ public class DevicePtzExtensionTable {
      * 保存或更新PTZ扩展信息
      */
     public static boolean saveOrUpdate(Connection connection, PtzExtension ext) {
-        String sql = "INSERT OR REPLACE INTO device_ptz_extension " +
+        String sql = "INSERT INTO device_ptz_extension " +
             "(device_id, is_ptz_enabled, pan, tilt, zoom, azimuth, horizontal_fov, vertical_fov, visible_radius, last_updated) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, ext.getDeviceId());
@@ -194,7 +194,7 @@ public class DevicePtzExtensionTable {
         String sql = "UPDATE device_ptz_extension SET " +
             "pan = ?, tilt = ?, zoom = ?, azimuth = ?, " +
             "horizontal_fov = ?, vertical_fov = ?, visible_radius = ?, " +
-            "last_updated = CURRENT_TIMESTAMP " +
+            "last_updated = NOW() " +
             "WHERE device_id = ?";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -231,7 +231,7 @@ public class DevicePtzExtensionTable {
         }
 
         // 存在则更新
-        String sql = "UPDATE device_ptz_extension SET is_ptz_enabled = ?, last_updated = CURRENT_TIMESTAMP WHERE device_id = ?";
+        String sql = "UPDATE device_ptz_extension SET is_ptz_enabled = ?, last_updated = NOW() WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, enabled ? 1 : 0);
             pstmt.setString(2, deviceId);

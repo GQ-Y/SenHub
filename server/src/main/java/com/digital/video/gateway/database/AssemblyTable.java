@@ -19,27 +19,27 @@ public class AssemblyTable {
     public static void createTables(Connection connection) throws SQLException {
         // assemblies 表
         String createAssembliesTable = "CREATE TABLE IF NOT EXISTS assemblies (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "assembly_id TEXT UNIQUE NOT NULL, " +
                 "name TEXT NOT NULL, " +
                 "description TEXT, " +
                 "location TEXT, " +
                 "status INTEGER DEFAULT 1, " + // 0: 禁用, 1: 启用
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW()" +
                 ")";
 
         // assembly_devices 表
         String createAssemblyDevicesTable = "CREATE TABLE IF NOT EXISTS assembly_devices (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "assembly_id TEXT NOT NULL, " +
                 "device_id TEXT NOT NULL, " +
                 "device_role TEXT NOT NULL, " +
                 "position_info TEXT, " +
                 "priority INTEGER DEFAULT 0, " +
                 "enabled INTEGER DEFAULT 1, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW(), " +
                 "UNIQUE(assembly_id, device_id)" +
                 ")";
 
@@ -59,7 +59,7 @@ public class AssemblyTable {
                 logger.debug("ptz_linkage_enabled 列可能已存在: {}", e.getMessage());
             }
             try {
-                stmt.execute("ALTER TABLE assemblies ADD COLUMN longitude REAL");
+                stmt.execute("ALTER TABLE assemblies ADD COLUMN longitude FLOAT8");
                 logger.info("为 assemblies 表添加 longitude 列");
             } catch (SQLException e) {
                 if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("duplicate column")) {
@@ -67,7 +67,7 @@ public class AssemblyTable {
                 }
             }
             try {
-                stmt.execute("ALTER TABLE assemblies ADD COLUMN latitude REAL");
+                stmt.execute("ALTER TABLE assemblies ADD COLUMN latitude FLOAT8");
                 logger.info("为 assemblies 表添加 latitude 列");
             } catch (SQLException e) {
                 if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("duplicate column")) {

@@ -593,16 +593,41 @@ public class Config {
     }
 
     public static class DatabaseConfig {
-        private String path;
+        @JsonProperty("host")
+        private String host = "127.0.0.1";
 
-        // Getters and Setters
-        public String getPath() {
-            return path;
-        }
+        @JsonProperty("port")
+        private int port = 5432;
 
-        public void setPath(String path) {
-            this.path = path;
-        }
+        @JsonProperty("name")
+        private String name = "senhub";
+
+        @JsonProperty("username")
+        private String username = "senhub";
+
+        @JsonProperty("password")
+        private String password = "";
+
+        @JsonProperty("pool_size")
+        private int poolSize = 10;
+
+        public String getHost() { return host; }
+        public void setHost(String host) { this.host = host; }
+
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+
+        public int getPoolSize() { return poolSize; }
+        public void setPoolSize(int poolSize) { this.poolSize = poolSize; }
     }
 
     public static class LogConfig {

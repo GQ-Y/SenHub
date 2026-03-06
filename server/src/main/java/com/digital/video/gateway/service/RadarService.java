@@ -75,7 +75,7 @@ public class RadarService {
     private static final long POINTCLOUD_TIMEOUT_MS = 30000; // 30秒未收到点云数据则标记为离线
     private ScheduledExecutorService timeoutCheckExecutor;
 
-    // 点云数据统计
+    // 点云数据统计（全局）
     private final AtomicLong totalPointCloudFrames = new AtomicLong(0);
     private final AtomicLong totalPointCloudPoints = new AtomicLong(0);
     /** 因点云处理队列满而丢弃的帧数（用于日志定位瓶颈） */
@@ -83,6 +83,10 @@ public class RadarService {
     private ScheduledExecutorService statsExecutor;
     private RadarStatusMonitor statusMonitor;
     private int statsLogIntervalSeconds = 60; // 点云统计日志间隔（秒）
+
+    /** 按设备分离的帧率统计（deviceId -> 本周期帧数/点数） */
+    private final Map<String, AtomicLong> perDeviceFrames = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> perDevicePoints = new ConcurrentHashMap<>();
 
     /** PTZ 联动抓拍：共用调度器，按设备防抖，避免同一球机短时间内多次抓拍导致设备锁等待超时 */
     private static final ScheduledExecutorService ptzCaptureScheduler = Executors.newScheduledThreadPool(2, r -> {
@@ -422,6 +426,19 @@ public class RadarService {
                     framesThisPeriod, pointsThisPeriod, rejectedThisPeriod,
                     currentFrames, currentPoints, currentRejected,
                     queueSize, activeCount);
+
+            // 按设备写入时序数据库
+            if (database != null) {
+                for (Map.Entry<String, AtomicLong> entry : perDeviceFrames.entrySet()) {
+                    String devId = entry.getKey();
+                    long frames = entry.getValue().getAndSet(0);
+                    long points = perDevicePoints.getOrDefault(devId, new AtomicLong(0)).getAndSet(0);
+                    if (frames > 0) {
+                        double fps = (double) frames / statsLogIntervalSeconds;
+                        database.insertRadarFrameMetric(devId, frames, points, fps);
+                    }
+                }
+            }
         }, statsLogIntervalSeconds, statsLogIntervalSeconds, TimeUnit.SECONDS);
 
         logger.info("点云统计报告器已启动（每{}秒打印一次）", statsLogIntervalSeconds);
@@ -582,6 +599,8 @@ public class RadarService {
             if (!points.isEmpty()) {
                 totalPointCloudFrames.incrementAndGet();
                 totalPointCloudPoints.addAndGet(points.size());
+                perDeviceFrames.computeIfAbsent(deviceId, k -> new AtomicLong(0)).incrementAndGet();
+                perDevicePoints.computeIfAbsent(deviceId, k -> new AtomicLong(0)).addAndGet(points.size());
 
                 // 提交到独立线程池处理，避免在 Livox 回调中执行侵入检测/推送导致阻塞、点云吞吐骤降
                 submitPointCloud(deviceId, points);
@@ -593,6 +612,8 @@ public class RadarService {
             if (!points.isEmpty()) {
                 totalPointCloudFrames.incrementAndGet();
                 totalPointCloudPoints.addAndGet(points.size());
+                perDeviceFrames.computeIfAbsent(deviceId, k -> new AtomicLong(0)).incrementAndGet();
+                perDevicePoints.computeIfAbsent(deviceId, k -> new AtomicLong(0)).addAndGet(points.size());
 
                 submitPointCloud(deviceId, points);
             }

@@ -174,12 +174,23 @@ public class Main {
             logger.info("多品牌SDK工厂初始化完成");
 
             // 3. 初始化数据库
-            database = new Database(config.getDatabase().getPath());
+            database = new Database(config.getDatabase());
             if (!database.init()) {
                 logger.error("数据库初始化失败");
                 System.exit(1);
             }
             logger.info("数据库初始化成功");
+
+            // 3.1. 检查安装锁文件，决定启动模式
+            String vgwHome = System.getenv("VGW_HOME");
+            if (vgwHome == null || vgwHome.isEmpty()) vgwHome = System.getProperty("user.dir");
+            String lockPath = vgwHome + "/data/install.lock";
+            boolean installed = new java.io.File(lockPath).exists();
+            if (!installed) {
+                logger.info("未检测到安装锁文件，进入安装向导模式: {}", lockPath);
+                startSetupMode(database, config);
+                return;
+            }
 
             // 3.5. 初始化配置服务（混合模式：数据库优先，YAML作为默认值）
             configService = new ConfigService(database, config);
@@ -396,6 +407,11 @@ public class Main {
             // 11. 启动HTTP服务器（先启动HTTP服务器，确保API接口可用）
             startHttpServer();
             logger.info("HTTP服务器启动成功");
+
+            // 11.1. 启动设备在线率时序采集器（每分钟写入 device_metrics 表）
+            DeviceMetricsCollector deviceMetricsCollector = new DeviceMetricsCollector(database, deviceManager);
+            deviceMetricsCollector.start();
+            logger.info("设备在线率时序采集器已启动");
 
             // 11.5. 为所有已存在的设备启动录制（如果录制功能启用，异步执行避免阻塞）
             if (recorder != null && config.getRecorder() != null && config.getRecorder().isEnabled()) {
@@ -1204,8 +1220,52 @@ public class Main {
             }
         });
 
+        // 安装向导 API（白名单，无需认证）
+        SetupController setupController = new SetupController(database, config);
+        app.get("/api/setup/status", setupController::getStatus);
+        app.post("/api/setup/install", setupController::install);
+
+        // 时序大屏 API
+        MetricsController metricsController = new MetricsController(database);
+        app.get("/api/metrics/alarm-hourly", metricsController::getAlarmHourly);
+        app.get("/api/metrics/device-availability", metricsController::getDeviceAvailability);
+        app.get("/api/metrics/radar-framerate", metricsController::getRadarFramerate);
+        app.get("/api/metrics/radar-compare", metricsController::getRadarCompare);
+
         app.start(port);
         logger.info("HTTP服务器已启动，端口: {}", port);
+    }
+
+    /**
+     * 安装向导模式：仅启动最小 HTTP 服务，只开放 /api/setup/* 路径
+     */
+    private void startSetupMode(Database db, Config cfg) {
+        logger.info("============================================================");
+        logger.info("SenHub 首次安装向导模式");
+        logger.info("请访问 http://<IP>:{}/api/setup/status 完成初始化设置", cfg.getServer() != null ? cfg.getServer().getPort() : 8084);
+        logger.info("============================================================");
+
+        int port = (cfg.getServer() != null && cfg.getServer().getPort() > 0) ? cfg.getServer().getPort() : 8084;
+
+        io.javalin.Javalin setupApp = io.javalin.Javalin.create(javalinConfig -> {
+            javalinConfig.plugins.enableCors(cors -> cors.add(it -> it.anyHost()));
+        });
+
+        SetupController setupCtrl = new SetupController(db, cfg);
+        setupApp.get("/api/setup/status", setupCtrl::getStatus);
+        setupApp.post("/api/setup/install", setupCtrl::install);
+
+        // 所有其他请求返回 503
+        setupApp.before("*", ctx -> {
+            String path = ctx.path();
+            if (!path.startsWith("/api/setup/")) {
+                ctx.status(503).result("{\"code\":503,\"message\":\"系统尚未完成初始化，请先访问安装向导\",\"data\":null}");
+                ctx.skipRemainingHandlers();
+            }
+        });
+
+        setupApp.start(port);
+        logger.info("安装向导 HTTP 服务已启动，端口: {}", port);
     }
 
     /**

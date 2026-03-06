@@ -15,7 +15,7 @@ public class AlarmFlowTable {
 
     public static void createTables(Connection connection) throws SQLException {
         String createTable = "CREATE TABLE IF NOT EXISTS alarm_flows (" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "id SERIAL PRIMARY KEY, " +
                 "flow_id TEXT UNIQUE NOT NULL, " +
                 "name TEXT NOT NULL, " +
                 "description TEXT, " +
@@ -24,8 +24,8 @@ public class AlarmFlowTable {
                 "connections TEXT NOT NULL, " +
                 "is_default INTEGER DEFAULT 0, " +
                 "enabled INTEGER DEFAULT 1, " +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
-                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                "created_at TIMESTAMP DEFAULT NOW(), " +
+                "updated_at TIMESTAMP DEFAULT NOW()" +
                 ")";
 
         String createIndex = "CREATE INDEX IF NOT EXISTS idx_alarm_flows_flow_id ON alarm_flows(flow_id); " +

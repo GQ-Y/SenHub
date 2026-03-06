@@ -22,10 +22,10 @@ public class RadarDeviceDAO {
      * 保存或更新雷达设备
      */
     public boolean saveOrUpdate(RadarDevice device) {
-        String sql = "INSERT OR REPLACE INTO radar_devices " +
+        String sql = "INSERT INTO radar_devices " +
                 "(device_id, radar_ip, radar_name, assembly_id, radar_serial, status, current_background_id, " +
                 "coordinate_transform, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, device.getDeviceId());
             pstmt.setString(2, device.getRadarIp());
@@ -99,7 +99,7 @@ public class RadarDeviceDAO {
      * 更新雷达设备状态
      */
     public boolean updateStatus(String deviceId, int status) {
-        String sql = "UPDATE radar_devices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        String sql = "UPDATE radar_devices SET status = ?, updated_at = NOW() WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, status);
             pstmt.setString(2, deviceId);
@@ -114,7 +114,7 @@ public class RadarDeviceDAO {
      * 根据序列号更新雷达设备状态
      */
     public boolean updateStatusBySerial(String radarSerial, int status) {
-        String sql = "UPDATE radar_devices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE radar_serial = ?";
+        String sql = "UPDATE radar_devices SET status = ?, updated_at = NOW() WHERE radar_serial = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, status);
             pstmt.setString(2, radarSerial);
@@ -130,7 +130,7 @@ public class RadarDeviceDAO {
      * 用于 SDK 自动发现设备后同步 IP 变化
      */
     public boolean updateIpBySerial(String radarSerial, String newIp) {
-        String sql = "UPDATE radar_devices SET radar_ip = ?, updated_at = CURRENT_TIMESTAMP WHERE radar_serial = ?";
+        String sql = "UPDATE radar_devices SET radar_ip = ?, updated_at = NOW() WHERE radar_serial = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, newIp);
             pstmt.setString(2, radarSerial);
@@ -149,7 +149,7 @@ public class RadarDeviceDAO {
      * 更新设备的 IP 和状态（同时更新）
      */
     public boolean updateIpAndStatus(String deviceId, String newIp, int status) {
-        String sql = "UPDATE radar_devices SET radar_ip = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        String sql = "UPDATE radar_devices SET radar_ip = ?, status = ?, updated_at = NOW() WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, newIp);
             pstmt.setInt(2, status);
@@ -169,7 +169,7 @@ public class RadarDeviceDAO {
      * 更新设备序列号（SN）
      */
     public boolean updateSerial(String deviceId, String serial) {
-        String sql = "UPDATE radar_devices SET radar_serial = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        String sql = "UPDATE radar_devices SET radar_serial = ?, updated_at = NOW() WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, serial);
             pstmt.setString(2, deviceId);
@@ -188,7 +188,7 @@ public class RadarDeviceDAO {
      * 更新当前背景模型ID
      */
     public boolean updateCurrentBackground(String deviceId, String backgroundId) {
-        String sql = "UPDATE radar_devices SET current_background_id = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?";
+        String sql = "UPDATE radar_devices SET current_background_id = ?, updated_at = NOW() WHERE device_id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, backgroundId);
             pstmt.setString(2, deviceId);
