@@ -261,7 +261,7 @@ public class Main {
                     radarService.setStatsLogIntervalSeconds(config.getLog().getPointcloudLogInterval());
                 }
                 radarService.start();
-                RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+                RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database);
                 List<com.digital.video.gateway.database.RadarDevice> radarDevices =
                         radarDeviceDAO.getAll();
                 logger.info("雷达服务已启动，当前配置了 {} 个雷达设备", radarDevices.size());
@@ -338,7 +338,7 @@ public class Main {
                         radarService.getTargetTrackingService(),
                         radarService.getMotionPredictionService(),
                         ptzService, flowService, flowExecutor,
-                        assemblyService, database.getConnection());
+                        assemblyService, database);
                 radarService.setPointCloudProcessCenter(processCenter);
                 logger.info("已初始化点云处理中心（雷达入侵工作流）");
             }
@@ -611,9 +611,14 @@ public class Main {
     private void autoConnectExistingDevices() {
         try {
             List<DeviceInfo> devices = deviceManager.getAllDevices();
-            logger.info("启动自动连接已有设备，数量: {}", devices.size());
+            // 过滤掉 radar 设备：雷达由 RadarService/LivoxDriver 自动发现，不走 loginDevice
+            List<DeviceInfo> cameraDevices = devices.stream()
+                    .filter(d -> !"radar".equalsIgnoreCase(d.getBrand()))
+                    .collect(java.util.stream.Collectors.toList());
+            logger.info("启动自动连接已有设备，数量: {} (跳过雷达设备 {})", 
+                    cameraDevices.size(), devices.size() - cameraDevices.size());
 
-            for (DeviceInfo device : devices) {
+            for (DeviceInfo device : cameraDevices) {
                 String deviceId = device.getDeviceId();
 
                 // 已在线且已登录则跳过
@@ -632,7 +637,7 @@ public class Main {
                 }
             }
             // 发布所有雷达状态到 senhub/device/status（entity_type=radar）
-            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database);
             List<RadarDevice> radarDevices = radarDeviceDAO.getAll();
             for (RadarDevice rd : radarDevices) {
                 publishRadarStatus(rd, rd.getStatus());
@@ -897,7 +902,7 @@ public class Main {
         try {
             if (radarService != null) {
                 com.digital.video.gateway.api.RadarWebSocketHandler wsHandler = radarService.getWebSocketHandler();
-                com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = new com.digital.video.gateway.database.RadarDeviceDAO(database.getConnection());
+                com.digital.video.gateway.database.RadarDeviceDAO radarDeviceDAO = new com.digital.video.gateway.database.RadarDeviceDAO(database);
                 List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
                 for (com.digital.video.gateway.database.RadarDevice device : devices) {
                     radarWsHandlers.put(device.getDeviceId(), wsHandler);

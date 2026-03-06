@@ -9,7 +9,6 @@ import com.digital.video.gateway.driver.livox.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -26,7 +25,6 @@ public class IntrusionDetectionService {
     private static final Logger logger = LoggerFactory.getLogger(IntrusionDetectionService.class);
 
     private final Database database;
-    private final Connection connection;
     private final RadarIntrusionRecordDAO recordDAO;
 
     // DBSCAN 参数（适配累积后的点密度）
@@ -60,8 +58,7 @@ public class IntrusionDetectionService {
 
     public IntrusionDetectionService(Database database) {
         this.database = database;
-        this.connection = database.getConnection();
-        this.recordDAO = new RadarIntrusionRecordDAO(connection);
+        this.recordDAO = new RadarIntrusionRecordDAO(database);
     }
 
     /**

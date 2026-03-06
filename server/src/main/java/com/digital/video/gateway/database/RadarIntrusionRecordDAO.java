@@ -10,18 +10,17 @@ import java.util.List;
 
 /**
  * 雷达侵入记录DAO操作类
+ * 每次操作从连接池借连接，用完即还，避免长连接断开导致查询失效。
  */
 public class RadarIntrusionRecordDAO {
     private static final Logger logger = LoggerFactory.getLogger(RadarIntrusionRecordDAO.class);
-    private final Connection connection;
+    private final Database database;
 
-    public RadarIntrusionRecordDAO(Connection connection) {
-        this.connection = connection;
+    public RadarIntrusionRecordDAO(Database database) {
+        this.database = database;
     }
 
-    /**
-     * 保存侵入记录
-     */
+    /** 保存侵入记录 */
     public boolean save(RadarIntrusionRecord record) {
         String sql = "INSERT INTO radar_intrusion_records " +
                 "(record_id, device_id, assembly_id, zone_id, cluster_id, " +
@@ -29,7 +28,8 @@ public class RadarIntrusionRecordDAO {
                 "bbox_min_x, bbox_min_y, bbox_min_z, bbox_max_x, bbox_max_y, bbox_max_z, " +
                 "point_count, duration, detected_at) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (Connection conn = database.getPoolConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, record.getRecordId());
             pstmt.setString(2, record.getDeviceId());
             pstmt.setString(3, record.getAssemblyId());
@@ -62,16 +62,14 @@ public class RadarIntrusionRecordDAO {
         }
     }
 
-    /**
-     * 根据ID获取记录
-     */
+    /** 根据ID获取记录 */
     public RadarIntrusionRecord getById(String recordId) {
         String sql = "SELECT * FROM radar_intrusion_records WHERE record_id = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (Connection conn = database.getPoolConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, recordId);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                return RadarIntrusionRecord.fromResultSet(rs);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return RadarIntrusionRecord.fromResultSet(rs);
             }
         } catch (SQLException e) {
             logger.error("获取侵入记录失败: {}", recordId, e);
@@ -79,9 +77,7 @@ public class RadarIntrusionRecordDAO {
         return null;
     }
 
-    /**
-     * 获取侵入记录列表（支持分页和过滤）
-     */
+    /** 获取侵入记录列表（支持分页和过滤） */
     public List<RadarIntrusionRecord> getRecords(String deviceId, String zoneId,
             Date startTime, Date endTime,
             int page, int pageSize) {
@@ -110,13 +106,13 @@ public class RadarIntrusionRecordDAO {
         params.add(pageSize);
         params.add((page - 1) * pageSize);
 
-        try (PreparedStatement pstmt = connection.prepareStatement(sql.toString())) {
+        try (Connection conn = database.getPoolConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             for (int i = 0; i < params.size(); i++) {
                 pstmt.setObject(i + 1, params.get(i));
             }
-            ResultSet rs = pstmt.executeQuery();
-            while (rs.next()) {
-                records.add(RadarIntrusionRecord.fromResultSet(rs));
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) records.add(RadarIntrusionRecord.fromResultSet(rs));
             }
         } catch (SQLException e) {
             logger.error("查询侵入记录失败", e);
@@ -124,17 +120,14 @@ public class RadarIntrusionRecordDAO {
         return records;
     }
 
-    /**
-     * 删除设备的所有侵入记录
-     */
+    /** 删除设备的所有侵入记录 */
     public int deleteAll(String deviceId) {
         String sql = deviceId != null
                 ? "DELETE FROM radar_intrusion_records WHERE device_id = ?"
                 : "DELETE FROM radar_intrusion_records";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            if (deviceId != null) {
-                pstmt.setString(1, deviceId);
-            }
+        try (Connection conn = database.getPoolConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            if (deviceId != null) pstmt.setString(1, deviceId);
             int count = pstmt.executeUpdate();
             logger.info("删除侵入记录: deviceId={}, 删除数量={}", deviceId, count);
             return count;

@@ -20,7 +20,6 @@ import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,9 +31,7 @@ public class RadarController {
     private static final Logger logger = LoggerFactory.getLogger(RadarController.class);
 
     private final RadarTestService radarTestService;
-    @SuppressWarnings("unused")
     private final Database database;
-    private final Connection connection;
     private final RadarDeviceDAO radarDeviceDAO;
     private final RadarIntrusionRecordDAO intrusionRecordDAO;
     private final BackgroundModelService backgroundService;
@@ -54,9 +51,8 @@ public class RadarController {
             PTZService ptzService) {
         this.radarTestService = radarTestService;
         this.database = database;
-        this.connection = database.getConnection();
-        this.radarDeviceDAO = new RadarDeviceDAO(connection);
-        this.intrusionRecordDAO = new RadarIntrusionRecordDAO(connection);
+        this.radarDeviceDAO = new RadarDeviceDAO(database);
+        this.intrusionRecordDAO = new RadarIntrusionRecordDAO(database);
         this.backgroundService = backgroundService;
         this.defenseZoneService = defenseZoneService;
         this.intrusionDetectionService = intrusionDetectionService;
@@ -134,23 +130,26 @@ public class RadarController {
             if (radarIp == null || radarIp.trim().isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "雷达IP地址不能为空"));
+                return;
             }
 
             if (radarName == null || radarName.trim().isEmpty()) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "雷达名称不能为空"));
+                return;
             }
 
             // 验证IP格式
             if (!isValidIpAddress(radarIp)) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "无效的IP地址格式"));
+                return;
             }
 
             radarIp = radarIp.trim();
             radarSerial = (radarSerial != null && !radarSerial.trim().isEmpty()) ? radarSerial.trim() : null;
 
-            // 检查IP是否已存在
+            // 检查IP/SN是否已存在
             List<RadarDevice> existingDevices = radarDeviceDAO.getAll();
             RadarDevice existingByIp = null;
             RadarDevice existingBySerial = null;
@@ -164,11 +163,12 @@ public class RadarController {
                 }
             }
 
-            // 如果 IP 已存在且不是同一设备（通过 SN 判断），报错
-            if (existingByIp != null && existingBySerial != null && 
+            // IP 已被另一个不同 SN 的设备占用
+            if (existingByIp != null && existingBySerial != null &&
                     !existingByIp.getDeviceId().equals(existingBySerial.getDeviceId())) {
                 ctx.status(400);
                 ctx.result(createErrorResponse(400, "该IP地址已被其他设备使用: " + radarIp));
+                return;
             }
 
             // 确定设备ID
@@ -176,19 +176,13 @@ public class RadarController {
             boolean isUpdate = false;
             
             if (radarSerial != null) {
-                // 有 SN：使用 SN 作为设备ID
                 deviceId = radarSerial;
-                if (existingBySerial != null) {
-                    isUpdate = true;
-                }
+                if (existingBySerial != null) isUpdate = true;
             } else {
-                // 无 SN：检查是否有同 IP 设备
                 if (existingByIp != null) {
-                    // 更新已有设备
                     deviceId = existingByIp.getDeviceId();
                     isUpdate = true;
                 } else {
-                    // 创建新设备，使用 IP 作为临时标识
                     deviceId = "radar_" + radarIp.replace(".", "_");
                 }
             }
@@ -197,11 +191,10 @@ public class RadarController {
             device.setDeviceId(deviceId);
             device.setRadarIp(radarIp);
             device.setRadarName(radarName.trim());
-            String assemblyId = (String) body.get("assemblyId");
-            device.setAssemblyId(assemblyId); // 可选
-            device.setRadarSerial(radarSerial); // 可能为 null
+            device.setRadarSerial(radarSerial);
 
-            // 若指定了装置ID，需校验装置存在，避免外键约束失败
+            // 校验装置存在
+            String assemblyId = (String) body.get("assemblyId");
             if (assemblyId != null && !assemblyId.trim().isEmpty() && assemblyService != null) {
                 Assembly assembly = assemblyService.getAssembly(assemblyId.trim());
                 if (assembly == null) {
@@ -217,36 +210,18 @@ public class RadarController {
                 if (existing != null) {
                     device.setStatus(existing.getStatus());
                     device.setCurrentBackgroundId(existing.getCurrentBackgroundId());
+                    device.setCoordinateTransform(existing.getCoordinateTransform());
                 }
             } else {
                 device.setStatus(0);
             }
 
-            // radar_devices 表有外键 device_id -> devices(device_id)，保存前需确保 devices 中已有对应记录
-            DeviceInfo devInfo = new DeviceInfo();
-            devInfo.setDeviceId(deviceId);
-            devInfo.setIp(radarIp);
-            devInfo.setPort(0);
-            devInfo.setName(radarName.trim());
-            devInfo.setUsername("");
-            devInfo.setPassword("");
-            devInfo.setRtspUrl("");
-            devInfo.setStatus(device.getStatus());
-            devInfo.setUserId(-1);
-            devInfo.setChannel(1);
-            devInfo.setBrand("radar");
-            devInfo.setCameraType("radar");
-            devInfo.setSerialNumber(radarSerial);
-            if (!database.saveOrUpdateDevice(devInfo)) {
-                logger.warn("同步 devices 表失败，继续尝试保存雷达设备: deviceId={}", deviceId);
-            }
-
+            // 直接保存到 radar_devices 表（不再同步到 devices 表，雷达独立管理）
             if (radarDeviceDAO.saveOrUpdate(device)) {
                 String snStatus = radarSerial != null ? "SN=" + radarSerial : "SN待自动填充";
                 logger.info("雷达设备已{}: deviceId={}, radarIp={}, radarName={}, {}",
-                        isUpdate ? "更新" : "添加",
-                        deviceId, radarIp, radarName, snStatus);
-                // 若指定了所属装置，同步加入 assembly_devices，便于装置详情页显示并启用坐标系标定
+                        isUpdate ? "更新" : "添加", deviceId, radarIp, radarName, snStatus);
+                // 若指定了装置，同步加入 assembly_devices
                 if (assemblyService != null && device.getAssemblyId() != null && !device.getAssemblyId().trim().isEmpty()) {
                     try {
                         assemblyService.addDeviceToAssembly(device.getAssemblyId().trim(), deviceId, "radar", null);

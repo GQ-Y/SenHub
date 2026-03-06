@@ -37,7 +37,7 @@ public class RecordingManager {
 
     public RecordingManager(Database database) {
         this.database = database;
-        this.recordDAO = new RadarIntrusionRecordDAO(database.getConnection());
+        this.recordDAO = new RadarIntrusionRecordDAO(database);
     }
 
     public void processFrame(String deviceId, List<Point> points) {

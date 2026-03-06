@@ -199,7 +199,7 @@ public class LivoxDriver {
             List<RadarDevice> radarDevices = null;
             if (database != null) {
                 try {
-                    radarDevices = new RadarDeviceDAO(database.getConnection()).getAll();
+                    radarDevices = new RadarDeviceDAO(database).getAll();
                 } catch (Exception e) {
                     log.warn("读取雷达设备列表失败，退化为单雷达端口配置: {}", e.getMessage());
                 }

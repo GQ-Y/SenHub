@@ -1,6 +1,7 @@
 package com.digital.video.gateway.service;
 
 import com.digital.video.gateway.database.Assembly;
+import com.digital.video.gateway.database.Database;
 import com.digital.video.gateway.database.RadarDevice;
 import com.digital.video.gateway.database.RadarDeviceDAO;
 import com.digital.video.gateway.driver.livox.algorithm.CoordinateTransform;
@@ -21,7 +22,6 @@ import org.slf4j.LoggerFactory;
 
 import com.digital.video.gateway.driver.livox.model.ExclusionZone;
 
-import java.sql.Connection;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -60,7 +60,7 @@ public class PointCloudProcessCenter {
     private final FlowService flowService;
     private final FlowExecutor flowExecutor;
     private final AssemblyService assemblyService;
-    private final Connection dbConnection;
+    private final Database dbDatabase;
 
     // ---- 跟随状态机（防区级） ----
     private final Map<String, FollowState> followStates = new ConcurrentHashMap<>();
@@ -247,14 +247,14 @@ public class PointCloudProcessCenter {
             FlowService flowService,
             FlowExecutor flowExecutor,
             AssemblyService assemblyService,
-            Connection dbConnection) {
+            Database dbDatabase) {
         this.targetTrackingService = targetTrackingService;
         this.motionPredictionService = motionPredictionService;
         this.ptzService = ptzService;
         this.flowService = flowService;
         this.flowExecutor = flowExecutor;
         this.assemblyService = assemblyService;
-        this.dbConnection = dbConnection;
+        this.dbDatabase = dbDatabase;
     }
 
     /**
@@ -813,7 +813,7 @@ public class PointCloudProcessCenter {
         }
 
         try {
-            RadarDeviceDAO dao = new RadarDeviceDAO(dbConnection);
+            RadarDeviceDAO dao = new RadarDeviceDAO(dbDatabase);
             RadarDevice radar = dao.getByDeviceId(radarDeviceId);
             if (radar == null || radar.getAssemblyId() == null || radar.getAssemblyId().trim().isEmpty()) {
                 ptzLinkageCache.put(radarDeviceId, new long[]{0, now + PTZ_LINKAGE_CACHE_TTL_MS});
@@ -857,10 +857,10 @@ public class PointCloudProcessCenter {
 
             // 查询 AI 算法库中配置的中文名称，优先用于 webhook/MQTT 推送展示
             String radarAlarmTypeName = null;
-            if (dbConnection != null) {
-                try {
+            if (dbDatabase != null) {
+                try (java.sql.Connection _conn = dbDatabase.getPoolConnection()) {
                     Map<String, Object> canonicalEvent = com.digital.video.gateway.database.CanonicalEventTable
-                            .getCanonicalEvent(dbConnection, "RADAR_INTRUSION");
+                            .getCanonicalEvent(_conn, "RADAR_INTRUSION");
                     if (canonicalEvent != null) {
                         Object nameZh = canonicalEvent.get("nameZh");
                         if (nameZh instanceof String && !((String) nameZh).isEmpty()) {

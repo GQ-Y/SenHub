@@ -264,7 +264,7 @@ public class RadarService {
      * 如果通过 SN 找到设备且 IP 发生变化，自动同步新 IP
      */
     private void updateDeviceStatusByIpOrSerial(String ip, String serial, boolean online) {
-        RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+        RadarDeviceDAO dao = new RadarDeviceDAO(database);
         
         // 优先通过序列号查找
         RadarDevice device = dao.getBySerial(serial);
@@ -914,7 +914,7 @@ public class RadarService {
         }
 
         // 2. 雷达未关联装置则不进行 PTZ 联动
-        RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+        RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database);
         RadarDevice radar = radarDeviceDAO.getByDeviceId(radarDeviceId);
         if (radar == null || radar.getAssemblyId() == null || radar.getAssemblyId().trim().isEmpty()) {
             return;
@@ -1107,7 +1107,7 @@ public class RadarService {
      */
     private String getCurrentDeviceId() {
         // 从数据库读取所有雷达设备
-        RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+        RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database);
         List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
 
         if (devices.isEmpty()) {
@@ -1159,7 +1159,7 @@ public class RadarService {
         String ip = info[1];
 
         // 3. 优先通过 serial 查找 deviceId
-        RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+        RadarDeviceDAO dao = new RadarDeviceDAO(database);
         RadarDevice device = dao.getBySerial(serial);
         if (device != null) {
             // SN 匹配成功：若 IP 与数据库记录不一致，自动修正
@@ -1222,7 +1222,7 @@ public class RadarService {
         deviceConnectionStatus.put(deviceId, connected);
         
         try {
-            RadarDeviceDAO dao = new RadarDeviceDAO(database.getConnection());
+            RadarDeviceDAO dao = new RadarDeviceDAO(database);
             dao.updateStatus(deviceId, connected ? 1 : 0);
             
             if (statusChanged) {
@@ -1324,7 +1324,7 @@ public class RadarService {
      */
     private void loadAllDeviceDetectionContexts() {
         try {
-            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database.getConnection());
+            RadarDeviceDAO radarDeviceDAO = new RadarDeviceDAO(database);
             List<com.digital.video.gateway.database.RadarDevice> devices = radarDeviceDAO.getAll();
 
             if (devices.isEmpty()) {
